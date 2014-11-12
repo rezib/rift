@@ -10,6 +10,7 @@ from Rift.Config import Config, Staff, Modules
 from Rift.Package import Package
 from Rift.RPM import RPM, Spec
 from Rift.Repository import Repository
+from Rift.Mock import Mock
 
 def message(msg):
     print "> %s" % msg
@@ -203,22 +204,21 @@ def action(config, args):
         pkg = Package(args.package, config, staff, modules)
         pkg.load()
 
-        from Rift.TempDir import TempDir
-        outdir = TempDir()
-        outdir.create()
+        message('Preparing Mock environment...')
+        mock = Mock()
+        mock.init([repo])
 
         message("Building SRPM...")
-        srpm = pkg.build_srpm(outdir)
-        logging.info("Built: %s" % srpm.filepath)
+        srpm = pkg.build_srpm(mock)
+        logging.info("Built: %s", srpm.filepath)
 
         message("Building RPMS...")
-        mock = pkg.build_rpms(srpm, [repo])
+        pkg.build_rpms(mock, srpm)
         message("RPMS successfully built")
 
         # Publish
         if args.publish:
             message("Publishing RPMS...")
-            repo.add(srpm)
             mock.publish(repo)
 
             message("Updating repository...")
@@ -226,7 +226,6 @@ def action(config, args):
         else:
             logging.info("Skipping publication")
 
-        outdir.delete()
         mock.clean()
 
     # TEST
@@ -259,23 +258,24 @@ def action(config, args):
         staging = Repository(stagedir.path, 'staging')
         staging.create()
 
+        message('Preparing Mock environment...')
+        mock = Mock()
+        mock.init([repo])
+
         # Check build SRPM
         message('Validate source RPM build...')
-        from Rift.TempDir import TempDir
-        outdir = TempDir()
-        outdir.create()
-        srpm = pkg.build_srpm(outdir)
+        srpm = pkg.build_srpm(mock)
  
         # Check build RPMS
         message('Validate RPMS build...')
-        mock = pkg.build_rpms(srpm, [repo])
+        pkg.build_rpms(mock, srpm)
+
+        # Check tests
         mock.publish(staging)
         staging.update()
-
-        outdir.delete()
- 
-        # Check tests
         rc = action_test(config, args, pkg, [repo, staging])
+
+        mock.clean()
 
         stagedir.delete()
 

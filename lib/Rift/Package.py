@@ -12,7 +12,6 @@ import glob
 import logging
 
 from Rift import RiftError
-from Rift.Mock import Mock
 
 _META_FILE = 'info.yaml'
 _SOURCES_DIR = 'sources'
@@ -114,34 +113,23 @@ class Package(object):
         for testpath in glob.glob(testspattern):
             yield Test(testpath)
 
-    def build_srpm(self, outdir):
+    def build_srpm(self, mock):
         """
-        Build package source RPM and copy it into `outdir'.
+        Build package source RPM
         """
-        # XXX: Return a object like Mock with a clean() method or build with
-        # Mock?
-
         from Rift.LookAside import LookAside
         tmpdir = LookAside(self._config).import_dir(self.sourcesdir)
 
-        from Rift.RPM import Spec
-        spec = Spec(self.specfile)
-        srpm = spec.build_srpm(tmpdir.path or self.sourcesdir, outdir.path)
-
+        srpm = mock.build_srpm(self.specfile, tmpdir.path or self.sourcesdir)
         tmpdir.delete()
-        logging.debug("Built %s", srpm.filepath)
-
         return srpm
 
-    def build_rpms(self, srpm, repos):
+    def build_rpms(self, mock, srpm):
         """
         Build package RPMS using provided `srpm' and repository list for build
         requires.
         """
-        mock = Mock()
-        mock.init(repos)
         mock.build_rpms(srpm)
-        return mock
 
 
 class Test(object):

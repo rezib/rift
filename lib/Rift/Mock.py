@@ -11,6 +11,7 @@ import os
 import shutil
 import glob
 import getpass
+import logging
 from subprocess import Popen, PIPE
 from jinja2 import Template
 
@@ -41,6 +42,7 @@ class Mock(object):
 
         # Populate with repolist
         for prio, repo in enumerate(reversed(repolist), start=1):
+            assert repo.url is not None
             context['repos'].insert(0, {
                 'name': repo.name or 'repo%s' % prio,
                 'priority': prio,
@@ -52,6 +54,13 @@ class Mock(object):
         # We have to keep template timestamp to avoid being detected as a new
         # one each time.
         shutil.copystat(self.MOCK_TEMPLATE, dstpath)
+
+    def _mock_base(self):
+        """Return base argument to launch mock"""
+        if logging.getLogger().isEnabledFor(logging.INFO):
+            return ['mock', '--configdir=%s' % self._tmpdir.path]
+        else:
+            return ['mock', '-q', '--configdir=%s' % self._tmpdir.path]
 
     def init(self, repolist):
         """
@@ -72,32 +81,55 @@ class Mock(object):
         for repo in repolist:
             repo.create()
 
-    def clean(self):
-        """Clean temporary files and RPMS created for this instance."""
-        self._tmpdir.delete()
-        pattern = os.path.join(self.MOCK_RESULT % self._mockname, '*.rpm')
-        for filepath in glob.glob(pattern):
-            os.unlink(filepath)
-
-#    def build_srpm(self, specpath, sourcedir):
-#        """
-#        Build a source RPMS using the provided Source RPM pointed by `srpm'
-#        """
-#        cmd = ['mock', '--configdir=%s' % self._tmpdir.path ]
-#        cmd += ['--buildsrpm', '--spec', specpath, '--source', sourcedir]
-#        popen = Popen(cmd, stdout=PIPE) #, stderr=STDOUT)
-#        stdout = popen.communicate()[0]
-#        if popen.returncode != 0:
-#            raise RiftError(stdout)
-
-    def build_rpms(self, srpm):
-        """Build binary RPMS using the provided Source RPM pointed by `srpm'"""
-        cmd = ['mock', '--configdir=%s' % self._tmpdir.path, srpm.filepath]
+        cmd = self._mock_base() + ['--init']
         popen = Popen(cmd, stdout=PIPE) #, stderr=STDOUT)
         stdout = popen.communicate()[0]
         if popen.returncode != 0:
             raise RiftError(stdout)
-        # It could be nice if we can return the list of built RPMs here.
+
+    def resultrpms(self, pattern='*.rpm', sources=True):
+        """
+        Iterate over built RPMS matching `pattern' in mock result directory.
+        """
+        pathname = os.path.join(self.MOCK_RESULT % self._mockname, pattern)
+        for filepath in glob.glob(pathname):
+            rpm = RPM(filepath)
+            if sources or not rpm.is_source:
+                yield rpm
+
+    def clean(self):
+        """Clean temporary files and RPMS created for this instance."""
+        self._tmpdir.delete()
+        for rpm in self.resultrpms():
+            os.unlink(rpm.filepath)
+
+    def build_srpm(self, specpath, sourcedir):
+        """
+        Build a source RPM using the provided spec file and source directory.
+        """
+        specpath = os.path.realpath(specpath)
+        sourcedir = os.path.realpath(sourcedir)
+        cmd = self._mock_base() + ['--buildsrpm']
+        cmd += ['--spec', specpath, '--source', sourcedir]
+        popen = Popen(cmd, stdout=PIPE) #, stderr=STDOUT)
+        stdout = popen.communicate()[0]
+        if popen.returncode != 0:
+            raise RiftError(stdout)
+
+        # XXX: Could be better if we do not use glob() here
+        return list(self.resultrpms('*.src.rpm'))[0]
+
+    def build_rpms(self, srpm):
+        """Build binary RPMS using the provided Source RPM pointed by `srpm'"""
+        cmd = self._mock_base() + ['--no-clean', '--no-cleanup-after']
+        cmd += ['--configdir=%s' % self._tmpdir.path, srpm.filepath]
+        popen = Popen(cmd, stdout=PIPE) #, stderr=STDOUT)
+        stdout = popen.communicate()[0]
+        if popen.returncode != 0:
+            raise RiftError(stdout)
+
+        # Return the list of built RPMs here.
+        return self.resultrpms('*.rpm', sources=False)
 
     def publish(self, repo):
         """
@@ -106,6 +138,4 @@ class Mock(object):
         """
         pattern = os.path.join(self.MOCK_RESULT % self._mockname, '*.rpm')
         for filepath in glob.glob(pattern):
-            rpm = RPM(filepath)
-            if not rpm.is_source:
-                repo.add(rpm)
+            repo.add(RPM(filepath))

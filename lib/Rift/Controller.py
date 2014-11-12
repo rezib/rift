@@ -19,8 +19,7 @@ def banner(title):
     print "** %s **" % title
 
 def parse_options():
-
-    # XXX: Add help everywhere
+    """Parse command line options"""
 
     parser = argparse.ArgumentParser()
     # Generic options
@@ -32,49 +31,103 @@ def parse_options():
     # Create options
     parser_import = subparsers.add_parser('create',
                                           help='create a new package')
-    parser_import.add_argument('name', metavar='PKGNAME')
-    parser_import.add_argument('-m', '--module', dest='module')
-    parser_import.add_argument('-t', '--maintainer', dest='maintainer')
-    parser_import.add_argument('-r', '--reason', dest='reason')
-    parser_import.add_argument('-o', '--origin', dest='origin')
+    parser_import.add_argument('name', metavar='PKGNAME',
+                               help='package name to be created')
+    parser_import.add_argument('-m', '--module', dest='module', required=True,
+                               help='module name this package will belong to')
+    parser_import.add_argument('-r', '--reason', dest='reason', required=True,
+                               help='reason this package is added to project')
+    parser_import.add_argument('-o', '--origin', dest='origin',
+                               help='source of original package')
+    parser_import.add_argument('-t', '--maintainer', dest='maintainer',
+                               help='maintainer name from staff.yaml')
 
     # Import options
     parser_import = subparsers.add_parser('import',
-                        help='import a SRPM and create a package')
-    parser_import.add_argument('file', metavar='FILE')
-    parser_import.add_argument('-m', '--module', dest='module')
-    parser_import.add_argument('-t', '--maintainer', dest='maintainer')
-    parser_import.add_argument('-r', '--reason', dest='reason')
-    parser_import.add_argument('-o', '--origin', dest='origin')
+                               help='import a SRPM and create a package')
+    parser_import.add_argument('file', metavar='FILE',
+                               help='source RPM to import')
+    parser_import.add_argument('-m', '--module', dest='module', required=True,
+                               help='module name this package will belong to')
+    parser_import.add_argument('-r', '--reason', dest='reason', required=True,
+                               help='reason this package is added to project')
+    parser_import.add_argument('-o', '--origin', dest='origin',
+                               help='source of original package')
+    parser_import.add_argument('-t', '--maintainer', dest='maintainer',
+                               help='maintainer name from staff.yaml')
 
     # Check options
     parser_check = subparsers.add_parser('check',
-                        help='verify various config file syntaxes')
-    parser_check.add_argument('object', metavar='OBJECT',
+                              help='verify various config file syntaxes')
+    parser_check.add_argument('type', metavar='CHKTYPE',
                               choices=['staff','modules', 'info', 'spec'],
-                              help='Type of check')
-    parser_check.add_argument('-f', '--file', metavar='FILE')
+                              help='type of check')
+    parser_check.add_argument('-f', '--file', metavar='FILE',
+                              help='path of file to check')
 
     # Build options
     parser_check = subparsers.add_parser('build',
                         help='build source RPM and RPMS')
-    parser_check.add_argument('package', metavar='PACKAGE')
+    parser_check.add_argument('package', metavar='PACKAGE',
+                        help='package name to build')
     parser_check.add_argument('-p', '--publish', action='store_true',
-                        help='Publish build RPMS to repository')
+                        help='publish build RPMS to repository')
 
     # Test options
     parser_check = subparsers.add_parser('test',
-                        help='Execute package tests')
-    parser_check.add_argument('package', metavar='PACKAGE')
-    parser_check.add_argument('--noquit', action='store_true')
+                        help='execute package tests')
+    parser_check.add_argument('package', metavar='PACKAGE',
+                        help='package name to test')
+    parser_check.add_argument('--noquit', action='store_true',
+                        help='do not stop VM at the end')
 
     # Validate options
     parser_check = subparsers.add_parser('validate',
-                        help='Fully validate package')
-    parser_check.add_argument('package', metavar='PACKAGE')
+                              help='Fully validate package')
+    parser_check.add_argument('package', metavar='PACKAGE',
+                              help='package name to validate')
 
     # Parse options
     return parser.parse_args()
+
+def action_check(args, config):
+
+    if args.type == 'staff':
+
+        staff = Staff()
+        staff.load(args.file or config.get('staff_file'))
+        logging.info('Staff file is OK.')
+
+    elif args.type == 'modules':
+
+        staff = Staff()
+        staff.load(config.get('staff_file'))
+        modules = Modules(staff)
+        modules.load(args.file or config.get('modules_file'))
+        logging.info('Modules file is OK.')
+
+    elif args.type == 'info':
+
+        staff = Staff()
+        staff.load(config.get('staff_file'))
+        modules = Modules(staff)
+        modules.load(config.get('modules_file'))
+
+        if args.file is None:
+            raise RiftError("You must specifiy a file path (-f)")
+
+        pkg = Package("check", config, staff, modules)
+        pkg.load(args.file)
+        logging.info('Info file is OK.')
+
+    elif args.type == 'spec':
+
+        if args.file is None:
+            raise RiftError("You must specifiy a file path (-f)")
+
+        spec = Spec(args.file)
+        spec.check()
+        logging.info('Spec file is OK.')
 
 def action_test(config, args, pkg, repos):
 
@@ -123,46 +176,8 @@ def action(config, args):
 
     # CHECK
     if args.command == 'check':
-        
-        if args.object == 'staff':
-
-            staff = Staff()
-            staff.load(args.file or config.get('staff_file'))
-            logging.info('Staff file is OK.')
-
-        elif args.object == 'modules':
-
-            staff = Staff()
-            staff.load(config.get('staff_file'))
-            modules = Modules(staff)
-            modules.load(args.file or config.get('modules_file'))
-            logging.info('Modules file is OK.')
-
-        elif args.object == 'info':
-
-            staff = Staff()
-            staff.load(config.get('staff_file'))
-            modules = Modules(staff)
-            modules.load(config.get('modules_file'))
-
-            if args.file is None:
-                raise RiftError("You must specifiy a file path (-f)")
-
-            pkg = Package("check", config, staff, modules)
-            pkg.load(args.file)
-            logging.info('Info file is OK.')
-
-        elif args.object == 'spec':
-
-            if args.file is None:
-                raise RiftError("You must specifiy a file path (-f)")
-
-            spec = Spec(args.file)
-            spec.check()
-            logging.info('Spec file is OK.')
-
+        action_check(args, config)
         return
-
 
     # Now, other commands..
 

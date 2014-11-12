@@ -32,7 +32,9 @@ class RPM(object):
         """Extract interesting information from RPM file header"""
         # Read header
         fileno = os.open(self.filepath, os.O_RDONLY)
-        hdr = rpm.TransactionSet().hdrFromFdno(fileno)
+        ts = rpm.TransactionSet()
+        ts.setVSFlags(rpm._RPMVSF_NOSIGNATURES)
+        hdr = ts.hdrFromFdno(fileno)
         os.close(fileno)
 
         # Extract data
@@ -118,4 +120,4 @@ class Spec(object):
         popen = Popen(cmd, stderr=PIPE)
         stderr = popen.communicate()[1]
         if popen.returncode != 0:
-            raise RiftError(stderr)        
+            raise RiftError(stderr or 'rpmlint reported errors')

@@ -99,8 +99,8 @@ class LookAside(object):
                 # We have our first binary file, we need a temp directory
                 if tmpdir.path is None:
                     tmpdir.create()
-                    for filepath in textfiles:
-                        shutil.copy(filepath, tmpdir.path)
+                    for txtpath in textfiles:
+                        shutil.copy(txtpath, tmpdir.path)
 
                 # Copy the real binary content
                 self.get(filepath, os.path.join(tmpdir.path, filename))
@@ -119,6 +119,9 @@ class LookAside(object):
         """
         # Create hash
         digest = hashfile(filepath)
+
+        # Verify permission are correct before copying
+        os.chmod(filepath, 0644)
 
         # Move binary file to lookaside
         destpath = os.path.join(self.path, digest)

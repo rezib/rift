@@ -67,13 +67,23 @@ class LookAside(object):
             return all(byte in string.hexdigits for byte in identifier)
         return False
 
-    def get(self, idpath, destpath):
-        """Get a file identified by idpath content, and copy it at destpath."""
+    def get(self, identifier, destpath):
+        """Get a file identified by identifier and copy it at destpath."""
         # Copy file from repository to destination path
-        identifier = open(idpath).read()
         idpath = os.path.join(self.path, identifier)
         logging.debug('Extracting %s to %s', identifier, destpath)
         shutil.copyfile(idpath, destpath)
+
+    def get_by_path(self, idpath, destpath):
+        """Get a file identified by idpath content, and copy it at destpath."""
+        identifier = open(idpath).read()
+        self.get(identifier, destpath)
+
+    def delete(self, identifier):
+        """Remove a file from lookaside, whose ID is `identifier'"""
+        idpath = os.path.join(self.path, identifier)
+        logging.debug('Deleting from lookaside: %s', idpath)
+        os.unlink(idpath)
 
     def import_dir(self, dirpath):
         """
@@ -103,7 +113,7 @@ class LookAside(object):
                         shutil.copy(txtpath, tmpdir.path)
 
                 # Copy the real binary content
-                self.get(filepath, os.path.join(tmpdir.path, filename))
+                self.get_by_path(filepath, os.path.join(tmpdir.path, filename))
 
             else:
                 if tmpdir.path is None:
@@ -111,6 +121,15 @@ class LookAside(object):
                 else:
                     shutil.copy(filepath, tmpdir.path)
         return tmpdir
+
+    def list(self):
+        """
+        Iterate over lookaside files, returning for them: filename, size and
+        mtime.
+        """
+        for filename in os.listdir(self.path):
+            meta = os.stat(os.path.join(self.path, filename))
+            yield filename, meta.st_size, meta.st_mtime
 
     def push(self, filepath):
         """

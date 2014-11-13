@@ -4,6 +4,7 @@
 
 import argparse
 import logging
+import time
 from rpm import error as RpmError
 
 from Rift import RiftError
@@ -12,6 +13,7 @@ from Rift.Package import Package
 from Rift.RPM import RPM, Spec
 from Rift.Repository import RemoteRepository, Repository
 from Rift.Mock import Mock
+from Rift.LookAside import LookAside
 
 def message(msg):
     print "> %s" % msg
@@ -88,10 +90,32 @@ def parse_options():
     parser_check.add_argument('package', metavar='PACKAGE',
                               help='package name to validate')
 
+    # LookAside options
+    parser_la = subparsers.add_parser('lookaside',
+                              help='Manipulate lookaside cache')
+    subparsers_la = parser_la.add_subparsers(dest='la_cmd',
+                              title='possible commands')
+    subparsers_la.add_parser('list', help='list cache content')
+    parser_la_push = subparsers_la.add_parser('push',
+                                              help='move a file into cache')
+    parser_la_push.add_argument('file', metavar='FILENAME',
+                                help='file path to be move')
+    parser_la_del = subparsers_la.add_parser('delete',
+                                              help='remove a file from cache')
+    parser_la_del.add_argument('id', metavar='ID',
+                               help='digest ID to delete')
+    parser_la_get = subparsers_la.add_parser('get',
+                                              help='Copy a file from cache')
+    parser_la_get.add_argument('--id', metavar='DIGEST', required=True,
+                               help='digest ID to read')
+    parser_la_get.add_argument('--dest', metavar='PATH', required=True,
+                               help='destination path')
+
     # Parse options
     return parser.parse_args()
 
 def action_check(args, config):
+    """Action for 'check' sub-commands."""
 
     if args.type == 'staff':
 
@@ -130,7 +154,34 @@ def action_check(args, config):
         spec.check()
         logging.info('Spec file is OK.')
 
+
+def action_la(args, config):
+    """Action for 'lookaside' sub-commands."""
+    lookaside = LookAside(config)
+
+    assert args.la_cmd in ('list', 'get', 'push', 'delete')
+    if args.la_cmd == 'list':
+        fmt = "%-32s %10s  %s"
+        print fmt % ('ID', 'SIZE', 'DATE')
+        print fmt % ('--', '----', '----')
+        for filename, size, mtime in lookaside.list():
+            timestr = time.strftime('%x %X', time.localtime(mtime))
+            print fmt % (filename, size, timestr)
+
+    elif args.la_cmd == 'push':
+        lookaside.push(args.file)
+        message('%s moved and replaced' % args.file)
+
+    elif args.la_cmd == 'delete':
+        lookaside.delete(args.id)
+        message('%s has been deleted' % args.id)
+
+    elif args.la_cmd == 'get':
+        lookaside.get(args.id, args.dest)
+        message('%s has been created' % args.dest)
+
 def action_test(config, args, pkg, repos):
+    """Process 'test' command."""
 
     from Rift.VM import VM
     vm = VM(config, repos)
@@ -161,7 +212,6 @@ def action_test(config, args, pkg, repos):
     # XXX: Add a way to start a VM without stopping it (vm command?)
     if not getattr(args, 'noquit', False):
         vm.cmd("poweroff")
-        import time
         time.sleep(5)
         vm.stop()
 
@@ -178,6 +228,9 @@ def action(config, args):
     # CHECK
     if args.command == 'check':
         action_check(args, config)
+        return
+    elif args.command == 'lookaside':
+        action_la(args, config)
         return
 
     # Now, other commands..
@@ -303,6 +356,7 @@ def action(config, args):
     return 0
 
 def main():
+    """Main code of 'rift'"""
 
     # Parse options
     args = parse_options()

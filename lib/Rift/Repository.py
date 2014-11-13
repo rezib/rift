@@ -12,7 +12,24 @@ from subprocess import Popen, PIPE, STDOUT
 
 from Rift import RiftError
 
-class Repository(object):
+class RemoteRepository(object):
+    """
+    Simple container for dealing with read-only remote repository using http or
+    ftp.
+    """
+
+    def __init__(self, url, name=None):
+        self.url = url
+        self.name = name
+
+    def create(self):
+        """
+        Read-only repository, create() is a no-op, considering it is always
+        created and usable.
+        """
+        pass
+
+class Repository(RemoteRepository):
     """
     Manipulate a RPMS repository structures: RPMs, directories and metadata.
 
@@ -20,10 +37,13 @@ class Repository(object):
     """
 
     def __init__(self, path, name=None):
-        self.path = path
-        self.name = name or os.path.basename(self.path)
+        self.path = os.path.realpath(path)
         self.srpms_dir = os.path.join(self.path, 'SRPMS')
         self.rpms_dir = os.path.join(self.path, 'RPMS')
+
+        name = name or os.path.basename(self.path)
+        url = 'file://%s' % os.path.realpath(self.rpms_dir)
+        RemoteRepository.__init__(self, url, name)
 
     def create(self):
         """Create repository directory structure and metadata."""

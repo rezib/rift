@@ -9,7 +9,7 @@ from Rift import RiftError
 from Rift.Config import Config, Staff, Modules
 from Rift.Package import Package
 from Rift.RPM import RPM, Spec
-from Rift.Repository import Repository
+from Rift.Repository import RemoteRepository, Repository
 from Rift.Mock import Mock
 
 def message(msg):
@@ -219,9 +219,10 @@ def action(config, args):
         pkg = Package(args.package, config, staff, modules)
         pkg.load()
 
+        os_repo = RemoteRepository(config.get('repo_os_url'), 'os')
         message('Preparing Mock environment...')
         mock = Mock()
-        mock.init([repo])
+        mock.init([os_repo, repo])
 
         message("Building SRPM...")
         srpm = pkg.build_srpm(mock)
@@ -274,8 +275,9 @@ def action(config, args):
         staging.create()
 
         message('Preparing Mock environment...')
+        os_repo = RemoteRepository(config.get('repo_os_url'), 'os')
         mock = Mock()
-        mock.init([repo])
+        mock.init([os_repo, repo])
 
         # Check build SRPM
         message('Validate source RPM build...')

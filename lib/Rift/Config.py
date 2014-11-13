@@ -26,6 +26,7 @@ class Config(object):
             'modules_file':  _DEFAULT_MODULES_FILE,
             'packages_dir':  'packages',
             # 'lookaside'
+            # 'repo_os_url'
             # 'repo_base'
             # 'maintainer'
             'qemu':          'qemu-system-x86_64',

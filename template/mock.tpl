@@ -20,11 +20,6 @@ syslog_ident=mock
 syslog_device=
 
 # repos
-[core]
-name=core
-baseurl=http://10.2.0.2/cobbler/ks_mirror/CentOS6.5-x86_64
-priority=100
-
 {% for repo in repos %}
 [{{ repo.name }}]
 name={{ repo.name }}

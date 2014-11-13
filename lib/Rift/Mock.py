@@ -46,7 +46,7 @@ class Mock(object):
             context['repos'].insert(0, {
                 'name': repo.name or 'repo%s' % prio,
                 'priority': prio,
-                'url': 'file://%s' % os.path.realpath(repo.rpms_dir) })
+                'url': repo.url })
 
         # Write file content
         with open(dstpath, 'w') as fmock:

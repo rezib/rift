@@ -30,7 +30,7 @@ class VM(object):
         self._repos = repos
 
         self.address = config.get('vm_address')
-        self.port = config.get('vm_port')
+        self.port = config.get('vm_port', os.getuid() + 2000)
         self.qemu = config.get('qemu')
 
         self._vm = None
@@ -126,7 +126,8 @@ yum -d1 makecache
 
     def cmd(self, command):
         """Run specified command inside this VM"""
-        cmd = [ 'ssh', '-oStrictHostKeyChecking=no', '-T',
+        cmd = [ 'ssh', '-oStrictHostKeyChecking=no', '-oLogLevel=ERROR',
+                '-oUserKnownHostsFile=/dev/null', '-T',
                 '-p', str(self.port), 'root@127.0.0.1', command ]
         logging.debug("Running command in VM: %s", ' '.join(cmd))
         popen = Popen(cmd) #, stdout=PIPE, stderr=STDOUT)

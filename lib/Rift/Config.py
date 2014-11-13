@@ -30,7 +30,7 @@ class Config(object):
             # 'maintainer'
             'qemu':          'qemu-system-x86_64',
             # 'vm_image'
-            'vm_port':       5522,
+            # 'vm_port'
             'vm_address':    '10.0.2.15',
 
             # XXX?: 'mock.name' ?

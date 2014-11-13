@@ -267,7 +267,7 @@ def action(config, args):
         # Check spec
         message('Validate specfile...')
         spec = Spec(pkg.specfile)
-        spec.check()
+        spec.check(pkg.dir)
 
         logging.info('Creating temporary repository')
         from Rift.TempDir import TempDir

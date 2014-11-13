@@ -9,6 +9,7 @@ Helper classes to manipulate RPM files and SPEC files.
 import os
 import rpm
 import shutil
+import logging
 from subprocess import Popen, PIPE, STDOUT
 
 from Rift import RiftError
@@ -114,10 +115,17 @@ class Spec(object):
 
         return RPM(os.path.join(destdir, self.srpmname))
 
-    def check(self):
+    def check(self, configdir=None):
         """Check specfile content using `rpmlint' tool."""
+        if configdir:
+            env = os.environ.copy()
+            env['XDG_CONFIG_HOME'] = configdir
+        else:
+            env = None
+
         cmd = ['rpmlint', '-o', 'NetworkEnabled False', self.filepath]
-        popen = Popen(cmd, stderr=PIPE)
+        logging.debug('Running rpmlint: %s', ' '.join(cmd))
+        popen = Popen(cmd, stderr=PIPE, env=env)
         stderr = popen.communicate()[1]
         if popen.returncode != 0:
             raise RiftError(stderr or 'rpmlint reported errors')

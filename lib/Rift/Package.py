@@ -12,6 +12,7 @@ import glob
 import logging
 
 from Rift import RiftError
+from Rift.LookAside import LookAside
 
 _META_FILE = 'info.yaml'
 _SOURCES_DIR = 'sources'
@@ -117,9 +118,7 @@ class Package(object):
         """
         Build package source RPM
         """
-        from Rift.LookAside import LookAside
         tmpdir = LookAside(self._config).import_dir(self.sourcesdir)
-
         srpm = mock.build_srpm(self.specfile, tmpdir.path or self.sourcesdir)
         tmpdir.delete()
         return srpm
@@ -129,7 +128,7 @@ class Package(object):
         Build package RPMS using provided `srpm' and repository list for build
         requires.
         """
-        mock.build_rpms(srpm)
+        return mock.build_rpms(srpm)
 
 
 class Test(object):

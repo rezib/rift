@@ -230,7 +230,8 @@ def action(config, args):
         logging.info("Built: %s", srpm.filepath)
 
         message("Building RPMS...")
-        pkg.build_rpms(mock, srpm)
+        for rpm in pkg.build_rpms(mock, srpm):
+            logging.info('Built: %s', rpm.filepath)
         message("RPMS successfully built")
 
         # Publish

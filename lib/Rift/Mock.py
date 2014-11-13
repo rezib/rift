@@ -129,7 +129,7 @@ class Mock(object):
             raise RiftError(stdout)
 
         # Return the list of built RPMs here.
-        return self.resultrpms('*.rpm', sources=False)
+        return list(self.resultrpms('*.rpm', sources=False))
 
     def publish(self, repo):
         """

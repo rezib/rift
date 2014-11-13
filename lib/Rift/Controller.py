@@ -4,6 +4,7 @@
 
 import argparse
 import logging
+from rpm import error as RpmError
 
 from Rift import RiftError
 from Rift.Config import Config, Staff, Modules
@@ -197,7 +198,7 @@ def action(config, args):
         elif args.command == 'import':
             rpm = RPM(args.file, config)
             if not rpm.is_source:
-                raise ValueError(args.file)
+                raise RiftError("%s is not a source RPM" % args.file)
             pkgname = rpm.name
 
         pkg = Package(pkgname, config, staff, modules)
@@ -317,8 +318,8 @@ def main():
 
         # Do the job
         return action(config, args)
-    
-    except RiftError as exp:
+
+    except (RpmError, RiftError) as exp:
         logging.error(str(exp))
         return 1
     except IOError as exp:

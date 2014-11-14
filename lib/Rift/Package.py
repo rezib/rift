@@ -38,6 +38,7 @@ class Package(object):
         self.dir = os.path.join(self._config.get('packages_dir'), self.name)
         self.sourcesdir = os.path.join(self.dir, _SOURCES_DIR)
         self.testsdir = os.path.join(self.dir, _TESTS_DIR)
+        self.metafile = os.path.join(self.dir, _META_FILE)
         self.specfile = os.path.join(self.dir, '%s.spec' % self.name)
 
     def check_info(self):
@@ -81,8 +82,7 @@ class Package(object):
         if self.origin:
             data['origin'] = self.origin
 
-        metafile = os.path.join(self.dir, _META_FILE)
-        with open(metafile, 'w') as fyaml:
+        with open(self.metafile, 'w') as fyaml:
             yaml.dump({'package': data}, fyaml, default_flow_style=False)
 
     def load(self, infopath=None):
@@ -92,7 +92,7 @@ class Package(object):
             if not os.path.exists(self.dir):
                 msg = "Package '%s' directory does not exist" % self.name
                 raise RiftError(msg)
-            infopath = os.path.join(self.dir, _META_FILE)
+            infopath = self.metafile
 
         with open(infopath) as fyaml:
             data = yaml.load(fyaml)

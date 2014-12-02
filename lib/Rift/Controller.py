@@ -87,8 +87,15 @@ def parse_options():
     # Validate options
     parser_check = subparsers.add_parser('validate',
                               help='Fully validate package')
-    parser_check.add_argument('package', metavar='PACKAGE',
+    parser_check.add_argument('packages', metavar='PACKAGE', nargs='+',
                               help='package name to validate')
+
+    # XXX: Validate diff
+    parser_check = subparsers.add_parser('validdiff')
+    parser_check.add_argument('patch', metavar='PATCH',
+                              type=argparse.FileType('r'))
+    parser_check.add_argument('--noquit', action='store_true',
+                               help='do not stop VM at the end')
 
     # LookAside options
     parser_la = subparsers.add_parser('lookaside',
@@ -222,6 +229,55 @@ def action_test(config, args, pkg, repos):
         banner("Test suite FAILED!")
         return 1
 
+def action_validate(config, args, pkgs, repo):
+    rcs = 0
+
+    for pkg in pkgs:
+
+        banner("Checking package '%s'" % pkg.name)
+
+        # Check info
+        message('Validate package info...')
+        pkg.load()
+        pkg.check_info()
+
+        # Check spec
+        message('Validate specfile...')
+        spec = Spec(pkg.specfile)
+        spec.check(pkg.dir)
+
+        logging.info('Creating temporary repository')
+        from Rift.TempDir import TempDir
+        stagedir = TempDir()
+        stagedir.create()
+        staging = Repository(stagedir.path, 'staging')
+        staging.create()
+
+        message('Preparing Mock environment...')
+        os_repo = RemoteRepository(config.get('repo_os_url'), 'os')
+        mock = Mock()
+        mock.init([os_repo, repo])
+
+        # Check build SRPM
+        message('Validate source RPM build...')
+        srpm = pkg.build_srpm(mock)
+
+        # Check build RPMS
+        message('Validate RPMS build...')
+        pkg.build_rpms(mock, srpm)
+
+        # Check tests
+        mock.publish(staging)
+        staging.update()
+        rc = action_test(config, args, pkg, [repo, staging])
+        rcs = rcs or rc
+
+        mock.clean()
+
+        stagedir.delete()
+
+    banner('All packages checked')
+    return rcs
 
 def action(config, args):
 
@@ -310,48 +366,79 @@ def action(config, args):
     # VALIDATE
     elif args.command == 'validate':
 
-        pkg = Package(args.package, config, staff, modules)
+        pkgs = [Package(pkg, config, staff, modules) for pkg in args.packages]
+        return action_validate(config, args, pkgs, repo)
 
-        # Check info
-        message('Validate package info...')
-        pkg.load()
-        pkg.check_info()
+    elif args.command == 'validdiff':
 
-        # Check spec
-        message('Validate specfile...')
-        spec = Spec(pkg.specfile)
-        spec.check(pkg.dir)
+        from unidiff import parse_unidiff
 
-        logging.info('Creating temporary repository')
-        from Rift.TempDir import TempDir
-        stagedir = TempDir()
-        stagedir.create()
-        staging = Repository(stagedir.path, 'staging')
-        staging.create()
+        pkglist = {}
+        for patchedfile in parse_unidiff(args.patch):
 
-        message('Preparing Mock environment...')
-        os_repo = RemoteRepository(config.get('repo_os_url'), 'os')
-        mock = Mock()
-        mock.init([os_repo, repo])
+            import os
+            filepath = patchedfile.path
+            names = filepath.split(os.path.sep)
 
-        # Check build SRPM
-        message('Validate source RPM build...')
-        srpm = pkg.build_srpm(mock)
- 
-        # Check build RPMS
-        message('Validate RPMS build...')
-        pkg.build_rpms(mock, srpm)
+            if filepath == config.get('staff_file'):
 
-        # Check tests
-        mock.publish(staging)
-        staging.update()
-        rc = action_test(config, args, pkg, [repo, staging])
+                staff = Staff()
+                staff.load(filepath)
+                logging.info('Staff file is OK.')
 
-        mock.clean()
+            elif filepath == config.get('modules_file'):
 
-        stagedir.delete()
+                staff = Staff()
+                staff.load(config.get('staff_file'))
 
-        return rc
+                modules = Modules(staff)
+                modules.load(filepath)
+                logging.info('Modules file is OK.')
+
+            elif names[0] == config.get('packages_dir'):
+
+                # Drop config.get('packages_dir') from list
+                names.pop(0)
+
+                pkg = Package(names.pop(0), config, staff, modules)
+                if pkg not in pkglist:
+                    # If this patch removes a file for this package,
+                    # do not check it if the whole package is no more there.
+                    if not patchedfile.is_deleted_file or os.path.exists(pkg.dir):
+                        pkglist[pkg.name] = pkg
+
+                # info.yaml
+                if filepath == pkg.metafile:
+                    logging.info('Detected meta file')
+
+                # specfile
+                elif filepath == pkg.specfile:
+                    logging.info('Detected spec file')
+
+                # backup specfile
+                elif filepath == '%s.orig' % pkg.specfile:
+                    logging.debug('Ignoring backup specfile')
+
+                # sources/
+                elif filepath.startswith(pkg.sourcesdir) and len(names) == 2:
+                    # XXX: Check binary/no binary
+                    logging.debug('Ignoring source file: %s', names[1])
+
+                # tests/
+                elif filepath.startswith(pkg.testsdir) and len(names) == 2:
+                    logging.debug('Ignoring test script: %s', names[1])
+
+                else:
+                    raise RiftError("Unknown file pattern: %s" % filepath)
+
+            elif filepath == '.gitignore':
+                logging.debug('Ignoring git file: %s', filepath)
+
+            else:
+                raise RiftError("Unknown file pattern: %s" % filepath)
+
+        # Re-validate each package
+        return action_validate(config, args, pkglist.values(), repo)
 
     return 0
 

@@ -310,6 +310,9 @@ def action(config, args):
                 raise RiftError("%s is not a source RPM" % args.file)
             pkgname = rpm.name
 
+        if args.maintainer is None:
+            raise RiftError("You must specify a maintainer")
+
         pkg = Package(pkgname, config, staff, modules)
         pkg.module = args.module
         pkg.maintainers = [args.maintainer]

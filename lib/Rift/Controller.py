@@ -464,11 +464,11 @@ def main():
         # Do the job
         return action(config, args)
 
-    except (RpmError, RiftError) as exp:
-        logging.error(str(exp))
-        return 1
-    except IOError as exp:
-        logging.error(str(exp))
-        return 1
+    except (RpmError, RiftError, IOError) as exp:
+        if logging.getLogger().isEnabledFor(logging.DEBUG):
+            raise
+        else:
+            logging.error(str(exp))
+            return 1
 
     return 0

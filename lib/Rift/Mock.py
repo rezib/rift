@@ -82,7 +82,7 @@ class Mock(object):
             repo.create()
 
         cmd = self._mock_base() + ['--init']
-        popen = Popen(cmd, stdout=PIPE) #, stderr=STDOUT)
+        popen = Popen(cmd, stdout=PIPE, cwd='/') #, stderr=STDOUT)
         stdout = popen.communicate()[0]
         if popen.returncode != 0:
             raise RiftError(stdout)
@@ -111,7 +111,8 @@ class Mock(object):
         sourcedir = os.path.realpath(sourcedir)
         cmd = self._mock_base() + ['--buildsrpm']
         cmd += ['--spec', specpath, '--source', sourcedir]
-        popen = Popen(cmd, stdout=PIPE) #, stderr=STDOUT)
+        logging.debug('Running mock: %s', ' '.join(cmd))
+        popen = Popen(cmd, stdout=PIPE, cwd='/') #, stderr=STDOUT)
         stdout = popen.communicate()[0]
         if popen.returncode != 0:
             raise RiftError(stdout)
@@ -123,7 +124,8 @@ class Mock(object):
         """Build binary RPMS using the provided Source RPM pointed by `srpm'"""
         cmd = self._mock_base() + ['--no-clean', '--no-cleanup-after']
         cmd += ['--configdir=%s' % self._tmpdir.path, srpm.filepath]
-        popen = Popen(cmd, stdout=PIPE) #, stderr=STDOUT)
+        logging.debug('Running mock: %s', ' '.join(cmd))
+        popen = Popen(cmd, stdout=PIPE, cwd='/') #, stderr=STDOUT)
         stdout = popen.communicate()[0]
         if popen.returncode != 0:
             raise RiftError(stdout)

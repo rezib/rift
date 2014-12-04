@@ -4,7 +4,7 @@
 
 """
 Class and function to detect binary files and push them into a file repository
-called a lookaside.
+called an annex.
 """
 
 import os
@@ -18,7 +18,7 @@ from Rift.TempDir import TempDir
 # List of ASCII printable characters
 _TEXTCHARS = bytearray([9, 10, 13] + range(32, 127))
 
-# XXX: Add a function needs_lookaside() which checks filesize too.
+# XXX: Add a function needs_annex() which checks filesize too.
 # to avoid copying very short file.
 # Or maybe we can count the number of non-ascii chars, if this number if very
 # small, consider this file as not binary.
@@ -46,7 +46,7 @@ def hashfile(filepath, iosize=65536):
     return hasher.hexdigest()
 
 
-class LookAside(object):
+class Annex(object):
     """
     Repository of binary files.
 
@@ -58,7 +58,7 @@ class LookAside(object):
     """
 
     def __init__(self, config, path=None):
-        self.path = path or config.get('lookaside')
+        self.path = path or config.get('annex')
 
     @classmethod
     def is_pointer(cls, filepath):
@@ -85,9 +85,9 @@ class LookAside(object):
         self.get(identifier, destpath)
 
     def delete(self, identifier):
-        """Remove a file from lookaside, whose ID is `identifier'"""
+        """Remove a file from annex, whose ID is `identifier'"""
         idpath = os.path.join(self.path, identifier)
-        logging.debug('Deleting from lookaside: %s', idpath)
+        logging.debug('Deleting from annex: %s', idpath)
         os.unlink(idpath)
 
     def import_dir(self, dirpath):
@@ -129,7 +129,7 @@ class LookAside(object):
 
     def list(self):
         """
-        Iterate over lookaside files, returning for them: filename, size and
+        Iterate over annex files, returning for them: filename, size and
         mtime.
         """
         for filename in os.listdir(self.path):
@@ -147,9 +147,9 @@ class LookAside(object):
         # Verify permission are correct before copying
         os.chmod(filepath, 0644)
 
-        # Move binary file to lookaside
+        # Move binary file to annex
         destpath = os.path.join(self.path, digest)
-        logging.debug('Importing %s into lookaside (%s)', filepath, digest)
+        logging.debug('Importing %s into annex (%s)', filepath, digest)
         shutil.copyfile(filepath, destpath)
 
         # Create fake pointer file

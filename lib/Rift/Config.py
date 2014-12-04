@@ -25,7 +25,7 @@ class Config(object):
             'staff_file':    _DEFAULT_STAFF_FILE,
             'modules_file':  _DEFAULT_MODULES_FILE,
             'packages_dir':  'packages',
-            # 'lookaside'
+            # 'annex'
             # 'repo_os_url'
             # 'repo_base'
             # 'maintainer'

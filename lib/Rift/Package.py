@@ -12,7 +12,7 @@ import glob
 import logging
 
 from Rift import RiftError
-from Rift.LookAside import LookAside
+from Rift.LookAside import Annex
 
 _META_FILE = 'info.yaml'
 _SOURCES_DIR = 'sources'
@@ -123,7 +123,7 @@ class Package(object):
         """
         Build package source RPM
         """
-        tmpdir = LookAside(self._config).import_dir(self.sourcesdir)
+        tmpdir = Annex(self._config).import_dir(self.sourcesdir)
         srpm = mock.build_srpm(self.specfile, tmpdir.path or self.sourcesdir)
         tmpdir.delete()
         return srpm

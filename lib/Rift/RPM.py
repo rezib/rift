@@ -13,7 +13,7 @@ import logging
 from subprocess import Popen, PIPE, STDOUT
 
 from Rift import RiftError
-from Rift.LookAside import LookAside, is_binary
+from Rift.LookAside import Annex, is_binary
 
 class RPM(object):
     """Manipulate a source or binary RPM."""
@@ -45,11 +45,11 @@ class RPM(object):
         self._srcfiles.extend(hdr[rpm.RPMTAG_SOURCE])
         self._srcfiles.extend(hdr[rpm.RPMTAG_PATCH])
 
-    def extract_srpm(self, specdir, srcdir, lookaside=None):
+    def extract_srpm(self, specdir, srcdir, annex=None):
         """
         Extract source rpm files into `specdir' and `srcdir'.
         
-        If some binary files are extracted, they are moved to default lookaside
+        If some binary files are extracted, they are moved to default annex
         or provided one.
         """
         assert self.is_source
@@ -70,12 +70,12 @@ class RPM(object):
         specfile = os.path.join(specdir, '%s.spec' % self.name)
         shutil.copy(specfile, '%s.orig' % specfile)
 
-        # Move binary source files to LookAside
-        lookaside = lookaside or LookAside(self._config)
+        # Move binary source files to Annex
+        annex = annex or Annex(self._config)
         for filename in self._srcfiles:
             filepath = os.path.join(srcdir, filename)
             if is_binary(filepath):
-                lookaside.push(filepath)
+                annex.push(filepath)
 
 
 class Spec(object):

@@ -14,7 +14,7 @@ from Rift.Package import Package
 from Rift.RPM import RPM, Spec
 from Rift.Repository import RemoteRepository, Repository
 from Rift.Mock import Mock
-from Rift.LookAside import LookAside
+from Rift.LookAside import Annex
 
 def message(msg):
     print "> %s" % msg
@@ -100,25 +100,25 @@ def parse_options():
     parser_check.add_argument('--noquit', action='store_true',
                                help='do not stop VM at the end')
 
-    # LookAside options
-    parser_la = subparsers.add_parser('lookaside',
-                              help='Manipulate lookaside cache')
-    subparsers_la = parser_la.add_subparsers(dest='la_cmd',
+    # Annex options
+    parser_annex = subparsers.add_parser('annex',
+                              help='Manipulate annex cache')
+    subparsers_annex = parser_annex.add_subparsers(dest='annex_cmd',
                               title='possible commands')
-    subparsers_la.add_parser('list', help='list cache content')
-    parser_la_push = subparsers_la.add_parser('push',
+    subparsers_annex.add_parser('list', help='list cache content')
+    parser_annex_push = subparsers_annex.add_parser('push',
                                               help='move a file into cache')
-    parser_la_push.add_argument('file', metavar='FILENAME',
+    parser_annex_push.add_argument('file', metavar='FILENAME',
                                 help='file path to be move')
-    parser_la_del = subparsers_la.add_parser('delete',
+    parser_annex_del = subparsers_annex.add_parser('delete',
                                               help='remove a file from cache')
-    parser_la_del.add_argument('id', metavar='ID',
+    parser_annex_del.add_argument('id', metavar='ID',
                                help='digest ID to delete')
-    parser_la_get = subparsers_la.add_parser('get',
+    parser_annex_get = subparsers_annex.add_parser('get',
                                               help='Copy a file from cache')
-    parser_la_get.add_argument('--id', metavar='DIGEST', required=True,
+    parser_annex_get.add_argument('--id', metavar='DIGEST', required=True,
                                help='digest ID to read')
-    parser_la_get.add_argument('--dest', metavar='PATH', required=True,
+    parser_annex_get.add_argument('--dest', metavar='PATH', required=True,
                                help='destination path')
 
     # Parse options
@@ -165,29 +165,29 @@ def action_check(args, config):
         logging.info('Spec file is OK.')
 
 
-def action_la(args, config):
-    """Action for 'lookaside' sub-commands."""
-    lookaside = LookAside(config)
+def action_annex(args, config):
+    """Action for 'annex' sub-commands."""
+    annex = Annex(config)
 
-    assert args.la_cmd in ('list', 'get', 'push', 'delete')
-    if args.la_cmd == 'list':
+    assert args.annex_cmd in ('list', 'get', 'push', 'delete')
+    if args.annex_cmd == 'list':
         fmt = "%-32s %10s  %s"
         print fmt % ('ID', 'SIZE', 'DATE')
         print fmt % ('--', '----', '----')
-        for filename, size, mtime in lookaside.list():
+        for filename, size, mtime in annex.list():
             timestr = time.strftime('%x %X', time.localtime(mtime))
             print fmt % (filename, size, timestr)
 
-    elif args.la_cmd == 'push':
-        lookaside.push(args.file)
+    elif args.annex_cmd == 'push':
+        annex.push(args.file)
         message('%s moved and replaced' % args.file)
 
-    elif args.la_cmd == 'delete':
-        lookaside.delete(args.id)
+    elif args.annex_cmd == 'delete':
+        annex.delete(args.id)
         message('%s has been deleted' % args.id)
 
-    elif args.la_cmd == 'get':
-        lookaside.get(args.id, args.dest)
+    elif args.annex_cmd == 'get':
+        annex.get(args.id, args.dest)
         message('%s has been created' % args.dest)
 
 
@@ -303,8 +303,8 @@ def action(config, args):
     if args.command == 'check':
         action_check(args, config)
         return
-    elif args.command == 'lookaside':
-        action_la(args, config)
+    elif args.command == 'annex':
+        action_annex(args, config)
         return
 
     # Now, other commands..

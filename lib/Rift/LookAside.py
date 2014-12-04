@@ -18,6 +18,11 @@ from Rift.TempDir import TempDir
 # List of ASCII printable characters
 _TEXTCHARS = bytearray([9, 10, 13] + range(32, 127))
 
+# XXX: Add a function needs_lookaside() which checks filesize too.
+# to avoid copying very short file.
+# Or maybe we can count the number of non-ascii chars, if this number if very
+# small, consider this file as not binary.
+
 def is_binary(filepath, blocksize=65536):
     """
     Look for non printable characters in the first blocksize bytes of filepath.

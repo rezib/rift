@@ -14,7 +14,7 @@ from Rift.Package import Package
 from Rift.RPM import RPM, Spec
 from Rift.Repository import RemoteRepository, Repository
 from Rift.Mock import Mock
-from Rift.LookAside import Annex
+from Rift.Annex import Annex
 
 def message(msg):
     print "> %s" % msg

@@ -13,7 +13,7 @@ import logging
 from subprocess import Popen, PIPE, STDOUT
 
 from Rift import RiftError
-from Rift.LookAside import Annex, is_binary
+from Rift.Annex import Annex, is_binary
 
 class RPM(object):
     """Manipulate a source or binary RPM."""

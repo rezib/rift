@@ -12,7 +12,7 @@ import glob
 import logging
 
 from Rift import RiftError
-from Rift.LookAside import Annex
+from Rift.Annex import Annex
 
 _META_FILE = 'info.yaml'
 _SOURCES_DIR = 'sources'

@@ -84,6 +84,7 @@ class Spec(object):
     def __init__(self, filepath):
         self.filepath = filepath
         self.srpmname = None
+        self.pkgnames = []
         self._load()
 
     def _load(self):
@@ -94,6 +95,7 @@ class Spec(object):
             spec = rpm.TransactionSet().parseSpec(self.filepath)
         except ValueError as exp:
             raise RiftError(str(exp))
+        self.pkgnames = [pkg.header['name'] for pkg in spec.packages]
         hdr = spec.sourceHeader
         self.srpmname = hdr.sprintf('%{NAME}-%{VERSION}-%{RELEASE}.src.rpm')
 

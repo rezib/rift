@@ -5,6 +5,7 @@
 import argparse
 import logging
 import time
+import textwrap
 from rpm import error as RpmError
 
 from Rift import RiftError
@@ -189,6 +190,22 @@ def action_la(args, config):
         lookaside.get(args.id, args.dest)
         message('%s has been created' % args.dest)
 
+
+from Rift.Package import Test
+class BasicTest(Test):
+
+    def __init__(self, pkg):
+        if pkg.rpmnames:
+            rpmnames = pkg.rpmnames
+        else:
+            rpmnames = Spec(pkg.specfile).pkgnames
+        cmd = textwrap.dedent("""
+        for pkg in %s; do
+            yum -y install $pkg && yum -y remove $pkg || exit 1
+        done""" % ' '.join(rpmnames))
+        Test.__init__(self, cmd, "basic install")
+        self.local = False
+
 def action_test(config, args, pkg, repos):
     """Process 'test' command."""
 
@@ -201,14 +218,11 @@ def action_test(config, args, pkg, repos):
 
     banner("Starting tests")
 
-    from Rift.Package import Test
-    cmd = "yum -d1 -y install %s && yum -d1 -y remove %s" % (pkg.name, pkg.name)
-    tst = Test(cmd, "basic install")
 
     from Rift.TestResults import TestResults
     results = TestResults()
     tests = list(pkg.tests())
-    tests.insert(0, tst)
+    tests.insert(0, BasicTest(pkg))
     for test in tests:
         message("Running test '%s'" % test.name)
         if vm.run_test(test) == 0:

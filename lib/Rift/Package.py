@@ -34,6 +34,7 @@ class Package(object):
         self.maintainers = None
         self.reason = None
         self.origin = None
+        self.rpmnames = None
 
         self.dir = os.path.join(self._config.get('packages_dir'), self.name)
         self.sourcesdir = os.path.join(self.dir, _SOURCES_DIR)
@@ -105,6 +106,10 @@ class Package(object):
             self.maintainers = data.get('maintainers')
         self.reason = data.get('reason')
         self.origin = data.get('origin')
+        if type(data.get('rpm_names')) is str:
+            self.rpmnames = [data.get('rpm_names')]
+        else:
+            self.rpmnames = data.get('rpm_names')
 
         self.check_info()
 

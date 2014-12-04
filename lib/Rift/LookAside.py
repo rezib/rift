@@ -98,7 +98,7 @@ class LookAside(object):
         dirpath and identified ones are copied into it. It is caller
         responsability to delete it when it does not need it anymore.
         """
-        tmpdir = TempDir()
+        tmpdir = TempDir('sources')
         textfiles = []
         for filename in os.listdir(dirpath):
             filepath = os.path.join(dirpath, filename)

@@ -69,7 +69,7 @@ class Mock(object):
         This should be cleaned with clean().
         """
         # Initialize the custom config directory
-        self._tmpdir = TempDir()
+        self._tmpdir = TempDir('mock')
         self._tmpdir.create()
         dstpath = os.path.join(self._tmpdir.path, self.MOCK_DEFAULT)
         self._create_template(repolist, dstpath)

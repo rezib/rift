@@ -252,7 +252,7 @@ def action_validate(config, args, pkgs, repo):
 
         logging.info('Creating temporary repository')
         from Rift.TempDir import TempDir
-        stagedir = TempDir()
+        stagedir = TempDir('stagedir')
         stagedir.create()
         staging = Repository(stagedir.path, 'staging')
         staging.create()

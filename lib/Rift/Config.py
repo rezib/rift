@@ -51,6 +51,7 @@ class Config(object):
             # 'annex'
             # 'repo_os_url'
             # 'repo_base'
+            'repos':         {},
             # 'maintainer'
             'qemu':          'qemu-system-x86_64',
             # 'vm_image'

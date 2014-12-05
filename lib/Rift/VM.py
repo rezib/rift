@@ -25,9 +25,10 @@ class VM(object):
     _PROJ_MOUNTPOINT = '/rift.project'
     NAME = 'rift1'
 
-    def __init__(self, config, repos):
+    def __init__(self, config, repos, suppl_repos=[]):
         self._image = config.get('vm_image')
         self._repos = repos
+        self._suppl_repos = suppl_repos
 
         self.address = config.get('vm_address')
         self.port = config.get('vm_port', os.getuid() + 2000)
@@ -90,6 +91,13 @@ class VM(object):
         fstab = ['project /%s 9p trans=virtio,version=9p2000.L,ro 0 0' 
                                                        % self._PROJ_MOUNTPOINT]
         repos = []
+        for prio, repo in enumerate(reversed(self._suppl_repos), len(self._repos) + 1):
+            repos.append("""[%s]
+name=%s
+baseurl=%s
+gpgcheck=0
+priority=%s""" % (repo.name, repo.name, repo.url, prio * 10))
+
         for prio, repo in enumerate(reversed(self._repos), 1):
             mkdirs.append('/rift.%s' % repo.name)
             fstab.append('%s /rift.%s 9p trans=virtio,version=9p2000.L 0 0' % 

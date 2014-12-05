@@ -210,11 +210,11 @@ class BasicTest(Test):
         Test.__init__(self, cmd, "basic install")
         self.local = False
 
-def action_test(config, args, pkg, repos):
+def action_test(config, args, pkg, repos, suppl_repos):
     """Process 'test' command."""
 
     from Rift.VM import VM
-    vm = VM(config, repos)
+    vm = VM(config, repos, suppl_repos)
     message("Preparing test environment")
     vm.spawn()
     vm.ready()
@@ -251,7 +251,7 @@ def action_test(config, args, pkg, repos):
         banner("Test suite FAILED!")
         return 1
 
-def action_validate(config, args, pkgs, repo):
+def action_validate(config, args, pkgs, repo, suppl_repos):
     rcs = 0
 
     for pkg in pkgs:
@@ -278,7 +278,7 @@ def action_validate(config, args, pkgs, repo):
         message('Preparing Mock environment...')
         os_repo = RemoteRepository(config.get('repo_os_url'), 'os')
         mock = Mock()
-        mock.init([os_repo, repo])
+        mock.init([os_repo] + suppl_repos + [repo])
 
         # Check build SRPM
         message('Validate source RPM build...')
@@ -291,7 +291,7 @@ def action_validate(config, args, pkgs, repo):
         # Check tests
         mock.publish(staging)
         staging.update()
-        rc = action_test(config, args, pkg, [repo, staging])
+        rc = action_test(config, args, pkg, [repo, staging], suppl_repos)
         rcs = rcs or rc
 
         mock.clean()
@@ -320,6 +320,9 @@ def action(config, args):
     modules.load(config.get('modules_file'))
 
     repo = Repository(config.get('repo_base'))
+    suppl_repos = []
+    for name, url in config.get('repos').items():
+        suppl_repos.append(RemoteRepository(url, name))
 
     # CREATE/IMPORT
     if args.command in ['create', 'import']:
@@ -357,7 +360,7 @@ def action(config, args):
         os_repo = RemoteRepository(config.get('repo_os_url'), 'os')
         message('Preparing Mock environment...')
         mock = Mock()
-        mock.init([os_repo, repo])
+        mock.init([os_repo] + suppl_repos + [repo])
 
         message("Building SRPM...")
         srpm = pkg.build_srpm(mock)
@@ -386,13 +389,13 @@ def action(config, args):
         pkg = Package(args.package, config, staff, modules)
         pkg.load()
 
-        action_test(config, args, pkg, [repo])
+        action_test(config, args, pkg, [repo], suppl_repos)
 
     # VALIDATE
     elif args.command == 'validate':
 
         pkgs = [Package(pkg, config, staff, modules) for pkg in args.packages]
-        return action_validate(config, args, pkgs, repo)
+        return action_validate(config, args, pkgs, repo, suppl_repos)
 
     elif args.command == 'validdiff':
 
@@ -463,7 +466,7 @@ def action(config, args):
                 raise RiftError("Unknown file pattern: %s" % filepath)
 
         # Re-validate each package
-        return action_validate(config, args, pkglist.values(), repo)
+        return action_validate(config, args, pkglist.values(), repo, suppl_repos)
 
     return 0
 

@@ -89,6 +89,8 @@ def parse_options():
                               help='Fully validate package')
     parser_check.add_argument('packages', metavar='PACKAGE', nargs='+',
                               help='package name to validate')
+    parser_check.add_argument('--noquit', action='store_true',
+                              help='do not stop VM at the end')
 
     # XXX: Validate diff
     parser_check = subparsers.add_parser('validdiff')
@@ -221,6 +223,8 @@ def action_test(config, args, pkg, repos):
         vm.cmd("poweroff")
         time.sleep(5)
         vm.stop()
+    else:
+        message("Not stopping the VM. Use: rift vm connect")
 
     if results.global_result:
         banner("Test suite SUCCEEDED")

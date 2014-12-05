@@ -13,6 +13,7 @@ import sys
 import time
 import logging
 import tempfile
+import textwrap
 from subprocess import Popen, PIPE, STDOUT
 
 from Rift import RiftError
@@ -91,44 +92,48 @@ class VM(object):
         fstab = ['project /%s 9p trans=virtio,version=9p2000.L,ro 0 0' 
                                                        % self._PROJ_MOUNTPOINT]
         repos = []
-        for prio, repo in enumerate(reversed(self._suppl_repos), len(self._repos) + 1):
-            repos.append("""[%s]
-name=%s
-baseurl=%s
-gpgcheck=0
-priority=%s""" % (repo.name, repo.name, repo.url, prio * 10))
-
         for prio, repo in enumerate(reversed(self._repos), 1):
             mkdirs.append('/rift.%s' % repo.name)
             fstab.append('%s /rift.%s 9p trans=virtio,version=9p2000.L 0 0' % 
                          (repo.name, repo.name))
-            repos.append("""[%s]
-name=%s
-baseurl=file:///rift.%s/
-gpgcheck=0
-priority=%s""" % (repo.name, repo.name, repo.name, prio * 10))
+            repos.insert(0, textwrap.dedent("""\
+                [%s]
+                name=%s
+                baseurl=file:///rift.%s/
+                gpgcheck=0
+                priority=%s
+                """) % (repo.name, repo.name, repo.name, prio))
+
+        for prio, repo in enumerate(reversed(self._suppl_repos), len(self._repos) + 1):
+            repos.insert(0, textwrap.dedent("""\
+                [%s]
+                name=%s
+                baseurl=%s
+                gpgcheck=0
+                priority=%s
+                """) % (repo.name, repo.name, repo.url, prio))
 
         # Build the full command line
-        cmd = """
-# Static host resolution
-echo '%s %s'  >> /etc/hosts
+        cmd = textwrap.dedent("""\
+            # Static host resolution
+            echo '%s %s'  >> /etc/hosts
 
-echo '%s' >> /etc/passwd
-echo '%s' >> /etc/group
+            echo '%s' >> /etc/passwd
+            echo '%s' >> /etc/group
 
-mkdir %s
-cat <<__EOF__ >>/etc/fstab
-%s
-__EOF__
-mount -t 9p -a
+            mkdir %s
+            cat <<__EOF__ >>/etc/fstab
+            %s
+            __EOF__
+            mount -t 9p -a
 
-cat <<__EOC__ >/etc/yum.repos.d/rift.repo
-%s
-__EOC__
+            cat <<__EOC__ >/etc/yum.repos.d/rift.repo
+            %s
+            __EOC__
 
-yum -d1 makecache
-""" % (self.address, self.NAME, userline, groupline, ' '.join(mkdirs),
-       "\n".join(fstab), "\n".join(repos))
+            yum -d1 makecache
+            """) % (self.address, self.NAME, userline, groupline,
+                    ' '.join(mkdirs), "\n".join(fstab), "\n".join(repos))
 
         self.cmd(cmd)
 
@@ -151,18 +156,18 @@ yum -d1 makecache
         funcs = {}
         funcs['vm_cmd'] = 'ssh %s -T -p %d root@127.0.0.1 "$@"' \
                                     % ('-oStrictHostKeyChecking=no', self.port)
-        funcs['vm_wait'] = """
-rc=1
-for i in {1..7}
-do
-  sleep 5
-  echo -n .
-  vm_cmd echo -e '\\\\nConnection is OK' && rc=0 && break
-done
-return $rc"""
-        funcs['vm_reboot'] = """
-echo -n 'Restarting VM...'
-vm_cmd 'reboot' && sleep 5 && vm_wait || return 1"""
+        funcs['vm_wait'] = textwrap.dedent("""\
+            rc=1
+            for i in {1..7}
+            do
+              sleep 5
+              echo -n .
+              vm_cmd echo -e '\\\\nConnection is OK' && rc=0 && break
+            done
+            return $rc""")
+        funcs['vm_reboot'] = textwrap.dedent("""\
+            echo -n 'Restarting VM...'
+            vm_cmd 'reboot' && sleep 5 && vm_wait || return 1""")
 
         if not test.local:
             cmd = "cd %s; %s" % (self._PROJ_MOUNTPOINT, test.command)

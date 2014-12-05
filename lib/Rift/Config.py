@@ -8,11 +8,34 @@ import errno
 
 from Rift import DeclError
 
+try:
+    # included in standard lib from Python 2.7
+    from collections import OrderedDict
+except ImportError:
+    # try importing the backported drop-in replacement, it's available on PyPI
+    from ordereddict import OrderedDict
+
+# Very simplified version of
+# http://stackoverflow.com/questions/5121931/in-python-how-can-you-load-yaml-mappings-as-ordereddicts
+# This does not implement the matching dumper.
+class OrderedLoader(yaml.SafeLoader):
+    """Specific yaml SafeLoader which imports yaml mapping using OrderedDict"""
+
+def _construct_mapping(loader, node):
+    loader.flatten_mapping(node)
+    return OrderedDict(loader.construct_pairs(node))
+
+OrderedLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+    _construct_mapping)
+
+
 _DEFAULT_STAFF_FILE = 'packages/staff.yaml'
 _STAFF_KEYS = ['email']
 
 _DEFAULT_MODULES_FILE = 'packages/modules.yaml'
 _MODULES_KEYS = ['manager']
+
 
 class Config(object):
 
@@ -51,7 +74,7 @@ class Config(object):
 
         try:
             with open(filepath) as fyaml:
-                data = yaml.load(fyaml)
+                data = yaml.load(fyaml, Loader=OrderedLoader)
 
             self.options.update(data)
 

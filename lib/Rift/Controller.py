@@ -318,7 +318,7 @@ def action(config, args):
     modules = Modules(staff)
     modules.load(config.get('modules_file'))
 
-    repo = Repository(config.get('repo_base'))
+    repo = Repository(config.get('working_repo'))
     suppl_repos = []
     if config.get('repo_os_url'):
         suppl_repos.append(RemoteRepository(config.get('repo_os_url'), 'os'))

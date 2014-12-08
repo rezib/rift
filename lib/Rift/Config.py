@@ -50,7 +50,7 @@ class Config(object):
             'packages_dir':  'packages',
             # 'annex'
             # 'repo_os_url'
-            # 'repo_base'
+            # 'working_repo'
             'repos':         {},
             # 'maintainer'
             'qemu':          'qemu-system-x86_64',

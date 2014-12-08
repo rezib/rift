@@ -14,7 +14,7 @@ from Rift.Package import Package
 from Rift.RPM import RPM, Spec
 from Rift.Repository import RemoteRepository, Repository
 from Rift.Mock import Mock
-from Rift.Annex import Annex
+from Rift.Annex import Annex, is_binary
 
 def message(msg):
     print "> %s" % msg
@@ -108,7 +108,7 @@ def parse_options():
     subparsers_annex.add_parser('list', help='list cache content')
     parser_annex_push = subparsers_annex.add_parser('push',
                                               help='move a file into cache')
-    parser_annex_push.add_argument('file', metavar='FILENAME',
+    parser_annex_push.add_argument('files', metavar='FILENAME', nargs='+',
                                 help='file path to be move')
     parser_annex_del = subparsers_annex.add_parser('delete',
                                               help='remove a file from cache')
@@ -179,8 +179,12 @@ def action_annex(args, config):
             print fmt % (filename, size, timestr)
 
     elif args.annex_cmd == 'push':
-        annex.push(args.file)
-        message('%s moved and replaced' % args.file)
+        for srcfile in args.files:
+            if is_binary(srcfile):
+                annex.push(srcfile)
+                message('%s moved and replaced' % srcfile)
+            else:
+                message('%s is not binary, ignoring' % srcfile)
 
     elif args.annex_cmd == 'delete':
         annex.delete(args.id)

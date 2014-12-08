@@ -18,21 +18,25 @@ from Rift.TempDir import TempDir
 # List of ASCII printable characters
 _TEXTCHARS = bytearray([9, 10, 13] + range(32, 127))
 
-# XXX: Add a function needs_annex() which checks filesize too.
-# to avoid copying very short file.
-# Or maybe we can count the number of non-ascii chars, if this number if very
-# small, consider this file as not binary.
-
 def is_binary(filepath, blocksize=65536):
     """
     Look for non printable characters in the first blocksize bytes of filepath.
 
     Note it only looks for the first bytes. If binary data appeared farther in
     that file, it will be wrongly detected as a non-binary one.
+
+    If there is a very small number of binary characters compared to the whole
+    file, we still consider it as non-binary to avoid using Annex uselessly.
     """
     with open(filepath, 'rb') as srcfile:
         data = srcfile.read(blocksize)
-        result = bool(data.translate(None, _TEXTCHARS))
+        binchars = data.translate(None, _TEXTCHARS)
+        # If there is very few binary characters among the file, consider it as
+        # plain us-ascii.
+        if float(len(binchars)) / float(len(data)) < 0.01:
+            result = False
+        else:
+            result = bool(binchars)
     return result
 
 def hashfile(filepath, iosize=65536):

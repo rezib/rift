@@ -276,9 +276,8 @@ def action_validate(config, args, pkgs, repo, suppl_repos):
         staging.create()
 
         message('Preparing Mock environment...')
-        os_repo = RemoteRepository(config.get('repo_os_url'), 'os')
         mock = Mock()
-        mock.init([os_repo] + suppl_repos + [repo])
+        mock.init(suppl_repos + [repo])
 
         # Check build SRPM
         message('Validate source RPM build...')
@@ -321,6 +320,8 @@ def action(config, args):
 
     repo = Repository(config.get('repo_base'))
     suppl_repos = []
+    if config.get('repo_os_url'):
+        suppl_repos.append(RemoteRepository(config.get('repo_os_url'), 'os'))
     for name, url in config.get('repos').items():
         suppl_repos.append(RemoteRepository(url, name))
 
@@ -357,10 +358,9 @@ def action(config, args):
         pkg = Package(args.package, config, staff, modules)
         pkg.load()
 
-        os_repo = RemoteRepository(config.get('repo_os_url'), 'os')
         message('Preparing Mock environment...')
         mock = Mock()
-        mock.init([os_repo] + suppl_repos + [repo])
+        mock.init(suppl_repos + [repo])
 
         message("Building SRPM...")
         srpm = pkg.build_srpm(mock)

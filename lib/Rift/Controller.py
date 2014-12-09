@@ -86,11 +86,11 @@ def parse_options():
                         help='do not stop VM at the end')
 
     # Validate options
-    parser_check = subparsers.add_parser('validate',
+    parser_valid = subparsers.add_parser('validate',
                               help='Fully validate package')
-    parser_check.add_argument('packages', metavar='PACKAGE', nargs='+',
+    parser_valid.add_argument('packages', metavar='PACKAGE', nargs='+',
                               help='package name to validate')
-    parser_check.add_argument('--noquit', action='store_true',
+    parser_valid.add_argument('--noquit', action='store_true',
                               help='do not stop VM at the end')
 
     # XXX: Validate diff

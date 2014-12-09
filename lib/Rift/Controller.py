@@ -180,11 +180,13 @@ def action_annex(args, config):
 
     elif args.annex_cmd == 'push':
         for srcfile in args.files:
-            if is_binary(srcfile):
+            if Annex.is_pointer(srcfile):
+                message('%s: already pointing to annex' % srcfile)
+            elif is_binary(srcfile):
                 annex.push(srcfile)
-                message('%s moved and replaced' % srcfile)
+                message('%s: moved and replaced' % srcfile)
             else:
-                message('%s is not binary, ignoring' % srcfile)
+                message('%s: not binary, ignoring' % srcfile)
 
     elif args.annex_cmd == 'delete':
         annex.delete(args.id)

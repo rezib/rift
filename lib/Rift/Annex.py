@@ -8,6 +8,8 @@ called an annex.
 """
 
 import os
+import time
+import yaml
 import string
 import shutil
 import hashlib
@@ -92,6 +94,8 @@ class Annex(object):
         """Remove a file from annex, whose ID is `identifier'"""
         idpath = os.path.join(self.path, identifier)
         logging.debug('Deleting from annex: %s', idpath)
+        if os.path.exists(idpath + '.info'):
+            os.unlink(idpath + '.info')
         os.unlink(idpath)
 
     def import_dir(self, dirpath):
@@ -137,8 +141,9 @@ class Annex(object):
         mtime.
         """
         for filename in os.listdir(self.path):
-            meta = os.stat(os.path.join(self.path, filename))
-            yield filename, meta.st_size, meta.st_mtime
+            if not filename.endswith('.info'):
+                meta = os.stat(os.path.join(self.path, filename))
+                yield filename, meta.st_size, meta.st_mtime
 
     def push(self, filepath):
         """
@@ -150,6 +155,21 @@ class Annex(object):
 
         # Verify permission are correct before copying
         os.chmod(filepath, 0644)
+
+        # Prepare metadata file
+        metapath = os.path.join(self.path, digest + '.info')
+        metadata = {}
+        # Read current metadata if present
+        if os.path.exists(metapath):
+            with open(metapath) as fyaml:
+                metadata = yaml.load(fyaml)
+
+        # Update them and write them back
+        fileset = metadata.setdefault('filenames', {})
+        fileset.setdefault(os.path.basename(filepath), {})
+        fileset[os.path.basename(filepath)]['date'] = time.strftime("%c")
+        with open(metapath, 'w') as fyaml:
+            yaml.dump(metadata, fyaml, default_flow_style=False)
 
         # Move binary file to annex
         destpath = os.path.join(self.path, digest)

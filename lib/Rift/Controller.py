@@ -70,11 +70,11 @@ def parse_options():
                               help='path of file to check')
 
     # Build options
-    parser_check = subparsers.add_parser('build',
+    parser_build = subparsers.add_parser('build',
                         help='build source RPM and RPMS')
-    parser_check.add_argument('package', metavar='PACKAGE',
+    parser_build.add_argument('package', metavar='PACKAGE',
                         help='package name to build')
-    parser_check.add_argument('-p', '--publish', action='store_true',
+    parser_build.add_argument('-p', '--publish', action='store_true',
                         help='publish build RPMS to repository')
 
     # Test options

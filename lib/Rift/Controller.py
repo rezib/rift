@@ -530,5 +530,8 @@ def main():
         else:
             logging.error(str(exp))
             return 1
+    except KeyboardInterrupt:
+        message('Keyboard interrupt. Exiting...')
+        return 1
 
     return 0

@@ -43,28 +43,54 @@ class Config(object):
 
     _DEFAULT_FILE = 'project.conf'
 
-    def __init__(self):
-        self.options = {
-            'staff_file':    _DEFAULT_STAFF_FILE,
-            'modules_file':  _DEFAULT_MODULES_FILE,
-            'packages_dir':  'packages',
-            # 'annex'
-            # 'repo_os_url'
-            # 'working_repo'
-            'repos':         {},
-            # 'maintainer'
-            'qemu':          'qemu-system-x86_64',
-            # 'vm_image'
-            # 'vm_port'
-            'vm_address':    '10.0.2.15',
+    SYNTAX = {
+        'staff_file': {
+            'default':   _DEFAULT_STAFF_FILE,
+        },
+        'modules_file': {
+            'default':   _DEFAULT_MODULES_FILE,
+        },
+        'packages_dir': {
+            'default':  'packages',
+        },
+        'annex': {
+            'required': True,
+        },
+        'repo_os_url': { },
+        'working_repo': {
+            'required': True,
+        },
+        'repos': {
+            'check':    'dict',
+        },
+        'maintainer':  { },
+        'qemu': {
+            'default':  'qemu-system-x86_64',
+        },
+        'vm_image':    {
+            'required': True,
+            # XXX?: default value?
+        },
+        'vm_port': {
+            'check':    'digit',
+        },
+        'vm_address': {
+            'default':  '10.0.2.15',
+        },
+        # XXX?: 'mock.name' ?
+        # XXX?: 'mock.template' ?
+    }
 
-            # XXX?: 'mock.name' ?
-            # XXX?: 'mock.template' ?
-            # XXX?: default vm_image ?
-            }
+    def __init__(self):
+        self.options = { }
 
     def get(self, option, default=None):
-        return self.options.get(option, default)
+        if option in self.options:
+            return self.options[option]
+        elif option in self.SYNTAX:
+            return self.SYNTAX[option].get('default', default)
+        else:
+            return default
 
     def load(self, filepath=None):
         if filepath is None:
@@ -77,10 +103,50 @@ class Config(object):
             with open(filepath) as fyaml:
                 data = yaml.load(fyaml, Loader=OrderedLoader)
 
-            self.options.update(data)
+            self._check(data)
 
         except yaml.error.YAMLError as exp:
             raise DeclError(str(exp))
+
+    def set(self, key, value):
+
+        # Key is known
+        if key not in self.SYNTAX:
+            raise DeclError("Unknown '%s' key" % key)
+
+        # Check type
+        check = self.SYNTAX[key].get('check', 'string')
+        assert check in ('string', 'dict', 'digit')
+        if check == 'string':
+            if not isinstance(value, str):
+                raise DeclError("Bad data type for '%s'" % key)
+            self.options[key] = str(value)
+        elif check == 'dict':
+            if not isinstance(value, dict):
+                raise DeclError("Bad data type for '%s'" % key)
+            self.options[key] = value
+        elif check == 'digit':
+            if not isinstance(value, int):
+                raise DeclError("Bad data type for '%s'" % key)
+            self.options[key] = int(value)
+
+
+    def _check(self, data):
+        """
+        Update config content with data dict, checking data content respect
+        SYNTAX spec.
+
+        It also checks for mandatory options.
+        """
+        for key, value in data.items():
+            self.set(key, value)
+
+        # Check for mandatory keys
+        for key in self.SYNTAX:
+            if self.SYNTAX[key].get('required', False) and \
+               not 'default' in self.SYNTAX[key]:
+                if key not in self.options:
+                    raise DeclError("'%s' is not defined" % key)
 
 
 class Staff(object):

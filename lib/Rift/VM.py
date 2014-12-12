@@ -26,7 +26,7 @@ class VM(object):
     _PROJ_MOUNTPOINT = '/rift.project'
     NAME = 'rift1'
 
-    def __init__(self, config, repos, suppl_repos=[]):
+    def __init__(self, config, repos, suppl_repos=()):
         self._image = config.get('vm_image')
         self._repos = repos
         self._suppl_repos = suppl_repos
@@ -137,11 +137,15 @@ class VM(object):
 
         self.cmd(cmd)
 
-    def cmd(self, command):
+    def cmd(self, command=None, options=('-T',)):
         """Run specified command inside this VM"""
         cmd = [ 'ssh', '-oStrictHostKeyChecking=no', '-oLogLevel=ERROR',
-                '-oUserKnownHostsFile=/dev/null', '-T',
-                '-p', str(self.port), 'root@127.0.0.1', command ]
+                '-oUserKnownHostsFile=/dev/null', '-p', str(self.port),
+                'root@127.0.0.1' ]
+        if options:
+            cmd += options
+        if command:
+            cmd.append(command)
         logging.debug("Running command in VM: %s", ' '.join(cmd))
         popen = Popen(cmd) #, stdout=PIPE, stderr=STDOUT)
         popen.wait()
@@ -151,7 +155,8 @@ class VM(object):
         """
         Run specified test using this VM.
         
-        If test is local, it is run on local host, if not, it is run inside the VM.
+        If test is local, it is run on local host, if not, it is run inside the
+        VM.
         """
         funcs = {}
         funcs['vm_cmd'] = 'ssh %s -T -p %d root@127.0.0.1 "$@"' \

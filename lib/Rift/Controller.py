@@ -15,6 +15,7 @@ from Rift.RPM import RPM, Spec
 from Rift.Repository import RemoteRepository, Repository
 from Rift.Mock import Mock
 from Rift.Annex import Annex, is_binary
+from Rift.VM import VM
 
 def message(msg):
     print "> %s" % msg
@@ -121,6 +122,14 @@ def parse_options():
     parser_annex_get.add_argument('--dest', metavar='PATH', required=True,
                                help='destination path')
 
+    # VM options
+    parser_vm = subparsers.add_parser('vm',
+                              help='Manipulate VM process')
+    subparsers_vm = parser_vm.add_subparsers(dest='vm_cmd',
+                              title='possible commands')
+    subparsers_vm.add_parser('connect', help='connect to running VM')
+    subparsers_vm.add_parser('start', help='launch a new VM')
+
     # Parse options
     return parser.parse_args()
 
@@ -215,7 +224,6 @@ class BasicTest(Test):
 def action_test(config, args, pkg, repos, suppl_repos):
     """Process 'test' command."""
 
-    from Rift.VM import VM
     vm = VM(config, repos, suppl_repos)
     message("Preparing test environment")
     vm.spawn()
@@ -238,7 +246,6 @@ def action_test(config, args, pkg, repos, suppl_repos):
             results.add_failure(test.name)
             message("Test '%s': ERROR" % test.name)
 
-    # XXX: Add a way to start a VM without stopping it (vm command?)
     if not getattr(args, 'noquit', False):
         vm.cmd("poweroff")
         time.sleep(5)
@@ -302,30 +309,53 @@ def action_validate(config, args, pkgs, repo, suppl_repos):
     banner('All packages checked')
     return rcs
 
+def action_vm(config, args, repos, suppl_repos):
+    """Action for 'vm' sub-commands."""
+
+    vm = VM(config, repos, suppl_repos)
+
+    assert args.vm_cmd in ('connect', 'start')
+    if args.vm_cmd == 'connect':
+        vm.cmd(options=None)
+    elif args.vm_cmd == 'start':
+        message('Launching VM ...')
+        vm.spawn()
+        vm.ready()
+        vm.prepare()
+        message("VM started. Use: rift vm connect")
+
 def action(config, args):
 
     # CHECK
     if args.command == 'check':
         action_check(args, config)
         return
+
+    # ANNEX
     elif args.command == 'annex':
         action_annex(args, config)
         return
 
-    # Now, other commands..
-
-    staff = Staff()
-    staff.load(config.get('staff_file'))
-
-    modules = Modules(staff)
-    modules.load(config.get('modules_file'))
-
+    # Repo objects
     repo = Repository(config.get('working_repo'))
     suppl_repos = []
     if config.get('repo_os_url'):
         suppl_repos.append(RemoteRepository(config.get('repo_os_url'), 'os'))
     for name, url in config.get('repos').items():
         suppl_repos.append(RemoteRepository(url, name))
+
+    # VM
+    if args.command == 'vm':
+        action_vm(config, args, [repo], suppl_repos)
+        return
+
+    # Now, package related commands..
+
+    staff = Staff()
+    staff.load(config.get('staff_file'))
+
+    modules = Modules(staff)
+    modules.load(config.get('modules_file'))
 
     # CREATE/IMPORT
     if args.command in ['create', 'import']:

@@ -491,6 +491,9 @@ def action(config, args):
                 else:
                     raise RiftError("Unknown file pattern: %s" % filepath)
 
+            elif filepath == 'mock.tpl':
+                logging.debug('Ignoring mock template file: %s', filepath)
+
             elif filepath == '.gitignore':
                 logging.debug('Ignoring git file: %s', filepath)
 

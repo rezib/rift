@@ -98,7 +98,7 @@ class Annex(object):
             os.unlink(idpath + '.info')
         os.unlink(idpath)
 
-    def import_dir(self, dirpath):
+    def import_dir(self, dirpath, force_temp=False):
         """
         Look for identifier files in `dirpath' directory and setup a usable
         directory.
@@ -110,8 +110,13 @@ class Annex(object):
         If it does, this temporary directory is created and text files from
         dirpath and identified ones are copied into it. It is caller
         responsability to delete it when it does not need it anymore.
+
+        If `force_temp' is True, temporary is always created and source files
+        copied in it even if there is no binary files.
         """
         tmpdir = TempDir('sources')
+        if force_temp:
+            tmpdir.create()
         textfiles = []
         for filename in os.listdir(dirpath):
             filepath = os.path.join(dirpath, filename)

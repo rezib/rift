@@ -9,6 +9,7 @@ Class to manipulate packages and package tests with Rift.
 import os
 import yaml
 import glob
+import shutil
 import logging
 
 from Rift import RiftError
@@ -123,8 +124,14 @@ class Package(object):
         """
         Build package source RPM
         """
-        tmpdir = Annex(self._config).import_dir(self.sourcesdir)
-        srpm = mock.build_srpm(self.specfile, tmpdir.path or self.sourcesdir)
+        tmpdir = Annex(self._config).import_dir(self.sourcesdir,
+                                                force_temp=True)
+
+        # To avoid root_squash issue, also copy the specfile in the temp dir
+        tmpspec = os.path.join(tmpdir.path, os.path.basename(self.specfile))
+        shutil.copyfile(self.specfile, tmpspec)
+
+        srpm = mock.build_srpm(tmpspec, tmpdir.path or self.sourcesdir)
         tmpdir.delete()
         return srpm
 

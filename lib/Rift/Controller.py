@@ -111,6 +111,10 @@ def parse_options():
                                               help='move a file into cache')
     parser_annex_push.add_argument('files', metavar='FILENAME', nargs='+',
                                 help='file path to be move')
+    parser_annex_restore = subparsers_annex.add_parser('restore',
+                         help='restore file content previously pushed to annex')
+    parser_annex_restore.add_argument('files', metavar='FILENAME', nargs='+',
+                                help='file path to be restored')
     parser_annex_del = subparsers_annex.add_parser('delete',
                                               help='remove a file from cache')
     parser_annex_del.add_argument('id', metavar='ID',
@@ -178,7 +182,7 @@ def action_annex(args, config):
     """Action for 'annex' sub-commands."""
     annex = Annex(config)
 
-    assert args.annex_cmd in ('list', 'get', 'push', 'delete')
+    assert args.annex_cmd in ('list', 'get', 'push', 'delete', 'restore')
     if args.annex_cmd == 'list':
         fmt = "%-32s %10s  %s"
         print fmt % ('ID', 'SIZE', 'DATE')
@@ -196,6 +200,14 @@ def action_annex(args, config):
                 message('%s: moved and replaced' % srcfile)
             else:
                 message('%s: not binary, ignoring' % srcfile)
+
+    elif args.annex_cmd == 'restore':
+        for srcfile in args.files:
+            if Annex.is_pointer(srcfile):
+                annex.get_by_path(srcfile, srcfile)
+                message('%s: fetched from annex' % srcfile)
+            else:
+                message('%s: not an annex pointer, ignoring' % srcfile)
 
     elif args.annex_cmd == 'delete':
         annex.delete(args.id)

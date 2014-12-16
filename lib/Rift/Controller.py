@@ -168,7 +168,12 @@ def action_la(args, config):
 
     assert args.la_cmd in ('list', 'get', 'push', 'delete')
     if args.la_cmd == 'list':
-        lookaside.list()
+        fmt = "%-32s %10s  %s"
+        print fmt % ('ID', 'SIZE', 'DATE')
+        print fmt % ('--', '----', '----')
+        for filename, size, mtime in lookaside.list():
+            timestr = time.strftime('%x %X', time.localtime(mtime))
+            print fmt % (filename, size, timestr)
 
     elif args.la_cmd == 'push':
         lookaside.push(args.file)

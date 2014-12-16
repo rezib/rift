@@ -8,7 +8,6 @@ called a lookaside.
 """
 
 import os
-import time
 import string
 import shutil
 import hashlib
@@ -128,13 +127,9 @@ class LookAside(object):
         Iterate over lookaside files, returning for them: filename, size and
         mtime.
         """
-        fmt = "%-32s %10s  %s"
-        print fmt % ('ID', 'SIZE', 'DATE')
-        print fmt % ('--', '----', '----')
         for filename in os.listdir(self.path):
             meta = os.stat(os.path.join(self.path, filename))
-            timestr = time.strftime('%x %X', time.localtime(meta.st_mtime))
-            print fmt % (filename, meta.st_size, timestr)
+            yield filename, meta.st_size, meta.st_mtime
 
     def push(self, filepath):
         """

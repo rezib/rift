@@ -93,6 +93,8 @@ def parse_options():
                               help='package name to validate')
     parser_valid.add_argument('--noquit', action='store_true',
                               help='do not stop VM at the end')
+    parser_valid.add_argument('-p', '--publish', action='store_true',
+                              help='publish build RPMS to repository')
 
     # XXX: Validate diff
     parser_check = subparsers.add_parser('validdiff')
@@ -100,6 +102,9 @@ def parse_options():
                               type=argparse.FileType('r'))
     parser_check.add_argument('--noquit', action='store_true',
                                help='do not stop VM at the end')
+    parser_check.add_argument('-p', '--publish', action='store_true',
+                              help='publish build RPMS to repository')
+
 
     # Annex options
     parser_annex = subparsers.add_parser('annex',
@@ -321,6 +326,15 @@ def action_validate(config, args, pkgs, repo, suppl_repos):
         staging.update()
         rc = action_test(config, args, pkg, [repo, staging], suppl_repos)
         rcs = rcs or rc
+
+        # Also publish on working repo if requested
+        # XXX: All RPMs should be published when all of them have been validated
+        if args.publish:
+            message("Publishing RPMS...")
+            mock.publish(repo)
+
+            message("Updating repository...")
+            repo.update()
 
         mock.clean()
 

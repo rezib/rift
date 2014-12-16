@@ -117,8 +117,7 @@ class Spec(object):
 
         return RPM(os.path.join(destdir, self.srpmname))
 
-    def check(self, configdir=None):
-        """Check specfile content using `rpmlint' tool."""
+    def _check(self, configdir=None):
         if configdir:
             env = os.environ.copy()
             env['XDG_CONFIG_HOME'] = configdir
@@ -127,7 +126,32 @@ class Spec(object):
 
         cmd = ['rpmlint', '-o', 'NetworkEnabled False', self.filepath]
         logging.debug('Running rpmlint: %s', ' '.join(cmd))
+        return cmd, env
+
+    def check(self, configdir=None):
+        """Check specfile content using `rpmlint' tool."""
+        cmd, env = self._check(configdir)
         popen = Popen(cmd, stderr=PIPE, env=env)
         stderr = popen.communicate()[1]
         if popen.returncode != 0:
             raise RiftError(stderr or 'rpmlint reported errors')
+
+    def analyze(self, review, configdir=None):
+        """Run `rpmlint' for this specfile and fill provided `review'."""
+        cmd, env = self._check(configdir)
+        popen = Popen(cmd, stdout=PIPE, stderr=PIPE, env=env)
+        stdout, stderr = popen.communicate()
+        if popen.returncode not in (0, 64, 66):
+            raise RiftError(stderr or 'rpmlint returned %d' % popen.returncode)
+
+        for line in stdout.splitlines():
+            if line.startswith(self.filepath + ':'):
+                try:
+                    _, linenbr, code, txt = line.split(':', 3)
+                    review.add_comment(self.filepath, int(linenbr),
+                                       code.strip(), txt.strip())
+                except (ValueError, KeyError):
+                    pass
+
+        if popen.returncode != 0:
+            review.invalidate()

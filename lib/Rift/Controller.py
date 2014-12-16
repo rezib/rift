@@ -134,6 +134,14 @@ def parse_options():
     subparsers_vm.add_parser('connect', help='connect to running VM')
     subparsers_vm.add_parser('start', help='launch a new VM')
 
+    # Gerrit review
+    parser_gerrit = subparsers.add_parser('gerrit', add_help=False,
+                              help='Make Gerrit automatic review')
+    parser_gerrit.add_argument('--change', help="Gerrit Change-Id")
+    parser_gerrit.add_argument('--patchset', help="Gerrit patchset ID")
+    parser_gerrit.add_argument('patch', metavar='PATCH',
+                               type=argparse.FileType('r'))
+
     # Parse options
     return parser.parse_args()
 
@@ -336,6 +344,27 @@ def action_vm(config, args, repos, suppl_repos):
         vm.prepare()
         message("VM started. Use: rift vm connect")
 
+def action_gerrit(args, config, staff, modules):
+    """Review a patchset for Gerrit (specfiles)"""
+
+    from Rift.Gerrit import Review
+    review = Review()
+
+    # Parse matching diff and specfiles in it
+    from unidiff import parse_unidiff
+    for patchedfile in parse_unidiff(args.patch):
+        filepath = patchedfile.path
+        import os
+        names = filepath.split(os.path.sep)
+        if names[0] == config.get('packages_dir'):
+            pkg = Package(names[1], config, staff, modules)
+            if filepath == pkg.specfile and not patchedfile.is_deleted_file:
+                Spec(pkg.specfile).analyze(review, pkg.dir)
+
+    # Push review
+    review.msg_header = 'rpmlint analysis'
+    review.push(config, args.change, args.patchset)
+
 def action(config, args):
 
     # CHECK
@@ -514,6 +543,10 @@ def action(config, args):
 
         # Re-validate each package
         return action_validate(config, args, pkglist.values(), repo, suppl_repos)
+
+    # GERRIT
+    elif args.command == 'gerrit':
+        return action_gerrit(args, config, staff, modules)
 
     return 0
 

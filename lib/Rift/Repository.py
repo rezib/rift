@@ -35,6 +35,7 @@ Helper class for YUM repository structure management.
 """
 
 import os
+import logging
 import shutil
 from subprocess import Popen, PIPE, STDOUT
 
@@ -97,7 +98,9 @@ class Repository(RemoteRepository):
         subdirectory based on RPM type and architecture.
         """
         if rpm.is_source:
+            logging.debug("Adding %s to repo %s", rpm.filepath, self.srpms_dir)
             shutil.copy(rpm.filepath, self.srpms_dir)
         else:
+            logging.debug("Adding %s to repo %s", rpm.filepath, self.rpms_dir)
             # rpms_dir already points to architecture directory
             shutil.copy(rpm.filepath, self.rpms_dir)

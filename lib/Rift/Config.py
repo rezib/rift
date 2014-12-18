@@ -30,7 +30,6 @@
 # knowledge of the CeCILL license and that you accept its terms.
 #
 
-import os
 import yaml
 import errno
 
@@ -70,6 +69,7 @@ class Config(object):
     # XXX: Support hierarchical configuration (vm.image = ...)
 
     _DEFAULT_FILE = 'project.conf'
+    ALLOW_MISSING = False
 
     SYNTAX = {
         'staff_file': {
@@ -124,20 +124,30 @@ class Config(object):
             return default
 
     def load(self, filepath=None):
+        """
+        Load yaml file content.
+
+        If filepath is not defined, the _DEFAULT_FILE is used.
+        """
         if filepath is None:
             filepath = self._DEFAULT_FILE
-
-        if not os.path.exists(filepath):
-            return
 
         try:
             with open(filepath) as fyaml:
                 data = yaml.load(fyaml, Loader=OrderedLoader)
 
-            self._check(data)
+            self.update(data)
 
         except yaml.error.YAMLError as exp:
             raise DeclError(str(exp))
+        except IOError as exp:
+            if exp.errno == errno.ENOENT:
+                if not self.ALLOW_MISSING:
+                    raise DeclError("Could not find '%s'" % filepath)
+            else:
+                raise DeclError(str(exp))
+
+        self._check()
 
     def set(self, key, value):
 
@@ -162,17 +172,16 @@ class Config(object):
             self.options[key] = int(value)
 
 
-    def _check(self, data):
+    def update(self, data):
         """
         Update config content with data dict, checking data content respect
         SYNTAX spec.
-
-        It also checks for mandatory options.
         """
         for key, value in data.items():
             self.set(key, value)
 
-        # Check for mandatory keys
+    def _check(self):
+        """Checks for mandatory options."""
         for key in self.SYNTAX:
             if self.SYNTAX[key].get('required', False) and \
                not 'default' in self.SYNTAX[key]:

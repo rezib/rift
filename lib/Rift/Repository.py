@@ -36,10 +36,10 @@ class Repository(RemoteRepository):
     Metadata are created using 'createrepo' tool.
     """
 
-    def __init__(self, path, name=None):
+    def __init__(self, path, arch, name=None):
         self.path = os.path.realpath(path)
         self.srpms_dir = os.path.join(self.path, 'SRPMS')
-        self.rpms_dir = os.path.join(self.path, 'RPMS')
+        self.rpms_dir = os.path.join(self.path, arch)
 
         name = name or os.path.basename(self.path)
         url = 'file://%s' % os.path.realpath(self.rpms_dir)
@@ -71,7 +71,5 @@ class Repository(RemoteRepository):
         if rpm.is_source:
             shutil.copy(rpm.filepath, self.srpms_dir)
         else:
-            archdir = os.path.join(self.rpms_dir, rpm.arch)
-            if not os.path.exists(archdir):
-                os.mkdir(archdir)
-            shutil.copy(rpm.filepath, archdir)
+            # rpms_dir already points to architecture directory
+            shutil.copy(rpm.filepath, self.rpms_dir)

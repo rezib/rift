@@ -63,6 +63,9 @@ class Config(object):
         'repos': {
             'check':    'dict',
         },
+        'arch': {
+            'default':  'x86_64',
+        },
         'maintainer':  { },
         'qemu': {
             'default':  'qemu-system-x86_64',

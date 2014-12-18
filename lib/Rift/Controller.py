@@ -306,7 +306,7 @@ def action_validate(config, args, pkgs, repo, suppl_repos):
         from Rift.TempDir import TempDir
         stagedir = TempDir('stagedir')
         stagedir.create()
-        staging = Repository(stagedir.path, 'staging')
+        staging = Repository(stagedir.path, config.get('arch'), 'staging')
         staging.create()
 
         message('Preparing Mock environment...')
@@ -392,7 +392,7 @@ def action(config, args):
         return
 
     # Repo objects
-    repo = Repository(config.get('working_repo'))
+    repo = Repository(config.get('working_repo'), config.get('arch'))
     suppl_repos = []
     if config.get('repo_os_url'):
         suppl_repos.append(RemoteRepository(config.get('repo_os_url'), 'os'))

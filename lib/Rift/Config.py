@@ -30,6 +30,7 @@
 # knowledge of the CeCILL license and that you accept its terms.
 #
 
+import os
 import yaml
 import errno
 
@@ -115,6 +116,30 @@ class Config(object):
     def __init__(self):
         self.options = { }
 
+    def _find_root_dir(self, filepath=None):
+        """
+        Look for project base directory using main configuration file.
+
+        It will recursively look for filename from `filepath', starting from
+        directory from `filepath' and going up if file is not found.
+
+        If found, it returns the matching filepath, if never found, it returns
+        None.
+        """
+        filepath = os.path.realpath(filepath or self._DEFAULT_FILE)
+
+        dirname, filename = os.path.split(filepath)
+        if os.path.exists(filepath):
+            return filepath
+
+        while dirname != '/':
+            dirname = os.path.split(dirname)[0]
+            filepath = os.path.join(dirname, filename)
+            if os.path.exists(filepath):
+                return filepath
+
+        return None
+
     def get(self, option, default=None):
         if option in self.options:
             return self.options[option]
@@ -131,6 +156,8 @@ class Config(object):
         """
         if filepath is None:
             filepath = self._DEFAULT_FILE
+
+        filepath = self._find_root_dir(filepath) or filepath
 
         try:
             with open(filepath) as fyaml:

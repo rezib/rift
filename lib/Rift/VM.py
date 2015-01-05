@@ -96,6 +96,7 @@ class VM(object):
         cmd += ['-virtfs', 'local,id=project,path=/%s,mount_tag=project,'
                            'security_model=none' % projectdir]
         for repo in self._repos:
+            repo.create()
             cmd += ['-virtfs', 
                     'local,id=%s,path=%s,mount_tag=%s,security_model=none' %
                      (repo.name, repo.rpms_dir, repo.name) ]

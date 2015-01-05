@@ -59,11 +59,7 @@ OrderedLoader.add_constructor(
 
 
 _DEFAULT_STAFF_FILE = 'packages/staff.yaml'
-_STAFF_KEYS = ['email']
-
 _DEFAULT_MODULES_FILE = 'packages/modules.yaml'
-_MODULES_KEYS = ['manager']
-
 
 class Config(object):
 
@@ -225,31 +221,39 @@ class Staff(object):
     This class helps loading and checking the underlying yaml file content.
     """
 
+    DEFAULT_PATH = _DEFAULT_STAFF_FILE
+    DATA_NAME    = 'staff'
+    ITEMS_HEADER = 'staff'
+    ITEMS_KEYS   = ['email']
+
     def __init__(self):
-        self.people = {}
+        self._data = {}
+
+    def __contains__(self, item):
+        return item in self._data
 
     def load(self, filepath=None):
         """
         Load yaml file content.
         
-        If filepath is not defined, the default file path for staff.yaml is
-        used.
+        If filepath is not defined, the default file path is used.
         """
         if filepath is None:
-            filepath = _DEFAULT_STAFF_FILE
+            filepath = self.DEFAULT_PATH
 
         try:
             with open(filepath) as fyaml:
                 data = yaml.load(fyaml)
 
-            self.people = data.pop('staff') or {}
+            self._data = data.pop(self.ITEMS_HEADER) or {}
 
             self._check()
         
         except AttributeError as exp:
-            raise DeclError("Bad data format in staff file")
+            raise DeclError("Bad data format in %s file" % self.DATA_NAME)
         except KeyError as exp:
-            raise DeclError("Missing %s at top level in staff file" % exp)
+            raise DeclError("Missing %s at top level in %s file" %
+                            (exp, self.DATA_NAME))
         except yaml.error.YAMLError as exp:
             raise DeclError(str(exp))
         except IOError as exp:
@@ -260,70 +264,39 @@ class Staff(object):
 
     def _check(self):
         """
-        Verify staff declaration is correct. 
+        Verify declaration is correct.
         
         No missing element, no unnecessary one.
         """
-        if not self.people:
-            return
-
-        for people, data in self.people.items():
+        for people, data in self._data.items():
             # Missing elements
-            missing = set(_STAFF_KEYS) - set(data.keys())
+            missing = set(self.ITEMS_KEYS) - set(data.keys())
             if missing:
                 items = ', '.join(["'%s'" % item for item in missing])
                 raise DeclError("Missing %s item(s) for %s" % (items, people))
 
             # Unnecessary elements
-            not_needed = set(data.keys()) - set(_STAFF_KEYS)
+            not_needed = set(data.keys()) - set(self.ITEMS_KEYS)
             if not_needed:
                 items = ', '.join(["'%s'" % item for item in not_needed])
                 raise DeclError("Unknown %s item(s) for %s" % (items, people))
 
-#
-# XXX: Factorize with Staff later
-#
 
-class Modules(object):
+class Modules(Staff):
     """
     List of project modules.
 
     This class helps loading and checking the underlying yaml file content.
     """
 
+    DEFAULT_PATH = _DEFAULT_MODULES_FILE
+    DATA_NAME    = 'modules'
+    ITEMS_HEADER = 'modules'
+    ITEMS_KEYS   = ['manager']
+
     def __init__(self, staff):
+        Staff.__init__(self)
         self.staff = staff
-        self.modules = {}
-
-    def load(self, filepath=None):
-        """
-        Load yaml file content.
-        
-        If filepath is not defined, the default file path for modules.yaml is
-        used.
-        """
-        if filepath is None:
-            filepath = _DEFAULT_MODULES_FILE
-
-        try:
-            with open(filepath) as fyaml:
-                data = yaml.load(fyaml)
-
-            self.modules = data.pop('modules') or {}
-
-            self._check()
-        
-        except AttributeError as exp:
-            raise DeclError("Bad data format in modules file")
-        except KeyError as exp:
-            raise DeclError("Missing %s at top level in modules file" % exp)
-        except yaml.error.YAMLError as exp:
-            raise DeclError(str(exp))
-        except IOError as exp:
-            if exp.errno == errno.ENOENT:
-                raise DeclError("Could not find '%s'" % filepath)
-            else:
-                raise DeclError(str(exp))
 
     def _check(self):
         """
@@ -331,27 +304,13 @@ class Modules(object):
         
         No missing element, no unnecessary one.
         """
-        if not self.modules:
-            return
+        Staff._check(self)
 
-        for modules, data in self.modules.items():
-            # Missing elements
-            missing = set(_MODULES_KEYS) - set(data.keys())
-            if missing:
-                items = ', '.join(["'%s'" % item for item in missing])
-                raise DeclError("Missing %s item(s) for %s" % (items, modules))
-
-            # Unnecessary elements
-            not_needed = set(data.keys()) - set(_MODULES_KEYS)
-            if not_needed:
-                items = ', '.join(["'%s'" % item for item in not_needed])
-                raise DeclError("Unknown %s item(s) for %s" % (items, modules))
-
+        for module in self._data.values():
             # Maintainer exists
-            if type(data['manager']) is str:
-                data['manager'] = [ data['manager'] ]
-            for mngr in data['manager']:
-                if mngr not in self.staff.people:
+            if type(module['manager']) is str:
+                module['manager'] = [ module['manager'] ]
+            for mngr in module['manager']:
+                if mngr not in self.staff:
                     msg = "Manager '%s' does not exist in staff list" % mngr
                     raise DeclError(msg)
-            

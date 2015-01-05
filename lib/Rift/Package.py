@@ -82,13 +82,13 @@ class Package(object):
         if not self.maintainers:
             raise RiftError("Maintainers are missing")
         for maintainer in self.maintainers:
-            if maintainer not in self._staff.people:
+            if maintainer not in self._staff:
                 raise RiftError("Maintainer '%s' is not defined" % maintainer)
 
         # Check module
         if not self.module:
             raise RiftError("Module is missing")
-        if self.module not in self._modules.modules:
+        if self.module not in self._modules:
             raise RiftError("Module '%s' is not defined" % self.module)
 
         # Check reason

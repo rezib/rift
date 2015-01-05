@@ -56,6 +56,7 @@ class VM(object):
 
     def __init__(self, config, repos, suppl_repos=()):
         self._image = config.get('vm_image')
+        self._project_dir = config.get_project_dir()[0]
         self._repos = repos
         self._suppl_repos = suppl_repos
 
@@ -84,8 +85,6 @@ class VM(object):
             raise RiftError(stdout)
 
         # Start VM process
-        # Assume we are in project directory
-        projectdir = os.path.realpath('.')
         cmd = [self.qemu, '-enable-kvm', '-name', 'rift', '-display', 'none']
         cmd += ['-m', '8192', '-smp', '8']
         cmd += ['-drive', 'file=%s,id=drive-ide0,format=qcow2,cache=none' 
@@ -94,7 +93,7 @@ class VM(object):
                               % (self.NAME, self.port)]
         cmd += ['-device', 'virtio-net-pci,netdev=hostnet0,bus=pci.0,addr=0x3']
         cmd += ['-virtfs', 'local,id=project,path=/%s,mount_tag=project,'
-                           'security_model=none' % projectdir]
+                           'security_model=none' % self._project_dir]
         for repo in self._repos:
             repo.create()
             cmd += ['-virtfs', 

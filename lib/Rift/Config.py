@@ -116,29 +116,29 @@ class Config(object):
     def __init__(self):
         self.options = { }
 
-    def _find_root_dir(self, filepath=None):
+    def get_project_dir(self, filepath=None):
         """
         Look for project base directory using main configuration file.
 
         It will recursively look for filename from `filepath', starting from
         directory from `filepath' and going up if file is not found.
 
-        If found, it returns the matching filepath, if never found, it returns
-        None.
+        If found, it returns a tuple for the matching filedir and filename, if
+        never found, it returns (None, None).
         """
         filepath = os.path.realpath(filepath or self._DEFAULT_FILE)
 
         dirname, filename = os.path.split(filepath)
         if os.path.exists(filepath):
-            return filepath
+            return dirname, filename
 
         while dirname != '/':
             dirname = os.path.split(dirname)[0]
             filepath = os.path.join(dirname, filename)
             if os.path.exists(filepath):
-                return filepath
+                return dirname, filename
 
-        return None
+        return None, None
 
     def get(self, option, default=None):
         if option in self.options:
@@ -157,7 +157,9 @@ class Config(object):
         if filepath is None:
             filepath = self._DEFAULT_FILE
 
-        filepath = self._find_root_dir(filepath) or filepath
+        filedir, filename = self.get_project_dir(filepath)
+        if filedir and filename:
+            filepath = os.path.join(filedir, filename)
 
         try:
             with open(filepath) as fyaml:

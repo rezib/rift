@@ -65,8 +65,8 @@ class Config(object):
 
     # XXX: Support hierarchical configuration (vm.image = ...)
 
-    _DEFAULT_FILE = 'project.conf'
-    ALLOW_MISSING = False
+    _DEFAULT_FILES = ['project.conf', 'local.conf']
+    ALLOW_MISSING  = True
 
     SYNTAX = {
         'staff_file': {
@@ -112,27 +112,32 @@ class Config(object):
     def __init__(self):
         self.options = { }
 
-    def get_project_dir(self, filepath=None):
+    def get_project_dir(self, filenames=None):
         """
-        Look for project base directory using main configuration file.
+        Look for project base directory looking for configuration filenames.
 
-        It will recursively look for filename from `filepath', starting from
-        directory from `filepath' and going up if file is not found.
+        It will recursively look for name from filenames, starting from
+        name directory and going up if file is not found.
 
-        If found, it returns a tuple for the matching filedir and filename, if
-        never found, it returns (None, None).
+        If found, it returns a tuple for the matching file directory and file
+        name, if never found, it returns (None, None).
         """
-        filepath = os.path.realpath(filepath or self._DEFAULT_FILE)
+        if filenames is None:
+            filenames = self._DEFAULT_FILES
+        if isinstance(filenames, basestring):
+            filenames = [filenames]
 
-        dirname, filename = os.path.split(filepath)
-        if os.path.exists(filepath):
-            return dirname, filename
-
-        while dirname != '/':
-            dirname = os.path.split(dirname)[0]
-            filepath = os.path.join(dirname, filename)
+        for filepath in filenames:
+            filepath = os.path.abspath(filepath)
+            dirname, filename = os.path.split(filepath)
             if os.path.exists(filepath):
                 return dirname, filename
+
+            while dirname != '/':
+                dirname = os.path.split(dirname)[0]
+                filepath = os.path.join(dirname, filename)
+                if os.path.exists(filepath):
+                    return dirname, filename
 
         return None, None
 
@@ -144,33 +149,37 @@ class Config(object):
         else:
             return default
 
-    def load(self, filepath=None):
+    def load(self, filenames=None):
         """
-        Load yaml file content.
+        Read and parse the list of named configuration files, given by name. A
+        single filename is also allowed. Non-existing files are ignored.
 
-        If filepath is not defined, the _DEFAULT_FILE is used.
+        If filenames is not omited, self._DEFAULT_FILES is used.
         """
-        if filepath is None:
-            filepath = self._DEFAULT_FILE
+        if filenames is None:
+            filenames = self._DEFAULT_FILES
+        if isinstance(filenames, basestring):
+            filenames = [filenames]
 
-        filedir, filename = self.get_project_dir(filepath)
-        if filedir and filename:
-            filepath = os.path.join(filedir, filename)
+        for filepath in filenames:
+            try:
+                filedir, filename = self.get_project_dir(filepath)
+                if filedir and filename:
+                    filepath = os.path.join(filedir, filename)
 
-        try:
-            with open(filepath) as fyaml:
-                data = yaml.load(fyaml, Loader=OrderedLoader)
+                with open(filepath) as fyaml:
+                    data = yaml.load(fyaml, Loader=OrderedLoader)
 
-            self.update(data)
+                self.update(data)
 
-        except yaml.error.YAMLError as exp:
-            raise DeclError(str(exp))
-        except IOError as exp:
-            if exp.errno == errno.ENOENT:
-                if not self.ALLOW_MISSING:
-                    raise DeclError("Could not find '%s'" % filepath)
-            else:
+            except yaml.error.YAMLError as exp:
                 raise DeclError(str(exp))
+            except IOError as exp:
+                if exp.errno == errno.ENOENT:
+                    if not self.ALLOW_MISSING:
+                        raise DeclError("Could not find '%s'" % filepath)
+                else:
+                    raise DeclError(str(exp))
 
         self._check()
 

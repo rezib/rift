@@ -1,6 +1,7 @@
 include scripts/rift
 include template/mock.tpl
 include template/project.conf
+include template/local.conf
 include template/packages/staff.yaml
 include template/packages/modules.yaml
 include Licence_CeCILL-C_V1-en.txt

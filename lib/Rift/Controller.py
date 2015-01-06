@@ -580,6 +580,9 @@ def action(config, args):
             elif filepath == '.gitignore':
                 logging.debug('Ignoring git file: %s', filepath)
 
+            elif filepath == 'project.conf':
+                logging.debug('Ignoring project config file: %s', filepath)
+
             else:
                 raise RiftError("Unknown file pattern: %s" % filepath)
 

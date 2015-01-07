@@ -188,7 +188,8 @@ class VM(object):
         """
         funcs = {}
         funcs['vm_cmd'] = 'ssh %s -T -p %d root@127.0.0.1 "$@"' \
-                                    % ('-oStrictHostKeyChecking=no', self.port)
+                 % ('-oUserKnownHostsFile=/dev/null -oStrictHostKeyChecking=no '
+                    '-oLogLevel=ERROR', self.port)
         funcs['vm_wait'] = textwrap.dedent("""\
             rc=1
             for i in {1..7}

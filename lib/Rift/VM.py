@@ -100,7 +100,7 @@ class VM(object):
                     'local,id=%s,path=%s,mount_tag=%s,security_model=none' %
                      (repo.name, repo.rpms_dir, repo.name) ]
 
-        logging.info("Starting VM")
+        logging.info("Starting VM process")
         logging.debug("Running VM command: %s", ' '.join(cmd))
         self._vm = Popen(cmd)
 

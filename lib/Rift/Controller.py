@@ -267,6 +267,11 @@ class BasicTest(Test):
             rpmnames = pkg.rpmnames
         else:
             rpmnames = Spec(pkg.specfile).pkgnames
+
+        # Avoid always processing the rpm list in the same order
+        import random
+        random.shuffle(rpmnames)
+
         cmd = textwrap.dedent("""
         for pkg in %s; do
             yum -y install $pkg && yum -y remove $pkg || exit 1

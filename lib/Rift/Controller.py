@@ -39,7 +39,7 @@ from rpm import error as RpmError
 from Rift import RiftError
 from Rift.Config import Config, Staff, Modules
 from Rift.Package import Package
-from Rift.RPM import RPM, Spec
+from Rift.RPM import RPM, Spec, RPMLINT_CONFIG
 from Rift.Repository import RemoteRepository, Repository
 from Rift.Mock import Mock
 from Rift.Annex import Annex, is_binary
@@ -566,6 +566,10 @@ def action(config, args):
                 # backup specfile
                 elif filepath == '%s.orig' % pkg.specfile:
                     logging.debug('Ignoring backup specfile')
+
+                # rpmlint config file
+                elif names == [RPMLINT_CONFIG]:
+                    logging.debug('Ignoring rpmlint config file')
 
                 # sources/
                 elif filepath.startswith(pkg.sourcesdir) and len(names) == 2:

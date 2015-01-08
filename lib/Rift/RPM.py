@@ -43,6 +43,8 @@ from subprocess import Popen, PIPE, STDOUT
 from Rift import RiftError
 from Rift.Annex import Annex, is_binary
 
+RPMLINT_CONFIG = 'rpmlint'
+
 class RPM(object):
     """Manipulate a source or binary RPM."""
 

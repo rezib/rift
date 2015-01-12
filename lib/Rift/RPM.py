@@ -176,9 +176,14 @@ class Spec(object):
 
         for line in stdout.splitlines():
             if line.startswith(self.filepath + ':'):
+                line = line[len(self.filepath + ':'):]
                 try:
-                    _, linenbr, code, txt = line.split(':', 3)
-                    review.add_comment(self.filepath, int(linenbr),
+                    linenbr = None
+                    code, txt = line.split(':', 1)
+                    if code.isdigit():
+                        linenbr = int(code)
+                        code, txt = txt.split(':', 1)
+                    review.add_comment(self.filepath, linenbr,
                                        code.strip(), txt.strip())
                 except (ValueError, KeyError):
                     pass

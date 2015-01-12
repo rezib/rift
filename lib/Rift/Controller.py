@@ -170,8 +170,10 @@ def parse_options():
     # Gerrit review
     parser_gerrit = subparsers.add_parser('gerrit', add_help=False,
                               help='Make Gerrit automatic review')
-    parser_gerrit.add_argument('--change', help="Gerrit Change-Id")
-    parser_gerrit.add_argument('--patchset', help="Gerrit patchset ID")
+    parser_gerrit.add_argument('--change', help="Gerrit Change-Id",
+                               required=True)
+    parser_gerrit.add_argument('--patchset', help="Gerrit patchset ID",
+                               required=True)
     parser_gerrit.add_argument('patch', metavar='PATCH',
                                type=argparse.FileType('r'))
 

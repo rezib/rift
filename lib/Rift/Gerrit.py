@@ -56,9 +56,10 @@ class Review(object):
 
         msg = "(%s) %s" % (self.labels[label], message)
         comment = {
-            'line': line,
             'message': msg,
         }
+        if line is not None:
+            comment['line'] = line
         self.comments.setdefault(filepath, []).append(comment)
 
     def _message(self):

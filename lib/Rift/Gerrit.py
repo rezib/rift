@@ -38,6 +38,8 @@ import json
 import logging
 import urllib2
 
+from Rift import RiftError
+
 class Review(object):
     """Gerrit review."""
 
@@ -70,10 +72,19 @@ class Review(object):
     def push(self, config, changeid, revid):
         """Send REST request to Gerrit server from config"""
 
-        realm = config.get('gerrit_realm', 'Gerrit Code Review')
-        server = config.get('gerrit_server', 'ci-gerrit.vm.c-aury.ocre.cea.fr:8080')
-        username = config.get('gerrit_username', 'linter')
-        password = config.get('gerrit_password', 'NbH9ddVyLudz')
+        realm = config.get('gerrit_realm')
+        server = config.get('gerrit_server')
+        username = config.get('gerrit_username')
+        password = config.get('gerrit_password')
+
+        if realm is None:
+            raise RiftError("Gerrit realm is not defined")
+        if server is None:
+            raise RiftError("Gerrit server is not defined")
+        if username is None:
+            raise RiftError("Gerrit username is not defined")
+        if password is None:
+            raise RiftError("Gerrit password is not defined")
 
         authhandler = urllib2.HTTPDigestAuthHandler()
         authhandler.add_password(realm, server, username, password)

@@ -105,6 +105,10 @@ class Config(object):
         'vm_address': {
             'default':  '10.0.2.15',
         },
+        'gerrit_realm': { },
+        'gerrit_server': { },
+        'gerrit_username': { },
+        'gerrit_password': { },
         # XXX?: 'mock.name' ?
         # XXX?: 'mock.template' ?
     }

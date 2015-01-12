@@ -580,6 +580,9 @@ def action(config, args):
                 elif filepath.startswith(pkg.testsdir) and len(names) == 2:
                     logging.debug('Ignoring test script: %s', names[1])
 
+                elif patchedfile.is_deleted_file:
+                    logging.debug('Ignoring removed file: %s', filepath)
+
                 else:
                     raise RiftError("Unknown file pattern: %s" % filepath)
 
@@ -591,6 +594,9 @@ def action(config, args):
 
             elif filepath == 'project.conf':
                 logging.debug('Ignoring project config file: %s', filepath)
+
+            elif patchedfile.is_deleted_file:
+                logging.debug('Ignoring removed file: %s', filepath)
 
             else:
                 raise RiftError("Unknown file pattern: %s" % filepath)

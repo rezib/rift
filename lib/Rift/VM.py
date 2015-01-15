@@ -160,6 +160,8 @@ class VM(object):
             __EOC__
 
             yum -d1 makecache
+
+            yum -d0 -y update
             """) % (self.address, self.NAME, userline, groupline,
                     ' '.join(mkdirs), "\n".join(fstab), "\n".join(repos))
 

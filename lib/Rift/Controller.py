@@ -427,7 +427,7 @@ def action(config, args):
         return
 
     # Repo objects
-    repo = Repository(config.get('working_repo'), config.get('arch'))
+    repo = Repository(config.get('working_repo'), config.get('arch'), 'working')
     suppl_repos = []
     if config.get('repo_os_url'):
         suppl_repos.append(RemoteRepository(config.get('repo_os_url'), 'os'))

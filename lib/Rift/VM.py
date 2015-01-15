@@ -155,6 +155,8 @@ class VM(object):
             __EOF__
             mount -t 9p -a
 
+            /bin/rm -f /etc/yum.repos.d/*.repo
+
             cat <<__EOC__ >/etc/yum.repos.d/rift.repo
             %s
             __EOC__

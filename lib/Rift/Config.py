@@ -91,6 +91,7 @@ class Config(object):
         'arch': {
             'default':  'x86_64',
         },
+        'version': { },
         'maintainer':  { },
         'qemu': {
             'default':  'qemu-system-x86_64',

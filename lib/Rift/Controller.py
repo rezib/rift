@@ -345,7 +345,7 @@ def action_validate(config, args, pkgs, repo, suppl_repos):
         staging.create()
 
         message('Preparing Mock environment...')
-        mock = Mock()
+        mock = Mock(config.get('version'))
         mock.init(suppl_repos + [repo])
 
         # Check build SRPM
@@ -481,7 +481,7 @@ def action(config, args):
         pkg.load()
 
         message('Preparing Mock environment...')
-        mock = Mock()
+        mock = Mock(config.get('version'))
         mock.init(suppl_repos + [repo])
 
         message("Building SRPM...")

@@ -58,9 +58,12 @@ class Mock(object):
     MOCK_FILES = ['logging.ini', 'site-defaults.cfg']
     MOCK_RESULT = '/var/lib/mock/%s/result'
 
-    def __init__(self):
+    def __init__(self, proj_vers=None):
         self._tmpdir = None
         self._mockname = 'rift-%s' % getpass.getuser()
+        if proj_vers:
+            self._mockname = '%s-%s' % (self._mockname, proj_vers)
+        logging.debug(self._mockname)
 
     def _create_template(self, repolist, dstpath):
         """Create 'default.cfg' config file based on a template."""

@@ -61,9 +61,11 @@ def is_binary(filepath, blocksize=65536):
     with open(filepath, 'rb') as srcfile:
         data = srcfile.read(blocksize)
         binchars = data.translate(None, _TEXTCHARS)
+        if len(data) == 0:
+            result = False
         # If there is very few binary characters among the file, consider it as
         # plain us-ascii.
-        if float(len(binchars)) / float(len(data)) < 0.01:
+        elif float(len(binchars)) / float(len(data)) < 0.01:
             result = False
         else:
             result = bool(binchars)

@@ -166,6 +166,11 @@ def parse_options():
                               title='possible commands')
     subparsers_vm.add_parser('connect', help='connect to running VM')
     subparsers_vm.add_parser('start', help='launch a new VM')
+    subparsers_vm.add_parser('stop', help='stop the running VM')
+    parser_vm_cmd = subparsers_vm.add_parser('cmd',
+                                             help='run a command inside the VM')
+    parser_vm_cmd.add_argument('command', help='command line arguments',
+                               nargs=argparse.REMAINDER)
 
     # Gerrit review
     parser_gerrit = subparsers.add_parser('gerrit', add_help=False,
@@ -383,15 +388,19 @@ def action_vm(config, args, repos, suppl_repos):
 
     vm = VM(config, repos, suppl_repos)
 
-    assert args.vm_cmd in ('connect', 'start')
+    assert args.vm_cmd in ('connect', 'start', 'stop', 'cmd')
     if args.vm_cmd == 'connect':
         vm.cmd(options=None)
+    elif args.vm_cmd == 'cmd':
+        vm.cmd(' '.join(args.command), options=None)
     elif args.vm_cmd == 'start':
         message('Launching VM ...')
         vm.spawn()
         vm.ready()
         vm.prepare()
         message("VM started. Use: rift vm connect")
+    elif args.vm_cmd == 'stop':
+        vm.cmd('poweroff')
 
 def action_gerrit(args, config, staff, modules):
     """Review a patchset for Gerrit (specfiles)"""

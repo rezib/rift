@@ -301,6 +301,7 @@ def action_test(config, args, pkg, repos, suppl_repos):
     vm.spawn()
     vm.ready()
     vm.prepare()
+    vm.cmd('yum -y -d0 --disablerepo=%s update' % 'working')
 
     banner("Starting tests")
 

@@ -281,7 +281,14 @@ class BasicTest(Test):
 
         cmd = textwrap.dedent("""
         for pkg in %s; do
-            yum -y install $pkg && yum -y remove $pkg || exit 1
+            if rpm -q --quiet $pkg; then
+              yum -y -d1 upgrade $pkg || exit 1
+              yum -y -d1 downgrade $pkg || exit 1
+            else
+              yum -y -d1 install $pkg || exit 1
+              trans=$(yum history addon-info last | awk -F: '/Transaction ID/ {print $2}')
+              yum -y -d1 history undo ${trans} || exit 1
+            fi
         done""" % ' '.join(rpmnames))
         Test.__init__(self, cmd, "basic install")
         self.local = False

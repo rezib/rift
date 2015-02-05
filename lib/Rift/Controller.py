@@ -283,12 +283,11 @@ class BasicTest(Test):
         for pkg in %s; do
             if rpm -q --quiet $pkg; then
               yum -y -d1 upgrade $pkg || exit 1
-              yum -y -d1 downgrade $pkg || exit 1
             else
               yum -y -d1 install $pkg || exit 1
-              trans=$(yum history addon-info last | awk -F: '/Transaction ID/ {print $2}')
-              yum -y -d1 history undo ${trans} || exit 1
             fi
+            trans=$(yum history addon-info last | awk -F: '/Transaction ID/ {print $2}')
+            yum -y -d1 history undo ${trans} || exit 1
         done""" % ' '.join(rpmnames))
         Test.__init__(self, cmd, "basic install")
         self.local = False

@@ -165,7 +165,10 @@ def parse_options():
     subparsers_vm = parser_vm.add_subparsers(dest='vm_cmd',
                               title='possible commands')
     subparsers_vm.add_parser('connect', help='connect to running VM')
-    subparsers_vm.add_parser('start', help='launch a new VM')
+    parser_vm_start = subparsers_vm.add_parser('start', help='launch a new VM')
+    parser_vm_start.add_argument('--notemp', action='store_false',
+                                 dest='tmpimg', default=True,
+                                 help='modify the real VM image')
     subparsers_vm.add_parser('stop', help='stop the running VM')
     parser_vm_cmd = subparsers_vm.add_parser('cmd',
                                              help='run a command inside the VM')
@@ -401,6 +404,7 @@ def action_vm(config, args, repos, suppl_repos):
     elif args.vm_cmd == 'cmd':
         vm.cmd(' '.join(args.command), options=None)
     elif args.vm_cmd == 'start':
+        vm.tmpmode = args.tmpimg
         message('Launching VM ...')
         vm.spawn()
         vm.ready()

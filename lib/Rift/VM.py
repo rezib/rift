@@ -54,7 +54,7 @@ class VM(object):
     _PROJ_MOUNTPOINT = '/rift.project'
     NAME = 'rift1'
 
-    def __init__(self, config, repos, suppl_repos=()):
+    def __init__(self, config, repos, suppl_repos=(), tmpmode=True):
         self._image = config.get('vm_image')
         self._project_dir = config.get_project_dir()[0]
         self._repos = repos
@@ -64,31 +64,42 @@ class VM(object):
         self.port = config.get('vm_port', os.getuid() + 2000)
         self.qemu = config.get('qemu')
 
+        self.tmpmode = tmpmode
         self._vm = None
         self._tmpimg = None
 
-    def spawn(self):
-        """Start VM process in background"""
+    def _mk_tmp_img(self):
+        """Create a temp VM image to avoid modifying the real image disk."""
+
         # Create a temporary file for VM image
         # XXX: Maybe a mkstemp() is better here to avoid removing file
         # when VM process is not stopped in purpose
         self._tmpimg = tempfile.NamedTemporaryFile(prefix='rift-vm-img-')
 
         # Create qcow image for VM, based on temp file
-        cmd = [ 'qemu-img', 'create', '-f', 'qcow2' ]
-        cmd += [ '-o', 'backing_file=%s' % os.path.realpath(self._image) ]
-        cmd += [ self._tmpimg.name ]
+        cmd = ['qemu-img', 'create', '-f', 'qcow2']
+        cmd += ['-o', 'backing_file=%s' % os.path.realpath(self._image)]
+        cmd += [self._tmpimg.name]
         logging.debug("Creating VM image file: %s", ' '.join(cmd))
         popen = Popen(cmd, stdout=PIPE, stderr=STDOUT)
         stdout = popen.communicate()[0]
         if popen.returncode != 0:
             raise RiftError(stdout)
 
+    def spawn(self):
+        """Start VM process in background"""
+
+        if self.tmpmode:
+            self._mk_tmp_img()
+            imgfile = self._tmpimg.name
+        else:
+            imgfile = self._image
+
         # Start VM process
         cmd = [self.qemu, '-enable-kvm', '-name', 'rift', '-display', 'none']
         cmd += ['-m', '8192', '-smp', '8']
-        cmd += ['-drive', 'file=%s,id=drive-ide0,format=qcow2,cache=none' 
-                              % self._tmpimg.name]
+        cmd += ['-drive', 'file=%s,id=drive-ide0,format=qcow2,cache=none'
+                % imgfile]
         cmd += ['-netdev', 'user,id=hostnet0,hostname=%s,hostfwd=tcp::%d-:22'
                               % (self.NAME, self.port)]
         cmd += ['-device', 'virtio-net-pci,netdev=hostnet0,bus=pci.0,addr=0x3']
@@ -96,7 +107,7 @@ class VM(object):
                            'security_model=none' % self._project_dir]
         for repo in self._repos:
             repo.create()
-            cmd += ['-virtfs', 
+            cmd += ['-virtfs',
                     'local,id=%s,path=%s,mount_tag=%s,security_model=none' %
                      (repo.name, repo.rpms_dir, repo.name) ]
 

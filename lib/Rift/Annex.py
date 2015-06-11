@@ -170,6 +170,23 @@ class Annex(object):
                     shutil.copy(filepath, tmpdir.path)
         return tmpdir
 
+    def _load_metadata(self, digest):
+        """Return metadata for specified digest if file exists."""
+        # Prepare metadata file
+        metapath = os.path.join(self.path, digest + '.info')
+        metadata = {}
+        # Read current metadata if present
+        if os.path.exists(metapath):
+            with open(metapath) as fyaml:
+                metadata = yaml.load(fyaml)
+        return metadata
+
+    def _save_metadata(self, digest, metadata):
+        """Write metadata file for specified digest and data."""
+        metapath = os.path.join(self.path, digest + '.info')
+        with open(metapath, 'w') as fyaml:
+            yaml.dump(metadata, fyaml, default_flow_style=False)
+
     def list(self):
         """
         Iterate over annex files, returning for them: filename, size and
@@ -178,7 +195,9 @@ class Annex(object):
         for filename in os.listdir(self.path):
             if not filename.endswith('.info'):
                 meta = os.stat(os.path.join(self.path, filename))
-                yield filename, meta.st_size, meta.st_mtime
+                info = self._load_metadata(filename)
+                names = info.get('filenames', [])
+                yield filename, meta.st_size, meta.st_mtime, names
 
     def push(self, filepath):
         """
@@ -192,19 +211,12 @@ class Annex(object):
         os.chmod(filepath, 0644)
 
         # Prepare metadata file
-        metapath = os.path.join(self.path, digest + '.info')
-        metadata = {}
-        # Read current metadata if present
-        if os.path.exists(metapath):
-            with open(metapath) as fyaml:
-                metadata = yaml.load(fyaml)
-
+        metadata = self._load_metadata(digest)
         # Update them and write them back
         fileset = metadata.setdefault('filenames', {})
         fileset.setdefault(os.path.basename(filepath), {})
         fileset[os.path.basename(filepath)]['date'] = time.strftime("%c")
-        with open(metapath, 'w') as fyaml:
-            yaml.dump(metadata, fyaml, default_flow_style=False)
+        self._save_metadata(digest, metadata)
 
         # Move binary file to annex
         destpath = os.path.join(self.path, digest)

@@ -235,12 +235,12 @@ def action_annex(args, config):
 
     assert args.annex_cmd in ('list', 'get', 'push', 'delete', 'restore')
     if args.annex_cmd == 'list':
-        fmt = "%-32s %10s  %s"
-        print fmt % ('ID', 'SIZE', 'DATE')
-        print fmt % ('--', '----', '----')
-        for filename, size, mtime in annex.list():
+        fmt = "%-32s %10s  %-18s %s"
+        print fmt % ('ID', 'SIZE', 'DATE', 'FILENAMES')
+        print fmt % ('--', '----', '----', '---------')
+        for filename, size, mtime, names in annex.list():
             timestr = time.strftime('%x %X', time.localtime(mtime))
-            print fmt % (filename, size, timestr)
+            print fmt % (filename, size, timestr, ','.join(names))
 
     elif args.annex_cmd == 'push':
         for srcfile in args.files:

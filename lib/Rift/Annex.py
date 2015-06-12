@@ -186,6 +186,7 @@ class Annex(object):
         metapath = os.path.join(self.path, digest + '.info')
         with open(metapath, 'w') as fyaml:
             yaml.dump(metadata, fyaml, default_flow_style=False)
+        os.chmod(metapath, 0664)
 
     def list(self):
         """
@@ -222,6 +223,7 @@ class Annex(object):
         destpath = os.path.join(self.path, digest)
         logging.debug('Importing %s into annex (%s)', filepath, digest)
         shutil.copyfile(filepath, destpath)
+        os.chmod(destpath, 0664)
 
         # Create fake pointer file
         with open(filepath, 'w') as fakefile:

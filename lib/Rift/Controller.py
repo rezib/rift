@@ -269,6 +269,17 @@ def action_annex(args, config):
         message('%s has been created' % args.dest)
 
 
+def _vm_start(vm):
+    if vm.running():
+        message('VM is already running')
+        return False
+    else:
+        message('Launching VM ...')
+        vm.spawn()
+        vm.ready()
+        vm.prepare()
+        return True
+
 from Rift.Package import Test
 class BasicTest(Test):
 
@@ -308,9 +319,9 @@ def action_test(config, args, pkg, repos, suppl_repos):
 
     vm = VM(config, repos, suppl_repos)
     message("Preparing test environment")
-    vm.spawn()
-    vm.ready()
-    vm.prepare()
+    if not _vm_start(vm):
+        return 1
+
     vm.cmd('yum -y -d0 --disablerepo=%s update' % 'working')
 
     banner("Starting tests")
@@ -413,11 +424,8 @@ def action_vm(config, args, repos, suppl_repos):
         vm.cmd(' '.join(args.command), options=None)
     elif args.vm_cmd == 'start':
         vm.tmpmode = args.tmpimg
-        message('Launching VM ...')
-        vm.spawn()
-        vm.ready()
-        vm.prepare()
-        message("VM started. Use: rift vm connect")
+        if _vm_start(vm):
+            message("VM started. Use: rift vm connect")
     elif args.vm_cmd == 'stop':
         vm.cmd('poweroff')
 

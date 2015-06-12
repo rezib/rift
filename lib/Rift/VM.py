@@ -179,7 +179,7 @@ class VM(object):
 
         self.cmd(cmd)
 
-    def cmd(self, command=None, options=('-T',)):
+    def cmd(self, command=None, options=('-T',), stderr=None):
         """Run specified command inside this VM"""
         cmd = [ 'ssh', '-oStrictHostKeyChecking=no', '-oLogLevel=ERROR',
                 '-oUserKnownHostsFile=/dev/null', '-p', str(self.port),
@@ -189,7 +189,7 @@ class VM(object):
         if command:
             cmd.append(command)
         logging.debug("Running command in VM: %s", ' '.join(cmd))
-        popen = Popen(cmd) #, stdout=PIPE, stderr=STDOUT)
+        popen = Popen(cmd, stderr=stderr) #, stdout=PIPE, stderr=STDOUT)
         popen.wait()
         return popen.returncode
 
@@ -231,15 +231,19 @@ class VM(object):
             popen.wait()
             return popen.returncode
 
+    def running(self):
+        """Check if VM is already running."""
+        return self.cmd('/bin/true', stderr=PIPE) == 0
+
     def ready(self):
         """
-        Wait until VM is ready to accept commands. 
-        
+        Wait until VM is ready to accept commands.
+
         Return False if it is not ready after 25 seconds.
         """
         for _ in range(1, 5):
             time.sleep(5)
-            if self.cmd('/bin/true') == 0:
+            if self.running():
                 return True
             sys.stdout.write('.')
             sys.stdout.flush()

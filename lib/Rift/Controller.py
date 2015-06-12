@@ -278,6 +278,12 @@ class BasicTest(Test):
         else:
             rpmnames = Spec(pkg.specfile).pkgnames
 
+        try:
+            for name in pkg.ignore_rpms:
+                rpmnames.remove(name)
+        except ValueError:
+            raise RiftError("'%s' is not in RPMS list" % name)
+
         # Avoid always processing the rpm list in the same order
         import random
         random.shuffle(rpmnames)

@@ -139,6 +139,10 @@ class Package(object):
             self.rpmnames = [data.get('rpm_names')]
         else:
             self.rpmnames = data.get('rpm_names')
+        if type(data.get('ignore_rpms')) is str:
+            self.ignore_rpms = [data.get('ignore_rpms')]
+        else:
+            self.ignore_rpms = data.get('ignore_rpms', [])
 
         self.check_info()
 

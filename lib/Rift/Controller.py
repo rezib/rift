@@ -62,128 +62,110 @@ def parse_options():
     subparsers = parser.add_subparsers(dest='command', metavar='COMMAND')
 
     # Create options
-    parser_import = subparsers.add_parser('create',
-                                          help='create a new package')
-    parser_import.add_argument('name', metavar='PKGNAME',
-                               help='package name to be created')
-    parser_import.add_argument('-m', '--module', dest='module', required=True,
-                               help='module name this package will belong to')
-    parser_import.add_argument('-r', '--reason', dest='reason', required=True,
-                               help='reason this package is added to project')
-    parser_import.add_argument('-o', '--origin', dest='origin',
-                               help='source of original package')
-    parser_import.add_argument('-t', '--maintainer', dest='maintainer',
-                               help='maintainer name from staff.yaml')
+    subprs = subparsers.add_parser('create', help='create a new package')
+    subprs.add_argument('name', metavar='PKGNAME',
+                        help='package name to be created')
+    subprs.add_argument('-m', '--module', dest='module', required=True,
+                        help='module name this package will belong to')
+    subprs.add_argument('-r', '--reason', dest='reason', required=True,
+                        help='reason this package is added to project')
+    subprs.add_argument('-o', '--origin', dest='origin',
+                        help='source of original package')
+    subprs.add_argument('-t', '--maintainer', dest='maintainer',
+                        help='maintainer name from staff.yaml')
 
     # Import options
-    parser_import = subparsers.add_parser('import',
-                               help='import a SRPM and create a package')
-    parser_import.add_argument('file', metavar='FILE',
-                               help='source RPM to import')
-    parser_import.add_argument('-m', '--module', dest='module', required=True,
-                               help='module name this package will belong to')
-    parser_import.add_argument('-r', '--reason', dest='reason', required=True,
-                               help='reason this package is added to project')
-    parser_import.add_argument('-o', '--origin', dest='origin',
-                               help='source of original package')
-    parser_import.add_argument('-t', '--maintainer', dest='maintainer',
-                               help='maintainer name from staff.yaml')
+    subprs = subparsers.add_parser('import',
+                                   help='import a SRPM and create a package')
+    subprs.add_argument('file', metavar='FILE', help='source RPM to import')
+    subprs.add_argument('-m', '--module', dest='module', required=True,
+                        help='module name this package will belong to')
+    subprs.add_argument('-r', '--reason', dest='reason', required=True,
+                        help='reason this package is added to project')
+    subprs.add_argument('-o', '--origin', dest='origin',
+                        help='source of original package')
+    subprs.add_argument('-t', '--maintainer', dest='maintainer',
+                        help='maintainer name from staff.yaml')
 
     # Check options
-    parser_check = subparsers.add_parser('check',
-                              help='verify various config file syntaxes')
-    parser_check.add_argument('type', metavar='CHKTYPE',
-                              choices=['staff','modules', 'info', 'spec'],
-                              help='type of check')
-    parser_check.add_argument('-f', '--file', metavar='FILE',
-                              help='path of file to check')
+    subprs = subparsers.add_parser('check',
+                                   help='verify various config file syntaxes')
+    subprs.add_argument('type', choices=['staff', 'modules', 'info', 'spec'],
+                        metavar='CHKTYPE', help='type of check')
+    subprs.add_argument('-f', '--file', metavar='FILE',
+                        help='path of file to check')
 
     # Build options
-    parser_build = subparsers.add_parser('build',
-                        help='build source RPM and RPMS')
-    parser_build.add_argument('package', metavar='PACKAGE',
+    subprs = subparsers.add_parser('build', help='build source RPM and RPMS')
+    subprs.add_argument('package', metavar='PACKAGE',
                         help='package name to build')
-    parser_build.add_argument('-p', '--publish', action='store_true',
+    subprs.add_argument('-p', '--publish', action='store_true',
                         help='publish build RPMS to repository')
 
     # Test options
-    parser_check = subparsers.add_parser('test',
-                        help='execute package tests')
-    parser_check.add_argument('package', metavar='PACKAGE',
+    subprs = subparsers.add_parser('test', help='execute package tests')
+    subprs.add_argument('package', metavar='PACKAGE',
                         help='package name to test')
-    parser_check.add_argument('--noquit', action='store_true',
+    subprs.add_argument('--noquit', action='store_true',
                         help='do not stop VM at the end')
 
     # Validate options
-    parser_valid = subparsers.add_parser('validate',
-                              help='Fully validate package')
-    parser_valid.add_argument('packages', metavar='PACKAGE', nargs='+',
-                              help='package name to validate')
-    parser_valid.add_argument('--noquit', action='store_true',
-                              help='do not stop VM at the end')
-    parser_valid.add_argument('-p', '--publish', action='store_true',
-                              help='publish build RPMS to repository')
+    subprs = subparsers.add_parser('validate', help='Fully validate package')
+    subprs.add_argument('packages', metavar='PACKAGE', nargs='+',
+                        help='package name to validate')
+    subprs.add_argument('--noquit', action='store_true',
+                        help='do not stop VM at the end')
+    subprs.add_argument('-p', '--publish', action='store_true',
+                        help='publish build RPMS to repository')
 
     # XXX: Validate diff
-    parser_check = subparsers.add_parser('validdiff')
-    parser_check.add_argument('patch', metavar='PATCH',
-                              type=argparse.FileType('r'))
-    parser_check.add_argument('--noquit', action='store_true',
-                               help='do not stop VM at the end')
-    parser_check.add_argument('-p', '--publish', action='store_true',
-                              help='publish build RPMS to repository')
-
+    subprs = subparsers.add_parser('validdiff')
+    subprs.add_argument('patch', metavar='PATCH', type=argparse.FileType('r'))
+    subprs.add_argument('--noquit', action='store_true',
+                        help='do not stop VM at the end')
+    subprs.add_argument('-p', '--publish', action='store_true',
+                        help='publish build RPMS to repository')
 
     # Annex options
-    parser_annex = subparsers.add_parser('annex',
-                              help='Manipulate annex cache')
-    subparsers_annex = parser_annex.add_subparsers(dest='annex_cmd',
-                              title='possible commands')
-    subparsers_annex.add_parser('list', help='list cache content')
-    parser_annex_push = subparsers_annex.add_parser('push',
-                                              help='move a file into cache')
-    parser_annex_push.add_argument('files', metavar='FILENAME', nargs='+',
-                                help='file path to be move')
-    parser_annex_restore = subparsers_annex.add_parser('restore',
+    subprs = subparsers.add_parser('annex', help='Manipulate annex cache')
+
+    subprs_annex = subprs.add_subparsers(dest='annex_cmd',
+                                         title='possible commands')
+    subprs_annex.add_parser('list', help='list cache content')
+    subsubprs = subprs_annex.add_parser('push', help='move a file into cache')
+    subsubprs.add_argument('files', metavar='FILENAME', nargs='+',
+                           help='file path to be move')
+    subsubprs = subprs_annex.add_parser('restore',
                          help='restore file content previously pushed to annex')
-    parser_annex_restore.add_argument('files', metavar='FILENAME', nargs='+',
-                                help='file path to be restored')
-    parser_annex_del = subparsers_annex.add_parser('delete',
-                                              help='remove a file from cache')
-    parser_annex_del.add_argument('id', metavar='ID',
-                               help='digest ID to delete')
-    parser_annex_get = subparsers_annex.add_parser('get',
-                                              help='Copy a file from cache')
-    parser_annex_get.add_argument('--id', metavar='DIGEST', required=True,
-                               help='digest ID to read')
-    parser_annex_get.add_argument('--dest', metavar='PATH', required=True,
-                               help='destination path')
+    subsubprs.add_argument('files', metavar='FILENAME', nargs='+',
+                           help='file path to be restored')
+    subsubprs = subprs_annex.add_parser('delete',
+                                        help='remove a file from cache')
+    subsubprs.add_argument('id', metavar='ID', help='digest ID to delete')
+    subsubprs = subprs_annex.add_parser('get', help='Copy a file from cache')
+    subsubprs.add_argument('--id', metavar='DIGEST', required=True,
+                           help='digest ID to read')
+    subsubprs.add_argument('--dest', metavar='PATH', required=True,
+                           help='destination path')
 
     # VM options
-    parser_vm = subparsers.add_parser('vm',
-                              help='Manipulate VM process')
-    subparsers_vm = parser_vm.add_subparsers(dest='vm_cmd',
-                              title='possible commands')
-    subparsers_vm.add_parser('connect', help='connect to running VM')
-    parser_vm_start = subparsers_vm.add_parser('start', help='launch a new VM')
-    parser_vm_start.add_argument('--notemp', action='store_false',
-                                 dest='tmpimg', default=True,
-                                 help='modify the real VM image')
-    subparsers_vm.add_parser('stop', help='stop the running VM')
-    parser_vm_cmd = subparsers_vm.add_parser('cmd',
-                                             help='run a command inside the VM')
-    parser_vm_cmd.add_argument('command', help='command line arguments',
-                               nargs=argparse.REMAINDER)
+    subprs = subparsers.add_parser('vm', help='Manipulate VM process')
+    subprs_vm = subprs.add_subparsers(dest='vm_cmd', title='possible commands')
+    subprs_vm.add_parser('connect', help='connect to running VM')
+    subsubprs = subprs_vm.add_parser('start', help='launch a new VM')
+    subsubprs.add_argument('--notemp', action='store_false', dest='tmpimg',
+                           default=True, help='modify the real VM image')
+    subprs_vm.add_parser('stop', help='stop the running VM')
+    subsubprs = subprs_vm.add_parser('cmd', help='run a command inside the VM')
+    subsubprs.add_argument('command', help='command line arguments',
+                           nargs=argparse.REMAINDER)
 
     # Gerrit review
-    parser_gerrit = subparsers.add_parser('gerrit', add_help=False,
-                              help='Make Gerrit automatic review')
-    parser_gerrit.add_argument('--change', help="Gerrit Change-Id",
-                               required=True)
-    parser_gerrit.add_argument('--patchset', help="Gerrit patchset ID",
-                               required=True)
-    parser_gerrit.add_argument('patch', metavar='PATCH',
-                               type=argparse.FileType('r'))
+    subprs = subparsers.add_parser('gerrit', add_help=False,
+                                   help='Make Gerrit automatic review')
+    subprs.add_argument('--change', help="Gerrit Change-Id", required=True)
+    subprs.add_argument('--patchset', help="Gerrit patchset ID", required=True)
+    subprs.add_argument('patch', metavar='PATCH', type=argparse.FileType('r'))
 
     # Parse options
     return parser.parse_args()

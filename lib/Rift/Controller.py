@@ -283,15 +283,17 @@ class BasicTest(Test):
         random.shuffle(rpmnames)
 
         cmd = textwrap.dedent("""
+        i=0
         for pkg in %s; do
+            i=$(( $i + 1 ))
+            echo -e "[Testing '${pkg}' (${i}/%d)]"
             if rpm -q --quiet $pkg; then
               yum -y -d1 upgrade $pkg || exit 1
             else
               yum -y -d1 install $pkg || exit 1
             fi
-            trans=$(yum history addon-info last | awk -F: '/Transaction ID/ {print $2}')
-            yum -y -d1 history undo ${trans} || exit 1
-        done""" % ' '.join(rpmnames))
+            yum -y -d1 history undo last || exit 1
+        done""" % (' '.join(rpmnames), len(rpmnames)))
         Test.__init__(self, cmd, "basic install")
         self.local = False
 

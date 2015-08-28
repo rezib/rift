@@ -215,7 +215,7 @@ class VM(object):
             return $rc""")
         funcs['vm_reboot'] = textwrap.dedent("""\
             echo -n 'Restarting VM...'
-            vm_cmd 'reboot' && sleep 5 && vm_wait || return 1""")
+            vm_cmd 'reboot' || true; sleep 5 && vm_wait || return 1""")
 
         if not test.local:
             cmd = "cd %s; %s" % (self._PROJ_MOUNTPOINT, test.command)

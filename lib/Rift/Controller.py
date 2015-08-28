@@ -108,6 +108,8 @@ def parse_options():
                         help='package name to test')
     subprs.add_argument('--noquit', action='store_true',
                         help='do not stop VM at the end')
+    subprs.add_argument('--noauto', action='store_true',
+                        help='do not run auto tests')
 
     # Validate options
     subprs = subparsers.add_parser('validate', help='Fully validate package')
@@ -115,6 +117,8 @@ def parse_options():
                         help='package name to validate')
     subprs.add_argument('--noquit', action='store_true',
                         help='do not stop VM at the end')
+    subprs.add_argument('--noauto', action='store_true',
+                        help='do not run auto tests')
     subprs.add_argument('-p', '--publish', action='store_true',
                         help='publish build RPMS to repository')
 
@@ -123,6 +127,8 @@ def parse_options():
     subprs.add_argument('patch', metavar='PATCH', type=argparse.FileType('r'))
     subprs.add_argument('--noquit', action='store_true',
                         help='do not stop VM at the end')
+    subprs.add_argument('--noauto', action='store_true',
+                        help='do not run auto tests')
     subprs.add_argument('-p', '--publish', action='store_true',
                         help='publish build RPMS to repository')
 
@@ -312,7 +318,8 @@ def action_test(config, args, pkg, repos, suppl_repos):
     from Rift.TestResults import TestResults
     results = TestResults()
     tests = list(pkg.tests())
-    tests.insert(0, BasicTest(pkg))
+    if not args.noauto:
+        tests.insert(0, BasicTest(pkg))
     for test in tests:
         message("Running test '%s'" % test.name)
         if vm.run_test(test) == 0:

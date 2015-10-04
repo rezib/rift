@@ -78,7 +78,7 @@ class RPM(object):
     def extract_srpm(self, specdir, srcdir, annex=None):
         """
         Extract source rpm files into `specdir' and `srcdir'.
-        
+
         If some binary files are extracted, they are moved to default annex
         or provided one.
         """
@@ -115,6 +115,12 @@ class Spec(object):
         self.filepath = filepath
         self.srpmname = None
         self.pkgnames = []
+        self.version = None
+        self.release = None
+        self.changelog_name = None
+        self.changelog_time = None
+        self.evr = None
+        self.arch = None
         self._load()
 
     def _load(self):
@@ -128,6 +134,17 @@ class Spec(object):
         self.pkgnames = [pkg.header['name'] for pkg in spec.packages]
         hdr = spec.sourceHeader
         self.srpmname = hdr.sprintf('%{NAME}-%{VERSION}-%{RELEASE}.src.rpm')
+        self.version = hdr.sprintf('%{VERSION}')
+        self.arch = hdr.sprintf('%{ARCH}')
+        self.changelog_name = hdr[rpm.RPMTAG_CHANGELOGNAME][0]
+        self.changelog_time = hdr[rpm.RPMTAG_CHANGELOGTIME][0]
+
+        # Reload to get information without dist macro set.
+        rpm.delMacro('dist')
+        hdr = rpm.TransactionSet().parseSpec(self.filepath).sourceHeader
+
+        self.release = hdr.sprintf('%{RELEASE}')
+        self.evr = hdr.sprintf('%|epoch?{%{epoch}:}:{}|%{version}-%{release}')
 
     def build_srpm(self, srcdir, destdir):
         """

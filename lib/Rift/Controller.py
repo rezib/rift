@@ -166,6 +166,14 @@ def parse_options():
     subsubprs.add_argument('command', help='command line arguments',
                            nargs=argparse.REMAINDER)
 
+    # query
+    subprs = subparsers.add_parser('query', help='Show packages metadata')
+    subprs.add_argument('packages', metavar='PACKAGE', nargs='*',
+                        help='package name to validate')
+    subprs.add_argument('--format', dest='fmt', help='Display format')
+    subprs.add_argument('-H', '--no-header', dest='headers',
+                        action='store_false', help='Hide table headers')
+
     # Gerrit review
     subprs = subparsers.add_parser('gerrit', add_help=False,
                                    help='Make Gerrit automatic review')
@@ -640,6 +648,36 @@ def action(config, args):
 
         # Re-validate each package
         return action_validate(config, args, pkglist.values(), repo, suppl_repos)
+
+    elif args.command == 'query':
+
+        from operator import attrgetter
+        from Rift.TextTable import TextTable
+
+        pkglist = sorted(Package.list(config, staff, modules, args.packages),
+                         key=attrgetter('name'))
+
+        tbl = TextTable()
+        tbl.fmt = args.fmt or '%name %module %maintainers %version %release'
+        tbl.show_header = args.headers
+        tbl.color = True
+
+        for pkg in pkglist:
+            pkg.load()
+            spec = Spec(pkg.specfile)
+            date = str(time.strftime("%Y-%m-%d", time.localtime(spec.changelog_time)))
+            tbl.append({'name': pkg.name,
+                        'module': pkg.module,
+                        'origin': pkg.origin,
+                        'reason': pkg.reason,
+                        'tests': str(len(list(pkg.tests()))),
+                        'version': spec.version,
+                        'arch': spec.arch,
+                        'release': spec.release,
+                        'changelogname': spec.changelog_name,
+                        'changelogtime': date,
+                        'maintainers': ', '.join(pkg.maintainers)})
+        print tbl
 
     # GERRIT
     elif args.command == 'gerrit':

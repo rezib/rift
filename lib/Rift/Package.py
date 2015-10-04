@@ -174,6 +174,20 @@ class Package(object):
         """
         return mock.build_rpms(srpm)
 
+    @classmethod
+    def list(cls, config, staff, modules, names=None):
+        """
+        Iterate over Package instances from 'names' list or all packages
+        if list is not provided.
+        """
+        if not names:
+            pkgdir = config.get('packages_dir')
+            names = [path for path in os.listdir(pkgdir)
+                     if os.path.isdir(os.path.join(pkgdir, path))]
+
+        for name in names:
+            yield cls(name, config, staff, modules)
+
 
 class Test(object):
     """

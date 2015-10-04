@@ -97,7 +97,7 @@ def parse_options():
 
     # Build options
     subprs = subparsers.add_parser('build', help='build source RPM and RPMS')
-    subprs.add_argument('package', metavar='PACKAGE',
+    subprs.add_argument('packages', metavar='PACKAGE', nargs='*',
                         help='package name to build')
     subprs.add_argument('-p', '--publish', action='store_true',
                         help='publish build RPMS to repository')
@@ -113,7 +113,7 @@ def parse_options():
 
     # Validate options
     subprs = subparsers.add_parser('validate', help='Fully validate package')
-    subprs.add_argument('packages', metavar='PACKAGE', nargs='+',
+    subprs.add_argument('packages', metavar='PACKAGE', nargs='*',
                         help='package name to validate')
     subprs.add_argument('--noquit', action='store_true',
                         help='do not stop VM at the end')
@@ -301,6 +301,34 @@ class BasicTest(Test):
         done""" % (' '.join(rpmnames), len(rpmnames)))
         Test.__init__(self, cmd, "basic install")
         self.local = False
+
+def action_build(config, args, pkg, repo, suppl_repos):
+
+    message('Preparing Mock environment...')
+    mock = Mock(config.get('version'))
+    mock.init(suppl_repos + [repo])
+
+    message("Building SRPM...")
+    srpm = pkg.build_srpm(mock)
+    logging.info("Built: %s", srpm.filepath)
+
+    message("Building RPMS...")
+    for rpm in pkg.build_rpms(mock, srpm):
+        logging.info('Built: %s', rpm.filepath)
+    message("RPMS successfully built")
+
+    # Publish
+    if args.publish:
+        message("Publishing RPMS...")
+        mock.publish(repo)
+
+        message("Updating repository...")
+        repo.update()
+    else:
+        logging.info("Skipping publication")
+
+    mock.clean()
+
 
 def action_test(config, args, pkg, repos, suppl_repos):
     """Process 'test' command."""
@@ -502,33 +530,13 @@ def action(config, args):
     # BUILD
     elif args.command == 'build':
 
-        pkg = Package(args.package, config, staff, modules)
-        pkg.load()
+        for pkg in Package.list(config, staff, modules, args.packages):
+            banner("Building package '%s'" % pkg.name)
 
-        message('Preparing Mock environment...')
-        mock = Mock(config.get('version'))
-        mock.init(suppl_repos + [repo])
+            pkg.load()
+            action_build(config, args, pkg, repo, suppl_repos)
 
-        message("Building SRPM...")
-        srpm = pkg.build_srpm(mock)
-        logging.info("Built: %s", srpm.filepath)
-
-        message("Building RPMS...")
-        for rpm in pkg.build_rpms(mock, srpm):
-            logging.info('Built: %s', rpm.filepath)
-        message("RPMS successfully built")
-
-        # Publish
-        if args.publish:
-            message("Publishing RPMS...")
-            mock.publish(repo)
-
-            message("Updating repository...")
-            repo.update()
-        else:
-            logging.info("Skipping publication")
-
-        mock.clean()
+        banner('All packages built')
 
     # TEST
     elif args.command == 'test':
@@ -541,7 +549,7 @@ def action(config, args):
     # VALIDATE
     elif args.command == 'validate':
 
-        pkgs = [Package(pkg, config, staff, modules) for pkg in args.packages]
+        pkgs = Package.list(config, staff, modules, args.packages)
         return action_validate(config, args, pkgs, repo, suppl_repos)
 
     elif args.command == 'validdiff':

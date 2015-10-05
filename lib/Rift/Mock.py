@@ -141,6 +141,7 @@ class Mock(object):
         specpath = os.path.realpath(specpath)
         sourcedir = os.path.realpath(sourcedir)
         cmd = self._mock_base() + ['--buildsrpm']
+        cmd += ['--no-clean', '--no-cleanup-after']
         cmd += ['--spec', specpath, '--source', sourcedir]
         logging.debug('Running mock: %s', ' '.join(cmd))
         popen = Popen(cmd, stdout=PIPE, cwd='/') #, stderr=STDOUT)

@@ -1,4 +1,4 @@
-# Copyright or (c) or Copr. 2012, CEA
+# Copyright or (c) or Copr. 2012-2015 CEA
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -21,10 +21,9 @@ Table formatting classes for text-based interface.
 
 import re
 
-COLORS = {
-        'header': '\033[34m',
-        'stop': '\033[0m',
-    }
+COLORS = {'header': '\033[34m',
+          'stop': '\033[0m',
+         }
 
 class TextTable(object):
     """
@@ -59,7 +58,7 @@ class TextTable(object):
         optional_cols     Column list to not display if they are empty.
     """
 
-    RE_PATTERN = "%(>)?(\d+)?(?P<name>[a-z]+)"
+    RE_PATTERN = r'%(>)?(\d+)?(?P<name>[a-z]+)'
 
     def __init__(self, fmt=""):
         self._rows = []
@@ -95,15 +94,18 @@ class TextTable(object):
 
     def pattern_fields(self):
         """Return the list of all field place holder name used in fmt.  """
-        return [ match.group('name')
-                 for match in re.finditer(self.RE_PATTERN, self.fmt) ]
+        return [match.group('name')
+                for match in re.finditer(self.RE_PATTERN, self.fmt)]
 
     def append(self, row):
         """Append a new row to be displayed. `row' should be a dict."""
         # Keep track of wider value for each field
         for key, value in row.iteritems():
-            header_length = len(self._header(key))
             real_value_len = len(str(value or ''))
+            if self.show_header:
+                header_length = len(self._header(key))
+            else:
+                header_length = 0
 
             # Keep track of the wider value in each col (header or value)
             self._max_width[key] = max(self._max_width.get(key, header_length),

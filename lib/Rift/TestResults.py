@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2014 CEA
+# Copyright (C) 2014-2016 CEA
 #
 # This file is part of Rift project.
 #
@@ -30,18 +30,54 @@
 # knowledge of the CeCILL license and that you accept its terms.
 #
 
+import xml.etree.cElementTree as ET
+
+from Rift.TextTable import TextTable
+
 class TestResults(object):
 
-    def __init__(self):
+    def __init__(self, name=None):
+        self.name = name
+        self.result_names = []
         self.results = {}
         self.global_result = True
 
-    def add_failure(self, name):
-        self._add_result(name, 'Failure')
+    def __len__(self):
+        return len(self.results)
+
+    def add_failure(self, name, time=None):
+        self._add_result(name, 'Failure', time)
         self.global_result = False
 
-    def add_success(self, name):
-        self._add_result(name, 'Success')
+    def add_success(self, name, time=None):
+        self._add_result(name, 'Success', time)
 
-    def _add_result(self, name, result):
-        self.results[name] = result
+    def _add_result(self, name, result, time):
+        self.result_names.append(name)
+        self.results[name] = (result, time)
+
+    def junit(self, filename):
+
+        suite = ET.Element('testsuite', tests=str(len(self.results)))
+        if self.name:
+            suite.set('name', self.name)
+
+        for name in self.result_names:
+            result, time = self.results[name]
+            case = ET.SubElement(suite, 'testcase', name=name)
+            if time:
+                case.set('time', '%.2f' % time)
+            if result == 'Failure':
+                ET.SubElement(case, 'failure')
+
+        tree = ET.ElementTree(suite)
+        tree.write(filename, encoding='UTF-8', xml_declaration=True)
+
+    def summary(self):
+        tbl = TextTable("%name %>duration %result")
+        for name in self.result_names:
+            result, time = self.results[name]
+            if result == 'Failure':
+                result = result.upper()
+            tbl.append({'name': name, 'duration': '%.0fs' % time, 'result': result})
+        return str(tbl)

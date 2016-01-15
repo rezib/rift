@@ -44,6 +44,8 @@ from Rift.Repository import RemoteRepository, Repository
 from Rift.Mock import Mock
 from Rift.Annex import Annex, is_binary
 from Rift.VM import VM
+from Rift.TestResults import TestResults
+
 
 def message(msg):
     print "> %s" % msg
@@ -101,6 +103,8 @@ def parse_options():
                         help='package name to build')
     subprs.add_argument('-p', '--publish', action='store_true',
                         help='publish build RPMS to repository')
+    subprs.add_argument('--junit', metavar='FILENAME',
+                        help='write junit result file')
 
     # Test options
     subprs = subparsers.add_parser('test', help='execute package tests')
@@ -110,6 +114,8 @@ def parse_options():
                         help='do not stop VM at the end')
     subprs.add_argument('--noauto', action='store_true',
                         help='do not run auto tests')
+    subprs.add_argument('--junit', metavar='FILENAME',
+                        help='write junit result file')
 
     # Validate options
     subprs = subparsers.add_parser('validate', help='Fully validate package')
@@ -355,19 +361,18 @@ def action_test(config, args, pkg, repos, suppl_repos):
 
     banner("Starting tests")
 
-
-    from Rift.TestResults import TestResults
-    results = TestResults()
+    results = TestResults('test')
     tests = list(pkg.tests())
     if not args.noauto:
         tests.insert(0, BasicTest(pkg))
     for test in tests:
+        now = time.time()
         message("Running test '%s'" % test.name)
         if vm.run_test(test) == 0:
-            results.add_success(test.name)
+            results.add_success(test.name, time.time() - now)
             message("Test '%s': OK" % test.name)
         else:
-            results.add_failure(test.name)
+            results.add_failure(test.name, time.time() - now)
             message("Test '%s': ERROR" % test.name)
 
     if not getattr(args, 'noquit', False):
@@ -376,6 +381,10 @@ def action_test(config, args, pkg, repos, suppl_repos):
         vm.stop()
     else:
         message("Not stopping the VM. Use: rift vm connect")
+
+    if getattr(args, 'junit', False):
+        logging.info('Writing test results in %s' % args.junit)
+        results.junit(args.junit)
 
     if results.global_result:
         banner("Test suite SUCCEEDED")
@@ -558,13 +567,28 @@ def action(config, args):
     # BUILD
     elif args.command == 'build':
 
+        results = TestResults('build')
+
         for pkg in Package.list(config, staff, modules, args.packages):
             banner("Building package '%s'" % pkg.name)
 
             pkg.load()
-            action_build(config, args, pkg, repo, suppl_repos)
+            now = time.time()
+            try:
+                action_build(config, args, pkg, repo, suppl_repos)
+            except RiftError as ex:
+                results.add_failure(pkg.name, time.time() - now)
+            else:
+                results.add_success(pkg.name, time.time() - now)
+
+        if getattr(args, 'junit', False):
+            logging.info('Writing test results in %s' % args.junit)
+            results.junit(args.junit)
 
         banner('All packages built')
+
+        if len(results) > 1:
+            print results.summary()
 
     # TEST
     elif args.command == 'test':

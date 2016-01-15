@@ -90,6 +90,19 @@ def parse_options():
     subprs.add_argument('-t', '--maintainer', dest='maintainer',
                         help='maintainer name from staff.yaml')
 
+    # Reimport options
+    subprs = subparsers.add_parser('reimport',
+                                   help='update an existing package with a SRPM')
+    subprs.add_argument('file', metavar='FILE', help='source RPM to import')
+    subprs.add_argument('-m', '--module', dest='module',
+                        help='module name this package will belong to')
+    subprs.add_argument('-r', '--reason', dest='reason',
+                        help='reason this package is added to project')
+    subprs.add_argument('-o', '--origin', dest='origin',
+                        help='source of original package')
+    subprs.add_argument('-t', '--maintainer', dest='maintainer',
+                        help='maintainer name from staff.yaml')
+
     # Check options
     subprs = subparsers.add_parser('check',
                                    help='verify various config file syntaxes')
@@ -551,12 +564,12 @@ def action(config, args):
     modules = Modules(staff)
     modules.load(config.get('modules_file'))
 
-    # CREATE/IMPORT
-    if args.command in ['create', 'import']:
+    # CREATE/IMPORT/REIMPORT
+    if args.command in ['create', 'import', 'reimport']:
 
         if args.command == 'create':
             pkgname = args.name
-        elif args.command == 'import':
+        elif args.command in ('import', 'reimport'):
             rpm = RPM(args.file, config)
             if not rpm.is_source:
                 raise RiftError("%s is not a source RPM" % args.file)
@@ -566,15 +579,25 @@ def action(config, args):
             raise RiftError("You must specify a maintainer")
 
         pkg = Package(pkgname, config, staff, modules)
-        pkg.module = args.module
-        pkg.maintainers = [args.maintainer]
-        pkg.reason = args.reason
-        pkg.origin = args.origin
-        pkg.check_info()
-        pkg.create()
-        message("Package '%s' has been created" % pkg.name)
+        if args.command == 'reimport':
+            pkg.load()
 
-        if args.command == 'import':
+        if args.module:
+            pkg.module = args.module
+        if args.maintainer not in pkg.maintainers:
+            pkg.maintainers.append(args.maintainer)
+        if args.reason:
+            pkg.reason = args.reason
+        if args.origin:
+            pkg.origin = args.origin
+
+        pkg.check_info()
+        pkg.write()
+
+        if args.command in ('create', 'import'):
+            message("Package '%s' has been created" % pkg.name)
+
+        if args.command in ('import', 'reimport'):
             rpm.extract_srpm(pkg.dir, pkg.sourcesdir)
             message("Package '%s' has been imported" % pkg.name)
 

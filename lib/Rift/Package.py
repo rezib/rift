@@ -51,7 +51,7 @@ class Package(object):
     """
     Base object in Rift framework.
 
-    It creates, load, check, build and test a package.
+    It creates, load, update, check, build and test a package.
     """
 
     def __init__(self, name, config, staff, modules):
@@ -62,9 +62,10 @@ class Package(object):
 
         # infos.yaml
         self.module = None
-        self.maintainers = None
+        self.maintainers = []
         self.reason = None
         self.origin = None
+        self.ignore_rpms = None
         self.rpmnames = None
 
         # Static paths
@@ -100,8 +101,12 @@ class Package(object):
         if self.reason is None:
             raise RiftError("Missing reason")
 
-    def create(self):
-        """Create the file and directory structure for this package instance."""
+    def write(self):
+        """
+        Create or update the file and directory structure for this package
+        instance.
+        """
+
         # Create package directory if needed
         if not os.path.isdir(self.dir):
             os.mkdir(self.dir)
@@ -116,6 +121,10 @@ class Package(object):
             data['maintainers'] = self.maintainers
         if self.origin:
             data['origin'] = self.origin
+        if self.rpmnames:
+            data['rpm_names'] = self.rpmnames
+        if self.ignore_rpms:
+            data['ignore_rpms'] = self.ignore_rpms
 
         with open(self.metafile, 'w') as fyaml:
             yaml.dump({'package': data}, fyaml, default_flow_style=False)

@@ -204,26 +204,40 @@ class Annex(object):
         """
         Copy file at `filepath' into this repository and replace the original
         file by a fake one pointed to it.
-        """
-        # Create hash
-        digest = hashfile(filepath)
 
-        # Verify permission are correct before copying
-        os.chmod(filepath, 0644)
+        If the same content is already present, do nothing.
+        """
+        # Compute hash
+        digest = hashfile(filepath)
+        destpath = os.path.join(self.path, digest)
+        filename = os.path.basename(filepath)
 
         # Prepare metadata file
         metadata = self._load_metadata(digest)
-        # Update them and write them back
-        fileset = metadata.setdefault('filenames', {})
-        fileset.setdefault(os.path.basename(filepath), {})
-        fileset[os.path.basename(filepath)]['date'] = time.strftime("%c")
-        self._save_metadata(digest, metadata)
 
-        # Move binary file to annex
-        destpath = os.path.join(self.path, digest)
-        logging.debug('Importing %s into annex (%s)', filepath, digest)
-        shutil.copyfile(filepath, destpath)
-        os.chmod(destpath, 0664)
+        # Is file already present?
+        originfo = os.stat(filepath)
+        destinfo = None
+        if os.path.exists(destpath):
+            destinfo = os.stat(destpath)
+        if destinfo and destinfo.st_size == originfo.st_size and \
+          filename in metadata.get('filenames', {}):
+            logging.debug('%s is already into annex, skipping it' % filename)
+
+        else:
+            # Update them and write them back
+            fileset = metadata.setdefault('filenames', {})
+            fileset.setdefault(filename, {})
+            fileset[filename]['date'] = time.strftime("%c")
+            self._save_metadata(digest, metadata)
+
+            # Move binary file to annex
+            logging.debug('Importing %s into annex (%s)', filepath, digest)
+            shutil.copyfile(filepath, destpath)
+            os.chmod(destpath, 0664)
+
+        # Verify permission are correct before copying
+        os.chmod(filepath, 0644)
 
         # Create fake pointer file
         with open(filepath, 'w') as fakefile:

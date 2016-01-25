@@ -59,17 +59,22 @@ class Package(object):
         self._staff = staff
         self._modules = modules
         self.name = name
+
+        # infos.yaml
         self.module = None
         self.maintainers = None
         self.reason = None
         self.origin = None
         self.rpmnames = None
 
+        # Static paths
         self.dir = os.path.join(self._config.get('packages_dir'), self.name)
         self.sourcesdir = os.path.join(self.dir, _SOURCES_DIR)
         self.testsdir = os.path.join(self.dir, _TESTS_DIR)
         self.metafile = os.path.join(self.dir, _META_FILE)
         self.specfile = os.path.join(self.dir, '%s.spec' % self.name)
+
+        self.sources = set()
 
     def check_info(self):
         """
@@ -145,6 +150,8 @@ class Package(object):
             self.ignore_rpms = data.get('ignore_rpms', [])
 
         self.check_info()
+
+        self.sources = set(os.listdir(self.sourcesdir))
 
     def tests(self):
         """An iterator over Test objects for each test files."""

@@ -115,6 +115,7 @@ class Spec(object):
         self.filepath = filepath
         self.srpmname = None
         self.pkgnames = []
+        self.sources = []
         self.version = None
         self.release = None
         self.changelog_name = None
@@ -138,6 +139,8 @@ class Spec(object):
         self.arch = hdr.sprintf('%{ARCH}')
         self.changelog_name = hdr[rpm.RPMTAG_CHANGELOGNAME][0]
         self.changelog_time = hdr[rpm.RPMTAG_CHANGELOGTIME][0]
+        self.sources.extend(hdr[rpm.RPMTAG_SOURCE])
+        self.sources.extend(hdr[rpm.RPMTAG_PATCH])
 
         # Reload to get information without dist macro set.
         rpm.delMacro('dist')

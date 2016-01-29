@@ -98,7 +98,7 @@ class VM(object):
         # Start VM process
         cmd = [self.qemu, '-enable-kvm', '-name', 'rift', '-display', 'none']
         cmd += ['-m', '8192', '-smp', '8']
-        cmd += ['-drive', 'file=%s,id=drive-ide0,format=qcow2,cache=none'
+        cmd += ['-drive', 'file=%s,if=virtio,format=qcow2,cache=none'
                 % imgfile]
         cmd += ['-netdev', 'user,id=hostnet0,hostname=%s,hostfwd=tcp::%d-:22'
                               % (self.NAME, self.port)]

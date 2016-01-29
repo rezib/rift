@@ -436,15 +436,18 @@ def action_vm(config, args, repos, suppl_repos):
 
     assert args.vm_cmd in ('connect', 'start', 'stop', 'cmd')
     if args.vm_cmd == 'connect':
-        vm.cmd(options=None)
+        return vm.cmd(options=None)
     elif args.vm_cmd == 'cmd':
-        vm.cmd(' '.join(args.command), options=None)
+        return vm.cmd(' '.join(args.command), options=None)
     elif args.vm_cmd == 'start':
         vm.tmpmode = args.tmpimg
         if _vm_start(vm):
             message("VM started. Use: rift vm connect")
+            return 0
+        else:
+            return 1
     elif args.vm_cmd == 'stop':
-        vm.cmd('poweroff')
+        return vm.cmd('poweroff')
 
 def action_gerrit(args, config, staff, modules):
     """Review a patchset for Gerrit (specfiles)"""
@@ -489,8 +492,7 @@ def action(config, args):
 
     # VM
     if args.command == 'vm':
-        action_vm(config, args, [repo], suppl_repos)
-        return
+        return action_vm(config, args, [repo], suppl_repos)
 
     # Now, package related commands..
 

@@ -245,6 +245,9 @@ class Staff(object):
     def __contains__(self, item):
         return item in self._data
 
+    def get(self, item):
+        return self._data.get(item)
+
     def load(self, filepath=None):
         """
         Load yaml file content.

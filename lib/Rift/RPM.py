@@ -35,7 +35,9 @@ Helper classes to manipulate RPM files and SPEC files.
 """
 
 import os
+import re
 import rpm
+import time
 import shutil
 import logging
 from subprocess import Popen, PIPE, STDOUT
@@ -148,6 +150,40 @@ class Spec(object):
 
         self.release = hdr.sprintf('%{RELEASE}')
         self.evr = hdr.sprintf('%|epoch?{%{epoch}:}:{}|%{version}-%{release}')
+
+    def add_changelog_entry(self, userstring, comment):
+        """
+        Add a new entry to changelog.
+
+        New record is based on current time and is first in list.
+        """
+
+        lines = []
+        with open(self.filepath, 'r') as fspec:
+            lines = fspec.readlines()
+
+        date = time.strftime("%a %b %d %Y", time.gmtime())
+        newchangelogentry = "* %s %s - %s\n%s\n" % \
+            (date, userstring, self.evr, comment)
+
+        for i in range(len(lines)):
+            if re.match(r'^%changelog(\s|$)', lines[i]):
+                if len(lines) > i + 1 and lines[i + 1].strip() != "":
+                    newchangelogentry += "\n"
+
+                lines[i] += newchangelogentry
+                break
+        else:
+            if lines[-1].strip() != "":
+                lines.append("\n")
+            lines.append("%changelog\n")
+            lines.append(newchangelogentry)
+
+        with open(self.filepath, 'w') as fspec:
+            fspec.writelines(lines)
+
+        # Reload
+        self._load()
 
     def build_srpm(self, srcdir, destdir):
         """

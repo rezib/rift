@@ -163,7 +163,7 @@ def parse_options():
                            default=True, help='modify the real VM image')
     subprs_vm.add_parser('stop', help='stop the running VM')
     subsubprs = subprs_vm.add_parser('cmd', help='run a command inside the VM')
-    subsubprs.add_argument('command', help='command line arguments',
+    subsubprs.add_argument('commandline', help='command line arguments',
                            nargs=argparse.REMAINDER)
 
     # query
@@ -446,7 +446,7 @@ def action_vm(config, args, repos, suppl_repos):
     if args.vm_cmd == 'connect':
         return vm.cmd(options=None)
     elif args.vm_cmd == 'cmd':
-        return vm.cmd(' '.join(args.command), options=None)
+        return vm.cmd(' '.join(args.commandline), options=None)
     elif args.vm_cmd == 'start':
         vm.tmpmode = args.tmpimg
         if _vm_start(vm):

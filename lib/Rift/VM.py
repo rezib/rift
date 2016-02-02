@@ -57,7 +57,7 @@ class VM(object):
     def __init__(self, config, repos, suppl_repos=(), tmpmode=True):
         self._image = config.get('vm_image')
         self._project_dir = config.get_project_dir()[0]
-        self._repos = repos
+        self._repos = repos or []
         self._suppl_repos = suppl_repos
 
         self.address = config.get('vm_address')

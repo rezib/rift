@@ -312,9 +312,14 @@ class BasicTest(Test):
 
 def action_build(config, args, pkg, repo, suppl_repos):
 
+    if args.publish and not repo:
+        raise RiftError("Cannot publish if 'working_repo' is undefined")
+
     message('Preparing Mock environment...')
     mock = Mock(config.get('version'))
-    mock.init(suppl_repos + [repo])
+    if repo:
+        suppl_repos = suppl_repos + [repo]
+    mock.init(suppl_repos)
 
     message("Building SRPM...")
     srpm = pkg.build_srpm(mock)
@@ -380,8 +385,11 @@ def action_test(config, args, pkg, repos, suppl_repos):
         return 1
 
 def action_validate(config, args, pkgs, repo, suppl_repos):
-    rcs = 0
 
+    if args.publish and not repo:
+        raise RiftError("Cannot publish if 'working_repo' is undefined")
+
+    rcs = 0
     for pkg in pkgs:
 
         banner("Checking package '%s'" % pkg.name)
@@ -405,7 +413,9 @@ def action_validate(config, args, pkgs, repo, suppl_repos):
 
         message('Preparing Mock environment...')
         mock = Mock(config.get('version'))
-        mock.init(suppl_repos + [repo])
+        if repo:
+            suppl_repos = suppl_repos + [repo]
+        mock.init(suppl_repos)
 
         # Check build SRPM
         message('Validate source RPM build...')
@@ -418,7 +428,10 @@ def action_validate(config, args, pkgs, repo, suppl_repos):
         # Check tests
         mock.publish(staging)
         staging.update()
-        rc = action_test(config, args, pkg, [repo, staging], suppl_repos)
+        repos = [staging]
+        if repo:
+            repos = [repo, staging]
+        rc = action_test(config, args, pkg, repos, suppl_repos)
         rcs = rcs or rc
 
         # Also publish on working repo if requested
@@ -491,7 +504,12 @@ def action(config, args):
         return
 
     # Repo objects
-    repo = Repository(config.get('working_repo'), config.get('arch'), 'working')
+    if config.get('working_repo'):
+        repo = Repository(config.get('working_repo'), config.get('arch'), 'working')
+        repos = [repo]
+    else:
+        repo = None
+        repos = []
     suppl_repos = []
     if config.get('repo_os_url'):
         suppl_repos.append(RemoteRepository(config.get('repo_os_url'), 'os'))
@@ -500,7 +518,7 @@ def action(config, args):
 
     # VM
     if args.command == 'vm':
-        return action_vm(config, args, [repo], suppl_repos)
+        return action_vm(config, args, repos, suppl_repos)
 
     # Now, package related commands..
 
@@ -554,7 +572,7 @@ def action(config, args):
         pkg = Package(args.package, config, staff, modules)
         pkg.load()
 
-        action_test(config, args, pkg, [repo], suppl_repos)
+        action_test(config, args, pkg, repos, suppl_repos)
 
     # VALIDATE
     elif args.command == 'validate':

@@ -83,7 +83,6 @@ class Config(object):
         },
         'repo_os_url': { },
         'working_repo': {
-            'required': True,
         },
         'repos': {
             'check':    'dict',

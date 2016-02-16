@@ -35,7 +35,7 @@
 from distutils.core import setup
 
 setup(name='rift',
-      version='0.1',
+      version='0.2',
       license='CeCILL-C (French equivalent to LGPLv2+)',
       description='RPM repository management',
       author='Aurelien Degremont',

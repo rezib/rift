@@ -439,6 +439,14 @@ def action_validate(config, args, pkgs, repo, suppl_repos):
         spec = Spec(pkg.specfile)
         spec.check(pkg.dir)
 
+        # This should be more generic and moved into Rift.Package/Rift.RPM
+        if pkg.sources - set(spec.sources):
+            msg = "Unused source file(s): %s" % ' '.join(pkg.sources - set(spec.sources))
+            raise RiftError(msg)
+        if set(spec.sources) - pkg.sources:
+            msg = "Missing source file(s): %s" % ' '.join(set(spec.sources) - pkg.sources)
+            raise RiftError(msg)
+
         logging.info('Creating temporary repository')
         from Rift.TempDir import TempDir
         stagedir = TempDir('stagedir')

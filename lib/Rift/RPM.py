@@ -139,8 +139,10 @@ class Spec(object):
         self.srpmname = hdr.sprintf('%{NAME}-%{VERSION}-%{RELEASE}.src.rpm')
         self.version = hdr.sprintf('%{VERSION}')
         self.arch = hdr.sprintf('%{ARCH}')
-        self.changelog_name = hdr[rpm.RPMTAG_CHANGELOGNAME][0]
-        self.changelog_time = hdr[rpm.RPMTAG_CHANGELOGTIME][0]
+        if hdr[rpm.RPMTAG_CHANGELOGNAME]:
+            self.changelog_name = hdr[rpm.RPMTAG_CHANGELOGNAME][0]
+        if hdr[rpm.RPMTAG_CHANGELOGTIME]:
+            self.changelog_time = hdr[rpm.RPMTAG_CHANGELOGTIME][0]
         self.sources.extend(hdr[rpm.RPMTAG_SOURCE])
         self.sources.extend(hdr[rpm.RPMTAG_PATCH])
 

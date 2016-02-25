@@ -131,9 +131,10 @@ class Spec(object):
         if not os.path.exists(self.filepath):
             raise RiftError('%s does not exist' % self.filepath)
         try:
+            rpm.reloadConfig()
             spec = rpm.TransactionSet().parseSpec(self.filepath)
         except ValueError as exp:
-            raise RiftError(str(exp))
+            raise RiftError("%s: %s" % (self.filepath, exp))
         self.pkgnames = [pkg.header['name'] for pkg in spec.packages]
         hdr = spec.sourceHeader
         self.srpmname = hdr.sprintf('%{NAME}-%{VERSION}-%{RELEASE}.src.rpm')

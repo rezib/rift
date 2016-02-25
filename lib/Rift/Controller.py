@@ -426,7 +426,7 @@ def action_validate(config, args, pkgs, repo, suppl_repos):
     if args.publish and not repo:
         raise RiftError("Cannot publish if 'working_repo' is undefined")
 
-    rcs = 0
+    rc = 0
     for pkg in pkgs:
 
         banner("Checking package '%s'" % pkg.name)
@@ -480,12 +480,11 @@ def action_validate(config, args, pkgs, repo, suppl_repos):
         repos = [staging]
         if repo:
             repos = [repo, staging]
-        rc = action_test(config, args, pkg, repos, suppl_repos)
-        rcs = rcs or rc
+        rc = action_test(config, args, pkg, repos, suppl_repos) or rc
 
         # Also publish on working repo if requested
         # XXX: All RPMs should be published when all of them have been validated
-        if args.publish:
+        if rc == 0 and args.publish:
             message("Publishing RPMS...")
             mock.publish(repo)
 
@@ -497,7 +496,7 @@ def action_validate(config, args, pkgs, repo, suppl_repos):
         stagedir.delete()
 
     banner('All packages checked')
-    return rcs
+    return rc
 
 def action_vm(config, args, repos, suppl_repos):
     """Action for 'vm' sub-commands."""

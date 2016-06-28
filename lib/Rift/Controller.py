@@ -837,7 +837,7 @@ def main():
         # Do the job
         return action(config, args)
 
-    except (RpmError, RiftError, IOError) as exp:
+    except (RpmError, RiftError, IOError, OSError) as exp:
         if logging.getLogger().isEnabledFor(logging.DEBUG):
             raise
         else:

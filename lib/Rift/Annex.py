@@ -178,7 +178,7 @@ class Annex(object):
         # Read current metadata if present
         if os.path.exists(metapath):
             with open(metapath) as fyaml:
-                metadata = yaml.load(fyaml)
+                metadata = yaml.load(fyaml) or {} # Protect against empty file
         return metadata
 
     def _save_metadata(self, digest, metadata):

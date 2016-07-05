@@ -754,7 +754,15 @@ def action(config, args):
         tbl.show_header = args.headers
         tbl.color = True
 
+        supported_keys = set(('name', 'module', 'origin', 'reason', 'tests',
+                              'version', 'arch', 'release', 'changelogname',
+                              'changelogtime', 'maintainers'))
+        diff_keys = set(tbl.pattern_fields()) - supported_keys
+        if diff_keys:
+            raise RiftError('Unknown placeholder(s): %s' % ', '.join(diff_keys))
+
         for pkg in pkglist:
+            logging.debug('Loading package %s' % pkg.name)
             pkg.load()
             spec = Spec(pkg.specfile)
             date = str(time.strftime("%Y-%m-%d", time.localtime(spec.changelog_time)))

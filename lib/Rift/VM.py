@@ -39,6 +39,7 @@ import pwd
 import grp
 import sys
 import time
+import shlex
 import logging
 import tempfile
 import textwrap
@@ -62,6 +63,7 @@ class VM(object):
 
         self.address = config.get('vm_address')
         self.port = config.get('vm_port', os.getuid() + 2000)
+        self.cpus = config.get('vm_cpus', 1)
         self.qemu = config.get('qemu')
 
         self.tmpmode = tmpmode
@@ -96,13 +98,20 @@ class VM(object):
             imgfile = self._image
 
         # Start VM process
-        cmd = [self.qemu, '-enable-kvm', '-name', 'rift', '-display', 'none']
-        cmd += ['-m', '8192', '-smp', '8']
+        cmd = shlex.split(self.qemu)
+        cmd += ['-enable-kvm', '-name', 'rift', '-display', 'none']
+        cmd += ['-m', '8192', '-smp', str(self.cpus), '-cpu', 'host']
+
+        # Drive
         cmd += ['-drive', 'file=%s,if=virtio,format=qcow2,cache=none'
                 % imgfile]
+
+        # NIC
         cmd += ['-netdev', 'user,id=hostnet0,hostname=%s,hostfwd=tcp::%d-:22'
                               % (self.NAME, self.port)]
         cmd += ['-device', 'virtio-net-pci,netdev=hostnet0,bus=pci.0,addr=0x3']
+
+
         cmd += ['-virtfs', 'local,id=project,path=/%s,mount_tag=project,'
                            'security_model=none' % self._project_dir]
         for repo in self._repos:

@@ -102,6 +102,10 @@ class Config(object):
         'vm_port': {
             'check':    'digit',
         },
+        'vm_cpus': {
+            'check':    'digit',
+            'default':  4,
+        },
         'vm_address': {
             'default':  '10.0.2.15',
         },

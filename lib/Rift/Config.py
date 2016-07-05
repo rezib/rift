@@ -119,8 +119,9 @@ class Config(object):
 
     def __init__(self):
         self.options = { }
+        self.project_dir = None
 
-    def get_project_dir(self, filenames=None):
+    def find_project_dir(self, filenames=None):
         """
         Look for project base directory looking for configuration filenames.
 
@@ -139,15 +140,30 @@ class Config(object):
             filepath = os.path.abspath(filepath)
             dirname, filename = os.path.split(filepath)
             if os.path.exists(filepath):
-                return dirname, filename
+                return dirname
 
             while dirname != '/':
                 dirname = os.path.split(dirname)[0]
                 filepath = os.path.join(dirname, filename)
                 if os.path.exists(filepath):
-                    return dirname, filename
+                    return dirname
 
-        return None, None
+        return None
+
+    def project_path(self, filepath):
+        """
+        Transform a path relative to project root dir to a usable path.
+
+        filepath should either be an absolute path or relative to project root
+        dir.
+        """
+        if not self.project_dir:
+            self.project_dir = self.find_project_dir()
+
+        if self.project_dir and not os.path.isabs(filepath):
+            filepath = os.path.join(self.project_dir, filepath)
+
+        return filepath
 
     def get(self, option, default=None):
         if option in self.options:
@@ -171,11 +187,11 @@ class Config(object):
 
         for filepath in filenames:
             try:
-                filedir, filename = self.get_project_dir(filepath)
-                if filedir and filename:
-                    filepath = os.path.join(filedir, filename)
+                # Initialize project_dir using project config files
+                if self.project_dir is None:
+                    self.find_project_dir(filepath)
 
-                with open(filepath) as fyaml:
+                with open(self.project_path(filepath)) as fyaml:
                     data = yaml.load(fyaml, Loader=OrderedLoader)
 
                 self.update(data)
@@ -243,8 +259,9 @@ class Staff(object):
     ITEMS_HEADER = 'staff'
     ITEMS_KEYS   = ['email']
 
-    def __init__(self):
+    def __init__(self, config):
         self._data = {}
+        self._config = config
 
     def __contains__(self, item):
         return item in self._data
@@ -255,20 +272,20 @@ class Staff(object):
     def load(self, filepath=None):
         """
         Load yaml file content.
-        
+
         If filepath is not defined, the default file path is used.
         """
         if filepath is None:
             filepath = self.DEFAULT_PATH
 
         try:
-            with open(filepath) as fyaml:
+            with open(self._config.project_path(filepath)) as fyaml:
                 data = yaml.load(fyaml)
 
             self._data = data.pop(self.ITEMS_HEADER) or {}
 
             self._check()
-        
+
         except AttributeError as exp:
             raise DeclError("Bad data format in %s file" % self.DATA_NAME)
         except KeyError as exp:
@@ -285,7 +302,7 @@ class Staff(object):
     def _check(self):
         """
         Verify declaration is correct.
-        
+
         No missing element, no unnecessary one.
         """
         for people, data in self._data.items():
@@ -314,14 +331,14 @@ class Modules(Staff):
     ITEMS_HEADER = 'modules'
     ITEMS_KEYS   = ['manager']
 
-    def __init__(self, staff):
-        Staff.__init__(self)
+    def __init__(self, config, staff):
+        Staff.__init__(self, config)
         self.staff = staff
 
     def _check(self):
         """
         Verify modules declaration is correct.
-        
+
         No missing element, no unnecessary one.
         """
         Staff._check(self)

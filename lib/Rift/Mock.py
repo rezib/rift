@@ -58,7 +58,8 @@ class Mock(object):
     MOCK_FILES = ['logging.ini', 'site-defaults.cfg']
     MOCK_RESULT = '/var/lib/mock/%s/result'
 
-    def __init__(self, proj_vers=None):
+    def __init__(self, config, proj_vers=None):
+        self._config = config
         self._tmpdir = None
         self._mockname = 'rift-%s' % getpass.getuser()
         if proj_vers:
@@ -68,7 +69,8 @@ class Mock(object):
     def _create_template(self, repolist, dstpath):
         """Create 'default.cfg' config file based on a template."""
         # Read template
-        tpl = Template(open(self.MOCK_TEMPLATE).read())
+        tplfile = self._config.project_path(self.MOCK_TEMPLATE)
+        tpl = Template(open(tplfile).read())
         context = {'name': self._mockname, 'repos': []}
 
         # Populate with repolist
@@ -84,7 +86,7 @@ class Mock(object):
             fmock.write(tpl.render(context))
         # We have to keep template timestamp to avoid being detected as a new
         # one each time.
-        shutil.copystat(self.MOCK_TEMPLATE, dstpath)
+        shutil.copystat(tplfile, dstpath)
 
     def _mock_base(self):
         """Return base argument to launch mock"""

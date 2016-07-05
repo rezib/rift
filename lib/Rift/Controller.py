@@ -31,6 +31,7 @@
 #
 
 import re
+import os
 import argparse
 import logging
 import time
@@ -222,23 +223,23 @@ def action_check(args, config):
 
     if args.type == 'staff':
 
-        staff = Staff()
+        staff = Staff(config)
         staff.load(args.file or config.get('staff_file'))
         logging.info('Staff file is OK.')
 
     elif args.type == 'modules':
 
-        staff = Staff()
+        staff = Staff(config)
         staff.load(config.get('staff_file'))
-        modules = Modules(staff)
+        modules = Modules(config, staff)
         modules.load(args.file or config.get('modules_file'))
         logging.info('Modules file is OK.')
 
     elif args.type == 'info':
 
-        staff = Staff()
+        staff = Staff(config)
         staff.load(config.get('staff_file'))
-        modules = Modules(staff)
+        modules = Modules(config, staff)
         modules.load(config.get('modules_file'))
 
         if args.file is None:
@@ -350,7 +351,7 @@ def action_build(config, args, pkg, repo, suppl_repos):
         raise RiftError("Cannot publish if 'working_repo' is undefined")
 
     message('Preparing Mock environment...')
-    mock = Mock(config.get('version'))
+    mock = Mock(config, config.get('version'))
     if repo:
         suppl_repos = suppl_repos + [repo]
     mock.init(suppl_repos)
@@ -461,7 +462,7 @@ def action_validate(config, args, pkgs, repo, suppl_repos):
         staging.create()
 
         message('Preparing Mock environment...')
-        mock = Mock(config.get('version'))
+        mock = Mock(config, config.get('version'))
         if repo:
             suppl_repos = suppl_repos + [repo]
         mock.init(suppl_repos)
@@ -528,7 +529,6 @@ def action_gerrit(args, config, staff, modules):
     from unidiff import parse_unidiff
     for patchedfile in parse_unidiff(args.patch):
         filepath = patchedfile.path
-        import os
         names = filepath.split(os.path.sep)
         if names[0] == config.get('packages_dir'):
             pkg = Package(names[1], config, staff, modules)
@@ -541,6 +541,9 @@ def action_gerrit(args, config, staff, modules):
 
 
 def action(config, args):
+
+    if getattr(args, 'file', None) is not None:
+        args.file = os.path.abspath(args.file)
 
     # CHECK
     if args.command == 'check':
@@ -571,10 +574,10 @@ def action(config, args):
 
     # Now, package related commands..
 
-    staff = Staff()
+    staff = Staff(config)
     staff.load(config.get('staff_file'))
 
-    modules = Modules(staff)
+    modules = Modules(config, staff)
     modules.load(config.get('modules_file'))
 
     # CREATE/IMPORT/REIMPORT
@@ -661,22 +664,21 @@ def action(config, args):
         pkglist = {}
         for patchedfile in parse_unidiff(args.patch):
 
-            import os
             filepath = patchedfile.path
             names = filepath.split(os.path.sep)
 
             if filepath == config.get('staff_file'):
 
-                staff = Staff()
+                staff = Staff(config)
                 staff.load(filepath)
                 logging.info('Staff file is OK.')
 
             elif filepath == config.get('modules_file'):
 
-                staff = Staff()
+                staff = Staff(config)
                 staff.load(config.get('staff_file'))
 
-                modules = Modules(staff)
+                modules = Modules(config, staff)
                 modules.load(filepath)
                 logging.info('Modules file is OK.')
 

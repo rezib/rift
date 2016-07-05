@@ -57,7 +57,7 @@ class VM(object):
 
     def __init__(self, config, repos, suppl_repos=(), tmpmode=True):
         self._image = config.get('vm_image')
-        self._project_dir = config.get_project_dir()[0]
+        self._project_dir = config.project_dir
         self._repos = repos or []
         self._suppl_repos = suppl_repos
 
@@ -227,7 +227,11 @@ class VM(object):
             vm_cmd 'reboot' || true; sleep 5 && vm_wait || return 1""")
 
         if not test.local:
-            cmd = "cd %s; %s" % (self._PROJ_MOUNTPOINT, test.command)
+            if test.command.startswith(self._project_dir):
+                testcmd = test.command[len(self._project_dir) + 1:]
+            else:
+                testcmd = test.command
+            cmd = "cd %s; %s" % (self._PROJ_MOUNTPOINT, testcmd)
             return self.cmd(cmd)
         else:
             cmd = ''

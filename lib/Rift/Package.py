@@ -69,7 +69,8 @@ class Package(object):
         self.rpmnames = None
 
         # Static paths
-        self.dir = os.path.join(self._config.get('packages_dir'), self.name)
+        pkgdir = os.path.join(self._config.get('packages_dir'), self.name)
+        self.dir = self._config.project_path(pkgdir)
         self.sourcesdir = os.path.join(self.dir, _SOURCES_DIR)
         self.testsdir = os.path.join(self.dir, _TESTS_DIR)
         self.metafile = os.path.join(self.dir, _META_FILE)
@@ -80,10 +81,10 @@ class Package(object):
     def check_info(self):
         """
         Check info.yaml content is correct.
-        
+
         This uses Staff and Modules content.
         """
-        
+
         # Check maintainers
         if not self.maintainers:
             raise RiftError("Maintainers are missing")
@@ -131,7 +132,7 @@ class Package(object):
 
     def load(self, infopath=None):
         """Read package metadata 'info.yaml' and check its content."""
- 
+
         if infopath is None:
             if not os.path.exists(self.dir):
                 msg = "Package '%s' directory does not exist" % self.name
@@ -197,7 +198,7 @@ class Package(object):
         if list is not provided.
         """
         if not names:
-            pkgdir = config.get('packages_dir')
+            pkgdir = config.project_path(config.get('packages_dir'))
             names = [path for path in os.listdir(pkgdir)
                      if os.path.isdir(os.path.join(pkgdir, path))]
 
@@ -208,7 +209,7 @@ class Package(object):
 class Test(object):
     """
     Wrapper around test scripts or test commands.
-    
+
     It analyzes if test script is flagged as local one or if it should be run
     inside the VM.
     """

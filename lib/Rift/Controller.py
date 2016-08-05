@@ -244,7 +244,8 @@ def action_check(args, config):
         if args.file is None:
             raise RiftError("You must specifiy a file path (-f)")
 
-        pkg = Package("check", config, staff, modules)
+        pkg = Package('dummy', config, staff, modules)
+        pkg.sourcesdir = '/'
         pkg.load(args.file)
         logging.info('Info file is OK.')
 

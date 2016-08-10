@@ -32,7 +32,7 @@
 #
 
 
-from distutils.core import setup
+from setuptools import setup
 
 setup(name='rift',
       version='0.2',
@@ -43,9 +43,14 @@ setup(name='rift',
       package_dir={'': 'lib'},
       packages=['Rift'],
       py_modules = ['unidiff'],
-      data_files=[('/usr/bin', ['scripts/rift']),
+      data_files = [
                   ('/usr/share/rift/template', ['template/project.conf', 'template/local.conf', 'template/mock.tpl']),
                   ('/usr/share/rift/template/packages', ['template/packages/modules.yaml', 'template/packages/staff.yaml']),
-                  ],
+              ],
+      entry_points = {
+        'console_scripts': [
+            'rift = Rift.Controller:main',
+        ],
+      }
      )
 

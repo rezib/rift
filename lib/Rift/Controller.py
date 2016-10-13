@@ -638,10 +638,15 @@ def action(config, args):
             logging.info('Writing test results in %s' % args.junit)
             results.junit(args.junit)
 
-        banner('All packages built')
+        banner('All packages processed')
 
         if len(results) > 1:
             print results.summary()
+
+        if results.global_result:
+            return 0
+        else:
+            return 1
 
     # TEST
     elif args.command == 'test':

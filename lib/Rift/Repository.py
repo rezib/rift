@@ -92,6 +92,12 @@ class Repository(RemoteRepository):
         if popen.returncode != 0:
             raise RiftError(stdout)
 
+        cmd = ['createrepo', '-q', '--update', self.srpms_dir]
+        popen = Popen(cmd, stdout=PIPE, stderr=STDOUT)
+        stdout = popen.communicate()[0]
+        if popen.returncode != 0:
+            raise RiftError(stdout)
+
     def add(self, rpm):
         """
         Copy RPM file pointed `rpm' into the repository, in the correct

@@ -172,6 +172,5 @@ class Mock(object):
         Copy binary RPMS from Mock result directory into provided repository
         `repo'.
         """
-        pattern = os.path.join(self.MOCK_RESULT % self._mockname, '*.rpm')
-        for filepath in glob.glob(pattern):
-            repo.add(RPM(filepath))
+        for rpm in self.resultrpms():
+            repo.add(rpm)

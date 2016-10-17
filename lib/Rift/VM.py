@@ -40,6 +40,7 @@ import grp
 import sys
 import time
 import shlex
+import pipes
 import logging
 import tempfile
 import textwrap
@@ -237,7 +238,7 @@ class VM(object):
             cmd = ''
             for func, code in funcs.items():
                 cmd += '%s() { %s;}; export -f %s; ' % (func, code, func)
-            cmd += test.command
+            cmd += pipes.quote(test.command)
 
             logging.debug("Running command outside VM: %s", cmd)
             popen = Popen(cmd, shell=True) #, stdout=PIPE, stderr=STDOUT)

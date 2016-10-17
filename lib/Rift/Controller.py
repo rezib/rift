@@ -671,6 +671,7 @@ def action(config, args):
 
             filepath = patchedfile.path
             names = filepath.split(os.path.sep)
+            fullpath = config.project_path(filepath)
 
             if filepath == config.get('staff_file'):
 
@@ -700,15 +701,15 @@ def action(config, args):
                         pkglist[pkg.name] = pkg
 
                 # info.yaml
-                if filepath == pkg.metafile:
+                if fullpath == pkg.metafile:
                     logging.info('Detected meta file')
 
                 # specfile
-                elif filepath == pkg.specfile:
+                elif fullpath == pkg.specfile:
                     logging.info('Detected spec file')
 
                 # backup specfile
-                elif filepath == '%s.orig' % pkg.specfile:
+                elif fullpath == '%s.orig' % pkg.specfile:
                     logging.debug('Ignoring backup specfile')
 
                 # rpmlint config file
@@ -716,12 +717,12 @@ def action(config, args):
                     logging.debug('Ignoring rpmlint config file')
 
                 # sources/
-                elif filepath.startswith(pkg.sourcesdir) and len(names) == 2:
+                elif fullpath.startswith(pkg.sourcesdir) and len(names) == 2:
                     # XXX: Check binary/no binary
                     logging.debug('Ignoring source file: %s', names[1])
 
                 # tests/
-                elif filepath.startswith(pkg.testsdir) and len(names) == 2:
+                elif fullpath.startswith(pkg.testsdir) and len(names) == 2:
                     logging.debug('Ignoring test script: %s', names[1])
 
                 elif patchedfile.is_deleted_file:

@@ -347,9 +347,6 @@ class BasicTest(Test):
 
 def action_build(config, args, pkg, repo, suppl_repos):
 
-    if args.publish and not repo:
-        raise RiftError("Cannot publish if 'working_repo' is undefined")
-
     message('Preparing Mock environment...')
     mock = Mock(config, config.get('version'))
     if repo:
@@ -623,6 +620,9 @@ def action(config, args):
 
     # BUILD
     elif args.command == 'build':
+
+        if args.publish and not repo:
+            raise RiftError("Cannot publish if 'working_repo' is undefined")
 
         results = TestResults('build')
 

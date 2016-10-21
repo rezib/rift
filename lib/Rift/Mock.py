@@ -74,12 +74,14 @@ class Mock(object):
         context = {'name': self._mockname, 'repos': []}
 
         # Populate with repolist
-        for prio, repo in enumerate(reversed(repolist), start=1):
+        prio = 1000
+        for idx, repo in enumerate(repolist, start=1):
             assert repo.url is not None
-            context['repos'].insert(0, {
-                'name': repo.name or 'repo%s' % prio,
+            prio = repo.priority or (prio - 1)
+            context['repos'].append({
+                'name': repo.name or 'repo%s' % idx,
                 'priority': prio,
-                'url': repo.url })
+                'url': repo.url})
 
         # Write file content
         with open(dstpath, 'w') as fmock:
@@ -98,7 +100,7 @@ class Mock(object):
     def init(self, repolist):
         """
         Create a Mock environment.
-        
+
         This should be cleaned with clean().
         """
         # Initialize the custom config directory

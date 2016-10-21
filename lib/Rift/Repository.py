@@ -47,9 +47,10 @@ class RemoteRepository(object):
     ftp.
     """
 
-    def __init__(self, url, name=None):
+    def __init__(self, url, name=None, priority=None):
         self.url = url
         self.name = name
+        self.priority = priority
 
     def create(self):
         """

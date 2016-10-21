@@ -565,8 +565,12 @@ def action(config, args):
     suppl_repos = []
     if config.get('repo_os_url'):
         suppl_repos.append(RemoteRepository(config.get('repo_os_url'), 'os'))
-    for name, url in config.get('repos').items():
-        suppl_repos.append(RemoteRepository(url, name))
+    for name, data in config.get('repos').items():
+        if type(data) is str:
+            suppl_repos.append(RemoteRepository(data, name))
+        else:
+            remote = RemoteRepository(data['url'], name, data.get('priority'))
+            suppl_repos.append(remote)
 
     # VM
     if args.command == 'vm':

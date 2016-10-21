@@ -138,29 +138,32 @@ class VM(object):
 
         # Build 9p mount point info.
         mkdirs = [self._PROJ_MOUNTPOINT]
-        fstab = ['project /%s 9p trans=virtio,version=9p2000.L,ro 0 0' 
+        fstab = ['project /%s 9p trans=virtio,version=9p2000.L,ro 0 0'
                                                        % self._PROJ_MOUNTPOINT]
         repos = []
-        for prio, repo in enumerate(reversed(self._repos), 1):
-            mkdirs.append('/rift.%s' % repo.name)
-            fstab.append('%s /rift.%s 9p trans=virtio,version=9p2000.L 0 0' % 
-                         (repo.name, repo.name))
-            repos.insert(0, textwrap.dedent("""\
-                [%s]
-                name=%s
-                baseurl=file:///rift.%s/
-                gpgcheck=0
-                priority=%s
-                """) % (repo.name, repo.name, repo.name, prio))
-
-        for prio, repo in enumerate(reversed(self._suppl_repos), len(self._repos) + 1):
-            repos.insert(0, textwrap.dedent("""\
+        prio = 1000
+        for repo in self._suppl_repos:
+            prio = repo.priority or (prio - 1)
+            repos.append(textwrap.dedent("""\
                 [%s]
                 name=%s
                 baseurl=%s
                 gpgcheck=0
                 priority=%s
                 """) % (repo.name, repo.name, repo.url, prio))
+
+        for repo in self._repos:
+            prio = repo.priority or (prio - 1)
+            mkdirs.append('/rift.%s' % repo.name)
+            fstab.append('%s /rift.%s 9p trans=virtio,version=9p2000.L 0 0' %
+                         (repo.name, repo.name))
+            repos.append(textwrap.dedent("""\
+                [%s]
+                name=%s
+                baseurl=file:///rift.%s/
+                gpgcheck=0
+                priority=%s
+                """) % (repo.name, repo.name, repo.name, prio))
 
         # Build the full command line
         cmd = textwrap.dedent("""\

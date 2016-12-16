@@ -185,7 +185,7 @@ class VM(object):
             %s
             __EOC__
 
-            yum -d1 makecache
+            yum -d1 makecache fast
 
             """) % (self.address, self.NAME, userline, groupline,
                     ' '.join(mkdirs), "\n".join(fstab), "\n".join(repos))

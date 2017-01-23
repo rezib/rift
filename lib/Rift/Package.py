@@ -161,7 +161,8 @@ class Package(object):
 
         self.check_info()
 
-        self.sources = set(os.listdir(self.sourcesdir))
+        if os.path.exists(self.sourcesdir):
+            self.sources = set(os.listdir(self.sourcesdir))
 
     def tests(self):
         """An iterator over Test objects for each test files."""

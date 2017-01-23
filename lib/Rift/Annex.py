@@ -147,8 +147,13 @@ class Annex(object):
         tmpdir = TempDir('sources')
         if force_temp:
             tmpdir.create()
+
+        filelist = []
+        if os.path.exists(dirpath):
+            filelist = os.listdir(dirpath)
+
         textfiles = []
-        for filename in os.listdir(dirpath):
+        for filename in filelist:
             filepath = os.path.join(dirpath, filename)
 
             # Is a pointer to a binary file?

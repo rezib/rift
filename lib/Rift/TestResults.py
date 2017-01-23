@@ -34,27 +34,43 @@ import xml.etree.cElementTree as ET
 
 from Rift.TextTable import TextTable
 
+class TestCase(object):
+
+    def __init__(self, name):
+        self.name = name
+        self.classname = None
+        self.result = None
+        self.time = None
+
+    def fullname(self):
+        if self.classname:
+            return '%s.%s' % (self.classname, self.name)
+        else:
+            return self.name
+
 class TestResults(object):
 
     def __init__(self, name=None):
         self.name = name
-        self.result_names = []
-        self.results = {}
+        self.results = []
         self.global_result = True
 
     def __len__(self):
         return len(self.results)
 
-    def add_failure(self, name, time=None):
-        self._add_result(name, 'Failure', time)
+    def add_failure(self, name, classname=None, time=None):
+        self._add_result(classname, name, 'Failure', time)
         self.global_result = False
 
-    def add_success(self, name, time=None):
-        self._add_result(name, 'Success', time)
+    def add_success(self, name, classname=None, time=None):
+        self._add_result(classname, name, 'Success', time)
 
-    def _add_result(self, name, result, time):
-        self.result_names.append(name)
-        self.results[name] = (result, time)
+    def _add_result(self, classname, name, result, time):
+        case = TestCase(name)
+        case.time = time
+        case.result = result
+        case.classname = classname
+        self.results.append(case)
 
     def junit(self, filename):
 
@@ -62,22 +78,25 @@ class TestResults(object):
         if self.name:
             suite.set('name', self.name)
 
-        for name in self.result_names:
-            result, time = self.results[name]
-            case = ET.SubElement(suite, 'testcase', name=name)
-            if time:
-                case.set('time', '%.2f' % time)
-            if result == 'Failure':
-                ET.SubElement(case, 'failure')
+        for case in self.results:
+            sub = ET.SubElement(suite, 'testcase', name=case.name)
+            if case.classname:
+                sub.set('classname', case.classname)
+            if case.time:
+                sub.set('time', '%.2f' % case.time)
+            if case.result == 'Failure':
+                ET.SubElement(sub, 'failure')
 
         tree = ET.ElementTree(suite)
         tree.write(filename, encoding='UTF-8', xml_declaration=True)
 
     def summary(self):
         tbl = TextTable("%name %>duration %result")
-        for name in self.result_names:
-            result, time = self.results[name]
-            if result == 'Failure':
+        for case in self.results:
+            result = case.result
+            if case.result == 'Failure':
                 result = result.upper()
-            tbl.append({'name': name, 'duration': '%.0fs' % time, 'result': result})
+            tbl.append({'name': case.fullname(),
+                        'duration': '%.0fs' % case.time,
+                        'result': result})
         return str(tbl)

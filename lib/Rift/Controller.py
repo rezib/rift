@@ -634,9 +634,9 @@ def action(config, args):
             try:
                 action_build(config, args, pkg, repo, suppl_repos)
             except RiftError as ex:
-                results.add_failure(pkg.name, time.time() - now)
+                results.add_failure('build', pkg.name, time.time() - now)
             else:
-                results.add_success(pkg.name, time.time() - now)
+                results.add_success('build', pkg.name, time.time() - now)
 
         if getattr(args, 'junit', False):
             logging.info('Writing test results in %s' % args.junit)

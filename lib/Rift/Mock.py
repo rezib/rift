@@ -159,7 +159,7 @@ class Mock(object):
     def build_rpms(self, srpm):
         """Build binary RPMS using the provided Source RPM pointed by `srpm'"""
         cmd = self._mock_base() + ['--no-clean', '--no-cleanup-after']
-        cmd += ['--configdir=%s' % self._tmpdir.path, srpm.filepath]
+        cmd += [srpm.filepath]
         logging.debug('Running mock: %s', ' '.join(cmd))
         popen = Popen(cmd, stdout=PIPE, cwd='/') #, stderr=STDOUT)
         stdout = popen.communicate()[0]

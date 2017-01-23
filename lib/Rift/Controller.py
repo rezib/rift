@@ -124,7 +124,7 @@ def parse_options():
 
     # Test options
     subprs = subparsers.add_parser('test', help='execute package tests')
-    subprs.add_argument('package', metavar='PACKAGE',
+    subprs.add_argument('packages', metavar='PACKAGE', nargs='*',
                         help='package name to test')
     subprs.add_argument('--noquit', action='store_true',
                         help='do not stop VM at the end')
@@ -342,7 +342,7 @@ class BasicTest(Test):
             fi
             yum -y -d1 history undo last || exit 1
         done""" % (' '.join(rpmnames), len(rpmnames)))
-        Test.__init__(self, cmd, "basic install")
+        Test.__init__(self, cmd, "basic_install")
         self.local = False
 
 def action_build(config, args, pkg, repo, suppl_repos):
@@ -374,43 +374,57 @@ def action_build(config, args, pkg, repo, suppl_repos):
 
     mock.clean()
 
+def action_test_one(args, pkg, vm, results):
 
-def action_test(config, args, pkg, repos, suppl_repos):
-    """Process 'test' command."""
-
-    vm = VM(config, repos, suppl_repos)
     message("Preparing test environment")
-    if not _vm_start(vm):
-        return 1
-
+    _vm_start(vm)
     vm.cmd('yum -y -d0 --disablerepo=%s update' % 'working')
 
     banner("Starting tests")
 
-    results = TestResults('test')
     tests = list(pkg.tests())
     if not args.noauto:
         tests.insert(0, BasicTest(pkg))
     for test in tests:
+        testname = '%s.%s' % (pkg.name, test.name)
         now = time.time()
-        message("Running test '%s'" % test.name)
+        message("Running test '%s'" % testname)
         if vm.run_test(test) == 0:
-            results.add_success(test.name, time.time() - now)
-            message("Test '%s': OK" % test.name)
+            results.add_success(test.name, pkg.name, time.time() - now)
+            message("Test '%s': OK" % testname)
         else:
-            results.add_failure(test.name, time.time() - now)
-            message("Test '%s': ERROR" % test.name)
+            results.add_failure(test.name, pkg.name, time.time() - now)
+            message("Test '%s': ERROR" % testname)
 
     if not getattr(args, 'noquit', False):
+        message("Cleaning test environment")
         vm.cmd("poweroff")
         time.sleep(5)
         vm.stop()
-    else:
+
+
+def action_test(config, args, pkgs, repos, suppl_repos):
+    """Process 'test' command."""
+
+    results = TestResults('test')
+    vm = VM(config, repos, suppl_repos)
+    if vm.running():
+        message('VM is already running')
+        return 1
+
+    for pkg in pkgs:
+        pkg.load()
+        action_test_one(args, pkg, vm, results)
+
+    if getattr(args, 'noquit', False):
         message("Not stopping the VM. Use: rift vm connect")
 
     if getattr(args, 'junit', False):
         logging.info('Writing test results in %s' % args.junit)
         results.junit(args.junit)
+
+    if len(results) > 1:
+        print results.summary()
 
     if results.global_result:
         banner("Test suite SUCCEEDED")
@@ -478,7 +492,7 @@ def action_validate(config, args, pkgs, repo, suppl_repos):
         repos = [staging]
         if repo:
             repos = [repo, staging]
-        rc = action_test(config, args, pkg, repos, suppl_repos) or rc
+        rc = action_test(config, args, [pkg], repos, suppl_repos) or rc
 
         # Also publish on working repo if requested
         # XXX: All RPMs should be published when all of them have been validated
@@ -655,10 +669,8 @@ def action(config, args):
     # TEST
     elif args.command == 'test':
 
-        pkg = Package(args.package, config, staff, modules)
-        pkg.load()
-
-        action_test(config, args, pkg, repos, suppl_repos)
+        pkgs = Package.list(config, staff, modules, args.packages)
+        return action_test(config, args, pkgs, repos, suppl_repos)
 
     # VALIDATE
     elif args.command == 'validate':

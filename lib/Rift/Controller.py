@@ -431,7 +431,7 @@ def action_test(config, args, pkgs, repos, suppl_repos):
         return 0
     else:
         banner("Test suite FAILED!")
-        return 1
+        return 2
 
 def action_validate(config, args, pkgs, repo, suppl_repos):
 

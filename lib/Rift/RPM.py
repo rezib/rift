@@ -113,7 +113,7 @@ class RPM(object):
 class Spec(object):
     """Access information from a Specfile and build SRPMS."""
 
-    def __init__(self, filepath):
+    def __init__(self, filepath=None):
         self.filepath = filepath
         self.srpmname = None
         self.pkgnames = []
@@ -124,9 +124,10 @@ class Spec(object):
         self.changelog_time = None
         self.evr = None
         self.arch = None
-        self._load()
+        if self.filepath is not None:
+            self.load()
 
-    def _load(self):
+    def load(self):
         """Extract interesting information from spec file."""
         if not os.path.exists(self.filepath):
             raise RiftError('%s does not exist' % self.filepath)

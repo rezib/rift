@@ -193,6 +193,8 @@ def parse_options():
     subprs.add_argument('packages', metavar='PACKAGE', nargs='*',
                         help='package name to validate')
     subprs.add_argument('--format', dest='fmt', help='Display format')
+    subprs.add_argument('--nospec', dest='spec',
+                        action='store_false', help="Don't load specfile info")
     subprs.add_argument('-H', '--no-header', dest='headers',
                         action='store_false', help='Hide table headers')
 
@@ -788,7 +790,10 @@ def action(config, args):
         for pkg in pkglist:
             logging.debug('Loading package %s' % pkg.name)
             pkg.load()
-            spec = Spec(pkg.specfile)
+            spec = Spec()
+            if args.spec:
+                spec.filepath = pkg.specfile
+                spec.load()
             date = str(time.strftime("%Y-%m-%d", time.localtime(spec.changelog_time)))
             tbl.append({'name': pkg.name,
                         'module': pkg.module,

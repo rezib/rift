@@ -206,10 +206,21 @@ class VM(object):
         popen.wait()
         return popen.returncode
 
+    def copy(self, source, dest, stderr=None):
+        """Copy files within or without VM"""
+        cmd = [ 'scp', '-oStrictHostKeyChecking=no', '-oLogLevel=ERROR',
+                '-oUserKnownHostsFile=/dev/null', '-P', str(self.port) ]
+        cmd.append(source.replace('rift:', 'root@127.0.0.1:'))
+        cmd.append(dest.replace('rift:', 'root@127.0.0.1:'))
+        logging.debug("Copy files with VM: %s", ' '.join(cmd))
+        popen = Popen(cmd, stderr=stderr)
+        popen.wait()
+        return popen.returncode
+
     def run_test(self, test):
         """
         Run specified test using this VM.
-        
+
         If test is local, it is run on local host, if not, it is run inside the
         VM.
         """

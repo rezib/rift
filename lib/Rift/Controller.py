@@ -187,6 +187,9 @@ def parse_options():
     subsubprs = subprs_vm.add_parser('cmd', help='run a command inside the VM')
     subsubprs.add_argument('commandline', help='command line arguments',
                            nargs=argparse.REMAINDER)
+    subsubprs = subprs_vm.add_parser('copy', help='copy files with VM')
+    subsubprs.add_argument('source', help='source files')
+    subsubprs.add_argument('dest', help='destination files')
 
     # query
     subprs = subparsers.add_parser('query', help='Show packages metadata')
@@ -517,11 +520,13 @@ def action_vm(config, args, repos, suppl_repos):
 
     vm = VM(config, repos, suppl_repos)
 
-    assert args.vm_cmd in ('connect', 'start', 'stop', 'cmd')
+    assert args.vm_cmd in ('connect', 'start', 'stop', 'cmd', 'copy')
     if args.vm_cmd == 'connect':
         return vm.cmd(options=None)
     elif args.vm_cmd == 'cmd':
         return vm.cmd(' '.join(args.commandline), options=None)
+    elif args.vm_cmd == 'copy':
+        return vm.copy(args.source, args.dest)
     elif args.vm_cmd == 'start':
         vm.tmpmode = args.tmpimg
         if _vm_start(vm):

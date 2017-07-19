@@ -458,7 +458,11 @@ def action_validate(config, args, pkgs, repo, suppl_repos):
         spec = Spec(pkg.specfile)
         spec.check(pkg.dir)
 
-        # Chanlog section is mandatory
+        if spec.basename != pkg.name:
+            msg = "name '%s' does not match '%s' in spec file" % (pkg.name, spec.basename)
+            raise RiftError(msg)
+
+        # Changelog section is mandatory
         if not (spec.changelog_name or spec.changelog_time):
             raise RiftError('Proper changelog section is needed in specfile')
 

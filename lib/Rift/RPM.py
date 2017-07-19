@@ -118,6 +118,7 @@ class Spec(object):
         self.srpmname = None
         self.pkgnames = []
         self.sources = []
+        self.basename = None
         self.version = None
         self.release = None
         self.changelog_name = None
@@ -139,6 +140,7 @@ class Spec(object):
         self.pkgnames = [pkg.header['name'] for pkg in spec.packages]
         hdr = spec.sourceHeader
         self.srpmname = hdr.sprintf('%{NAME}-%{VERSION}-%{RELEASE}.src.rpm')
+        self.basename = hdr.sprintf('%{NAME}')
         self.version = hdr.sprintf('%{VERSION}')
         self.arch = hdr.sprintf('%{ARCH}')
         if hdr[rpm.RPMTAG_CHANGELOGNAME]:

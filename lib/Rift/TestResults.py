@@ -81,7 +81,7 @@ class TestResults(object):
         for case in self.results:
             sub = ET.SubElement(suite, 'testcase', name=case.name)
             if case.classname:
-                sub.set('classname', case.classname)
+                sub.set('classname', 'rift.%s' % case.classname)
             if case.time:
                 sub.set('time', '%.2f' % case.time)
             if case.result == 'Failure':

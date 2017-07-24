@@ -34,7 +34,7 @@ import os
 import yaml
 import errno
 
-from Rift import DeclError
+from rift import DeclError
 
 try:
     # included in standard lib from Python 2.7

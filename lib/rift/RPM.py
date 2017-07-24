@@ -42,8 +42,8 @@ import shutil
 import logging
 from subprocess import Popen, PIPE, STDOUT
 
-from Rift import RiftError
-from Rift.Annex import Annex, is_binary
+from rift import RiftError
+from rift.Annex import Annex, is_binary
 
 RPMLINT_CONFIG = 'rpmlint'
 

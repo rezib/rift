@@ -40,8 +40,8 @@ import glob
 import shutil
 import logging
 
-from Rift import RiftError
-from Rift.Annex import Annex
+from rift import RiftError
+from rift.Annex import Annex
 
 _META_FILE = 'info.yaml'
 _SOURCES_DIR = 'sources'

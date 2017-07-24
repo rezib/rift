@@ -43,7 +43,7 @@ import shutil
 import hashlib
 import logging
 
-from Rift.TempDir import TempDir
+from rift.TempDir import TempDir
 
 # List of ASCII printable characters
 _TEXTCHARS = bytearray([9, 10, 13] + range(32, 127))

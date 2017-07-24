@@ -46,7 +46,7 @@ import tempfile
 import textwrap
 from subprocess import Popen, PIPE, STDOUT
 
-from Rift import RiftError
+from rift import RiftError
 
 __all__ = [ 'VM' ]
 

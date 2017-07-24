@@ -38,15 +38,15 @@ import time
 import textwrap
 from rpm import error as RpmError
 
-from Rift import RiftError
-from Rift.Config import Config, Staff, Modules
-from Rift.Package import Package
-from Rift.RPM import RPM, Spec, RPMLINT_CONFIG
-from Rift.Repository import RemoteRepository, Repository
-from Rift.Mock import Mock
-from Rift.Annex import Annex, is_binary
-from Rift.VM import VM
-from Rift.TestResults import TestResults
+from rift import RiftError
+from rift.Config import Config, Staff, Modules
+from rift.Package import Package
+from rift.RPM import RPM, Spec, RPMLINT_CONFIG
+from rift.Repository import RemoteRepository, Repository
+from rift.Mock import Mock
+from rift.Annex import Annex, is_binary
+from rift.VM import VM
+from rift.TestResults import TestResults
 
 
 def message(msg):
@@ -316,7 +316,7 @@ def _vm_start(vm):
         vm.prepare()
         return True
 
-from Rift.Package import Test
+from rift.Package import Test
 class BasicTest(Test):
 
     def __init__(self, pkg):
@@ -466,7 +466,7 @@ def action_validate(config, args, pkgs, repo, suppl_repos):
         if not (spec.changelog_name or spec.changelog_time):
             raise RiftError('Proper changelog section is needed in specfile')
 
-        # This should be more generic and moved into Rift.Package/Rift.RPM
+        # This should be more generic and moved into rift.Package/rift.RPM
         if pkg.sources - set(spec.sources):
             msg = "Unused source file(s): %s" % ' '.join(pkg.sources - set(spec.sources))
             raise RiftError(msg)
@@ -475,7 +475,7 @@ def action_validate(config, args, pkgs, repo, suppl_repos):
             raise RiftError(msg)
 
         logging.info('Creating temporary repository')
-        from Rift.TempDir import TempDir
+        from rift.TempDir import TempDir
         stagedir = TempDir('stagedir')
         stagedir.create()
         staging = Repository(stagedir.path, config.get('arch'), 'staging')
@@ -544,7 +544,7 @@ def action_vm(config, args, repos, suppl_repos):
 def action_gerrit(args, config, staff, modules):
     """Review a patchset for Gerrit (specfiles)"""
 
-    from Rift.Gerrit import Review
+    from rift.Gerrit import Review
     review = Review()
 
     # Parse matching diff and specfiles in it
@@ -779,7 +779,7 @@ def action(config, args):
     elif args.command == 'query':
 
         from operator import attrgetter
-        from Rift.TextTable import TextTable
+        from rift.TextTable import TextTable
 
         pkglist = sorted(Package.list(config, staff, modules, args.packages),
                          key=attrgetter('name'))

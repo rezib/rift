@@ -43,9 +43,9 @@ import logging
 from subprocess import Popen, PIPE
 from jinja2 import Template
 
-from Rift import RiftError
-from Rift.TempDir import TempDir
-from Rift.RPM import RPM
+from rift import RiftError
+from rift.TempDir import TempDir
+from rift.RPM import RPM
 
 class Mock(object):
     """

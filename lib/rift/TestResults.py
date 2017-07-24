@@ -32,7 +32,7 @@
 
 import xml.etree.cElementTree as ET
 
-from Rift.TextTable import TextTable
+from rift.TextTable import TextTable
 
 class TestCase(object):
 

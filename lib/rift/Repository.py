@@ -39,7 +39,7 @@ import logging
 import shutil
 from subprocess import Popen, PIPE, STDOUT
 
-from Rift import RiftError
+from rift import RiftError
 
 class RemoteRepository(object):
     """

@@ -38,7 +38,7 @@ import json
 import logging
 import urllib2
 
-from Rift import RiftError
+from rift import RiftError
 
 class Review(object):
     """Gerrit review."""

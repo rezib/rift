@@ -104,7 +104,7 @@ class VM(object):
         cmd += ['-m', '8192', '-smp', str(self.cpus), '-cpu', 'host']
 
         # Drive
-        cmd += ['-drive', 'file=%s,if=virtio,format=qcow2,cache=none'
+        cmd += ['-drive', 'file=%s,if=virtio,format=qcow2,cache=unsafe'
                 % imgfile]
 
         # NIC

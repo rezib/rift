@@ -675,7 +675,7 @@ def action(config, args):
         if results.global_result:
             return 0
         else:
-            return 1
+            return 2
 
     # TEST
     elif args.command == 'test':

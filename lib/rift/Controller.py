@@ -641,7 +641,7 @@ def action(config, args):
 
         if args.command in ('import', 'reimport'):
             rpm.extract_srpm(pkg.dir, pkg.sourcesdir)
-            message("Package '%s' has been imported" % pkg.name)
+            message("Package '%s' has been %sed" % (pkg.name, args.command))
 
     # BUILD
     elif args.command == 'build':

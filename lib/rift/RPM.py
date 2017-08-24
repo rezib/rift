@@ -189,7 +189,7 @@ class Spec(object):
             fspec.writelines(lines)
 
         # Reload
-        self._load()
+        self.load()
 
     def build_srpm(self, srcdir, destdir):
         """

@@ -218,15 +218,15 @@ class Config(object):
         assert check in ('string', 'dict', 'digit')
         if check == 'string':
             if not isinstance(value, str):
-                raise DeclError("Bad data type for '%s'" % key)
+                raise DeclError("Bad data type %s for '%s'" % (value.__class__.__name__, key))
             self.options[key] = str(value)
         elif check == 'dict':
             if not isinstance(value, dict):
-                raise DeclError("Bad data type for '%s'" % key)
+                raise DeclError("Bad data type %s for '%s'" % (value.__class__.__name__, key))
             self.options[key] = value
         elif check == 'digit':
             if not isinstance(value, int):
-                raise DeclError("Bad data type for '%s'" % key)
+                raise DeclError("Bad data type %s for '%s'" % (value.__class__.__name__, key))
             self.options[key] = int(value)
 
 

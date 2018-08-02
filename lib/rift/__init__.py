@@ -35,4 +35,3 @@ class RiftError(Exception):
 
 class DeclError(RiftError):
     """A configuration file has a declaration error"""
-

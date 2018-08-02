@@ -48,7 +48,7 @@ from subprocess import Popen, PIPE, STDOUT
 
 from rift import RiftError
 
-__all__ = [ 'VM' ]
+__all__ = ['VM']
 
 class VM(object):
     """Manipulate VM process and related temporary files."""
@@ -119,7 +119,7 @@ class VM(object):
             repo.create()
             cmd += ['-virtfs',
                     'local,id=%s,path=%s,mount_tag=%s,security_model=none' %
-                     (repo.name, repo.rpms_dir, repo.name) ]
+                     (repo.name, repo.rpms_dir, repo.name)]
 
         logging.info("Starting VM process")
         logging.debug("Running VM command: %s", ' '.join(cmd))
@@ -194,9 +194,9 @@ class VM(object):
 
     def cmd(self, command=None, options=('-T',), stderr=None):
         """Run specified command inside this VM"""
-        cmd = [ 'ssh', '-oStrictHostKeyChecking=no', '-oLogLevel=ERROR',
-                '-oUserKnownHostsFile=/dev/null', '-p', str(self.port),
-                'root@127.0.0.1' ]
+        cmd = ['ssh', '-oStrictHostKeyChecking=no', '-oLogLevel=ERROR',
+               '-oUserKnownHostsFile=/dev/null', '-p', str(self.port),
+               'root@127.0.0.1']
         if options:
             cmd += options
         if command:
@@ -208,8 +208,8 @@ class VM(object):
 
     def copy(self, source, dest, stderr=None):
         """Copy files within or without VM"""
-        cmd = [ 'scp', '-oStrictHostKeyChecking=no', '-oLogLevel=ERROR',
-                '-oUserKnownHostsFile=/dev/null', '-P', str(self.port) ]
+        cmd = ['scp', '-oStrictHostKeyChecking=no', '-oLogLevel=ERROR',
+               '-oUserKnownHostsFile=/dev/null', '-P', str(self.port)]
         cmd.append(source.replace('rift:', 'root@127.0.0.1:'))
         cmd.append(dest.replace('rift:', 'root@127.0.0.1:'))
         logging.debug("Copy files with VM: %s", ' '.join(cmd))
@@ -292,7 +292,7 @@ class VM(object):
         # Delay for VM to cleanly shutdown before killing it
         for _ in range(1, 5):
             if self._vm.poll() is not None:
-                break   
+                break
             time.sleep(1)
         else:
             pid = self._vm.pid

@@ -81,7 +81,7 @@ class Config(object):
         'annex': {
             'required': True,
         },
-        'repo_os_url': { },
+        'repo_os_url': {},
         'working_repo': {
         },
         'repos': {
@@ -90,8 +90,8 @@ class Config(object):
         'arch': {
             'default':  'x86_64',
         },
-        'version': { },
-        'maintainer':  { },
+        'version': {},
+        'maintainer':  {},
         'qemu': {
             'default':  'qemu-system-x86_64',
         },
@@ -109,16 +109,16 @@ class Config(object):
         'vm_address': {
             'default':  '10.0.2.15',
         },
-        'gerrit_realm': { },
-        'gerrit_server': { },
-        'gerrit_username': { },
-        'gerrit_password': { },
+        'gerrit_realm': {},
+        'gerrit_server': {},
+        'gerrit_username': {},
+        'gerrit_password': {},
         # XXX?: 'mock.name' ?
         # XXX?: 'mock.template' ?
     }
 
     def __init__(self):
-        self.options = { }
+        self.options = {}
         self.project_dir = None
 
     def find_project_dir(self, filenames=None):
@@ -346,7 +346,7 @@ class Modules(Staff):
         for module in self._data.values():
             # Maintainer exists
             if type(module['manager']) is str:
-                module['manager'] = [ module['manager'] ]
+                module['manager'] = [module['manager']]
             for mngr in module['manager']:
                 if mngr not in self.staff:
                     msg = "Manager '%s' does not exist in staff list" % mngr

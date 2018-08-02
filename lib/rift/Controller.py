@@ -850,9 +850,9 @@ def action(config, args):
                 args.comment = bullet + " " + args.comment
 
             if args.comment.find("\n") == -1:
-                wrapopts = { "subsequent_indent": (len(bullet) + 1) * " ",
-                             "break_long_words": False,
-                             "break_on_hyphens": False }
+                wrapopts = {"subsequent_indent": (len(bullet) + 1) * " ",
+                            "break_long_words": False,
+                            "break_on_hyphens": False}
                 args.comment = textwrap.fill(args.comment, 80, **wrapopts)
 
             logging.info("Adding changelog record for '%s'" % author)

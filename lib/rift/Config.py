@@ -30,9 +30,9 @@
 # knowledge of the CeCILL license and that you accept its terms.
 #
 
+import errno
 import os
 import yaml
-import errno
 
 from rift import DeclError
 

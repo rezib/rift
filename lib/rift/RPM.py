@@ -34,13 +34,15 @@
 Helper classes to manipulate RPM files and SPEC files.
 """
 
+import logging
 import os
 import re
-import rpm
-import time
 import shutil
-import logging
 from subprocess import Popen, PIPE, STDOUT
+import time
+
+import rpm
+
 
 from rift import RiftError
 from rift.Annex import Annex, is_binary

@@ -35,13 +35,13 @@ Class and function to detect binary files and push them into a file repository
 called an annex.
 """
 
-import os
-import time
-import yaml
-import string
-import shutil
 import hashlib
 import logging
+import os
+import string
+import shutil
+import time
+import yaml
 
 from rift.TempDir import TempDir
 

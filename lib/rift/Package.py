@@ -34,11 +34,11 @@
 Class to manipulate packages and package tests with Rift.
 """
 
-import os
-import yaml
 import glob
-import shutil
 import logging
+import os
+import shutil
+import yaml
 
 from rift import RiftError
 from rift.Annex import Annex

@@ -585,8 +585,6 @@ def action(config, args):
         repo = None
         repos = []
     suppl_repos = []
-    if config.get('repo_os_url'):
-        suppl_repos.append(RemoteRepository(config.get('repo_os_url'), 'os'))
     for name, data in config.get('repos').items():
         if type(data) is str:
             suppl_repos.append(RemoteRepository(data, name))

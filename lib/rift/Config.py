@@ -81,7 +81,6 @@ class Config(object):
         'annex': {
             'required': True,
         },
-        'repo_os_url': {},
         'working_repo': {
         },
         'repos': {

@@ -101,6 +101,9 @@ class Config(object):
         'vm_port': {
             'check':    'digit',
         },
+        'vm_cpu': {
+            'default':  'host',
+        },
         'vm_cpus': {
             'check':    'digit',
             'default':  4,

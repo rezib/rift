@@ -65,6 +65,7 @@ class VM(object):
         self.address = config.get('vm_address')
         self.port = config.get('vm_port', os.getuid() + 2000)
         self.cpus = config.get('vm_cpus', 1)
+        self.cpu_type = config.get('vm_cpu', 'host')
         self.qemu = config.get('qemu')
 
         self.tmpmode = tmpmode
@@ -101,7 +102,7 @@ class VM(object):
         # Start VM process
         cmd = shlex.split(self.qemu)
         cmd += ['-enable-kvm', '-name', 'rift', '-display', 'none']
-        cmd += ['-m', '8192', '-smp', str(self.cpus), '-cpu', 'host']
+        cmd += ['-m', '8192', '-smp', str(self.cpus), '-cpu', self.cpu_type]
 
         # Drive
         cmd += ['-drive', 'file=%s,if=virtio,format=qcow2,cache=unsafe'

@@ -56,11 +56,10 @@ class VM(object):
     _PROJ_MOUNTPOINT = '/rift.project'
     NAME = 'rift1'
 
-    def __init__(self, config, repos, suppl_repos=(), tmpmode=True):
+    def __init__(self, config, repos, tmpmode=True):
         self._image = config.get('vm_image')
         self._project_dir = config.project_dir
         self._repos = repos or []
-        self._suppl_repos = suppl_repos
 
         self.address = config.get('vm_address')
         self.port = config.get('vm_port', os.getuid() + 2000)
@@ -117,10 +116,11 @@ class VM(object):
         cmd += ['-virtfs', 'local,id=project,path=/%s,mount_tag=project,'
                            'security_model=none' % self._project_dir]
         for repo in self._repos:
-            repo.create()
-            cmd += ['-virtfs',
-                    'local,id=%s,path=%s,mount_tag=%s,security_model=none' %
-                     (repo.name, repo.rpms_dir, repo.name)]
+            if repo.is_file():
+                repo.create()
+                cmd += ['-virtfs',
+                        'local,id=%s,path=%s,mount_tag=%s,security_model=none' %
+                        (repo.name, repo.rpms_dir, repo.name)]
 
         logging.info("Starting VM process")
         logging.debug("Running VM command: %s", ' '.join(cmd))
@@ -143,7 +143,14 @@ class VM(object):
                                                        % self._PROJ_MOUNTPOINT]
         repos = []
         prio = 1000
-        for repo in self._suppl_repos:
+        for repo in self._repos:
+            if repo.is_file():
+                mkdirs.append('/rift.%s' % repo.name)
+                fstab.append('%s /rift.%s 9p trans=virtio,version=9p2000.L 0 0' %
+                             (repo.name, repo.name))
+                url = 'file:///rift.%s/' % repo.name
+            else:
+                url = repo.url
             prio = repo.priority or (prio - 1)
             repos.append(textwrap.dedent("""\
                 [%s]
@@ -151,20 +158,7 @@ class VM(object):
                 baseurl=%s
                 gpgcheck=0
                 priority=%s
-                """) % (repo.name, repo.name, repo.url, prio))
-
-        for repo in self._repos:
-            prio = repo.priority or (prio - 1)
-            mkdirs.append('/rift.%s' % repo.name)
-            fstab.append('%s /rift.%s 9p trans=virtio,version=9p2000.L 0 0' %
-                         (repo.name, repo.name))
-            repos.append(textwrap.dedent("""\
-                [%s]
-                name=%s
-                baseurl=file:///rift.%s/
-                gpgcheck=0
-                priority=%s
-                """) % (repo.name, repo.name, repo.name, prio))
+                """) % (repo.name, repo.name, url, prio))
 
         # Build the full command line
         cmd = textwrap.dedent("""\

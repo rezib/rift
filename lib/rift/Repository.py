@@ -52,12 +52,27 @@ class RemoteRepository(object):
         self.name = name
         self.priority = priority
 
+    def is_file(self):
+        """True if repository URL looks like a file URI."""
+        return self.url.startswith('file://') or self.url.startswith('/')
+
+    @property
+    def rpms_dir(self):
+        """
+        Path to RPMS directory if this is a local file repo. None otherwise.
+        """
+        if self.url.startswith('/'):
+            return self.url
+        elif self.url.startswith('file://'):
+            return self.url[len('file://'):]
+
     def create(self):
         """
         Read-only repository, create() is a no-op, considering it is always
         created and usable.
         """
         pass
+
 
 class Repository(RemoteRepository):
     """
@@ -69,10 +84,10 @@ class Repository(RemoteRepository):
     def __init__(self, path, arch, name=None):
         self.path = os.path.realpath(path)
         self.srpms_dir = os.path.join(self.path, 'SRPMS')
-        self.rpms_dir = os.path.join(self.path, arch)
+        rpms_dir = os.path.join(self.path, arch)
 
         name = name or os.path.basename(self.path)
-        url = 'file://%s' % os.path.realpath(self.rpms_dir)
+        url = 'file://%s' % os.path.realpath(rpms_dir)
         RemoteRepository.__init__(self, url, name)
 
     def create(self):

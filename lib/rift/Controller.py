@@ -408,11 +408,11 @@ def action_test_one(args, pkg, vm, results):
         vm.stop()
 
 
-def action_test(config, args, pkgs, repos, suppl_repos):
+def action_test(config, args, pkgs, repos):
     """Process 'test' command."""
 
     results = TestResults('test')
-    vm = VM(config, repos, suppl_repos)
+    vm = VM(config, repos)
     if vm.running():
         message('VM is already running')
         return 1
@@ -498,10 +498,7 @@ def action_validate(config, args, pkgs, repo, suppl_repos):
         # Check tests
         mock.publish(staging)
         staging.update()
-        repos = [staging]
-        if repo:
-            repos = [repo, staging]
-        rc = action_test(config, args, [pkg], repos, suppl_repos) or rc
+        rc = action_test(config, args, [pkg], suppl_repos + [staging]) or rc
 
         # Also publish on working repo if requested
         # XXX: All RPMs should be published when all of them have been validated
@@ -519,10 +516,10 @@ def action_validate(config, args, pkgs, repo, suppl_repos):
     banner('All packages checked')
     return rc
 
-def action_vm(config, args, repos, suppl_repos):
+def action_vm(config, args, repos):
     """Action for 'vm' sub-commands."""
 
-    vm = VM(config, repos, suppl_repos)
+    vm = VM(config, repos)
 
     assert args.vm_cmd in ('connect', 'start', 'stop', 'cmd', 'copy')
     if args.vm_cmd == 'connect':
@@ -594,7 +591,7 @@ def action(config, args):
 
     # VM
     if args.command == 'vm':
-        return action_vm(config, args, repos, suppl_repos)
+        return action_vm(config, args, suppl_repos + repos)
 
     # Now, package related commands..
 
@@ -679,7 +676,7 @@ def action(config, args):
     elif args.command == 'test':
 
         pkgs = Package.list(config, staff, modules, args.packages)
-        return action_test(config, args, pkgs, repos, suppl_repos)
+        return action_test(config, args, pkgs, suppl_repos + repos)
 
     # VALIDATE
     elif args.command == 'validate':

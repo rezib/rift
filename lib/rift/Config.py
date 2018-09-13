@@ -193,7 +193,8 @@ class Config(object):
                 with open(self.project_path(filepath)) as fyaml:
                     data = yaml.load(fyaml, Loader=OrderedLoader)
 
-                self.update(data)
+                if data:
+                    self.update(data)
 
             except yaml.error.YAMLError as exp:
                 raise DeclError(str(exp))

@@ -25,8 +25,13 @@ class ConfigTest(RiftTestCase):
     def test_get_set(self):
         """simple set() and get()"""
         config = Config()
+        # set an 'int'
         config.set('vm_cpus', 42)
         self.assertEqual(config.get('vm_cpus'), 42)
+
+        # set a 'dict'
+        config.set('repos', {'os': 'http://myserver/pub'})
+        self.assertEqual(config.get('repos'), {'os': 'http://myserver/pub'})
 
     def test_set_bad_type(self):
         """set() using wrong type raises an error"""
@@ -34,6 +39,9 @@ class ConfigTest(RiftTestCase):
                            Config().set, 'vm_cpus', 'a string')
         self.assert_except(DeclError, "Bad data type str for 'repos'",
                            Config().set, 'repos', 'a string')
+        # Default check is 'string'
+        self.assert_except(DeclError, "Bad data type int for 'arch'",
+                           Config().set, 'arch', 42)
 
     def test_set_bad_key(self):
         """set() an undefined key raises an error"""
@@ -71,6 +79,11 @@ class ConfigTest(RiftTestCase):
         # Wrong file type
         self.assert_except(DeclError, "[Errno 21] Is a directory: '/'",
                            config.load, "/")
+
+    def test_load_bad_syntax(self):
+        """load() an bad YAML syntax file raises an error"""
+        cfgfile = make_temp_file("[value= not really YAML] [ ]\n")
+        self.assertRaises(DeclError, Config().load, cfgfile.name)
 
 
 class ProjectConfigTest(RiftTestCase):

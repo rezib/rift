@@ -40,6 +40,7 @@ class TestCase(object):
         self.name = name
         self.classname = None
         self.result = None
+        self.output = None
         self.time = None
 
     def fullname(self):
@@ -58,18 +59,19 @@ class TestResults(object):
     def __len__(self):
         return len(self.results)
 
-    def add_failure(self, name, classname=None, time=None):
-        self._add_result(classname, name, 'Failure', time)
+    def add_failure(self, name, classname=None, time=None, output=None):
+        self._add_result(classname, name, 'Failure', time, output)
         self.global_result = False
 
-    def add_success(self, name, classname=None, time=None):
-        self._add_result(classname, name, 'Success', time)
+    def add_success(self, name, classname=None, time=None, output=None):
+        self._add_result(classname, name, 'Success', time, output)
 
-    def _add_result(self, classname, name, result, time):
+    def _add_result(self, classname, name, result, time, output):
         case = TestCase(name)
         case.time = time
         case.result = result
         case.classname = classname
+        case.output = output
         self.results.append(case)
 
     def junit(self, filename):
@@ -85,7 +87,8 @@ class TestResults(object):
             if case.time:
                 sub.set('time', '%.2f' % case.time)
             if case.result == 'Failure':
-                ET.SubElement(sub, 'failure')
+                failure = ET.SubElement(sub, 'failure')
+                failure.text = case.output
 
         tree = ET.ElementTree(suite)
         tree.write(filename, encoding='UTF-8', xml_declaration=True)

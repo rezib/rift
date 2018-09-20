@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2014-2016 CEA
+# Copyright (C) 2014-2018 CEA
 #
 # This file is part of Rift project.
 #
@@ -34,19 +34,26 @@ import re
 import os
 import argparse
 import logging
+from operator import attrgetter
+import random
+import subprocess
 import time
 import textwrap
+from unidiff import parse_unidiff
 from rpm import error as RpmError
 
 from rift import RiftError
-from rift.Config import Config, Staff, Modules
-from rift.Package import Package
-from rift.RPM import RPM, Spec, RPMLINT_CONFIG
-from rift.Repository import RemoteRepository, Repository
-from rift.Mock import Mock
 from rift.Annex import Annex, is_binary
-from rift.VM import VM
+from rift.Config import Config, Staff, Modules
+from rift.Gerrit import Review
+from rift.Mock import Mock
+from rift.Package import Package, Test
+from rift.Repository import RemoteRepository, Repository
+from rift.RPM import RPM, Spec, RPMLINT_CONFIG
+from rift.TempDir import TempDir
 from rift.TestResults import TestResults
+from rift.TextTable import TextTable
+from rift.VM import VM
 
 
 def message(msg):
@@ -316,7 +323,7 @@ def _vm_start(vm):
         vm.prepare()
         return True
 
-from rift.Package import Test
+
 class BasicTest(Test):
 
     def __init__(self, pkg):
@@ -332,7 +339,6 @@ class BasicTest(Test):
             raise RiftError("'%s' is not in RPMS list" % name)
 
         # Avoid always processing the rpm list in the same order
-        import random
         random.shuffle(rpmnames)
 
         cmd = textwrap.dedent("""
@@ -425,7 +431,7 @@ def action_test(config, args, pkgs, repos):
         message("Not stopping the VM. Use: rift vm connect")
 
     if getattr(args, 'junit', False):
-        logging.info('Writing test results in %s' % args.junit)
+        logging.info('Writing test results in %s', args.junit)
         results.junit(args.junit)
 
     if len(results) > 1:
@@ -475,7 +481,6 @@ def action_validate(config, args, pkgs, repo, suppl_repos):
             raise RiftError(msg)
 
         logging.info('Creating temporary repository')
-        from rift.TempDir import TempDir
         stagedir = TempDir('stagedir')
         stagedir.create()
         staging = Repository(stagedir.path, config.get('arch'), 'staging')
@@ -541,11 +546,9 @@ def action_vm(config, args, repos):
 def action_gerrit(args, config, staff, modules):
     """Review a patchset for Gerrit (specfiles)"""
 
-    from rift.Gerrit import Review
     review = Review()
 
     # Parse matching diff and specfiles in it
-    from unidiff import parse_unidiff
     for patchedfile in parse_unidiff(args.patch):
         filepath = patchedfile.path
         names = filepath.split(os.path.sep)
@@ -583,7 +586,7 @@ def action(config, args):
         repos = []
     suppl_repos = []
     for name, data in config.get('repos').items():
-        if type(data) is str:
+        if isinstance(data, str):
             suppl_repos.append(RemoteRepository(data, name))
         else:
             remote = RemoteRepository(data['url'], name, data.get('priority'))
@@ -659,7 +662,7 @@ def action(config, args):
                 results.add_success('build', pkg.name, time.time() - now)
 
         if getattr(args, 'junit', False):
-            logging.info('Writing test results in %s' % args.junit)
+            logging.info('Writing test results in %s', args.junit)
             results.junit(args.junit)
 
         banner('All packages processed')
@@ -685,8 +688,6 @@ def action(config, args):
         return action_validate(config, args, pkgs, repo, suppl_repos)
 
     elif args.command == 'validdiff':
-
-        from unidiff import parse_unidiff
 
         pkglist = {}
         for patchedfile in parse_unidiff(args.patch):
@@ -773,8 +774,6 @@ def action(config, args):
 
     elif args.command == 'query':
 
-        from operator import attrgetter
-        from rift.TextTable import TextTable
 
         pkglist = sorted(Package.list(config, staff, modules, args.packages),
                          key=attrgetter('name'))
@@ -792,7 +791,7 @@ def action(config, args):
             raise RiftError('Unknown placeholder(s): %s' % ', '.join(diff_keys))
 
         for pkg in pkglist:
-            logging.debug('Loading package %s' % pkg.name)
+            logging.debug('Loading package %s', pkg.name)
             pkg.load()
             spec = Spec()
             if args.spec:
@@ -826,7 +825,6 @@ def action(config, args):
             cmd = "rpmdev-bumpspec -u '%s' -c '%s' %s" % \
                   (author, args.comment, pkg.specfile)
 
-            import subprocess
             popen = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE,
                                      stderr=subprocess.STDOUT)
             stdout = popen.communicate()[0]
@@ -850,7 +848,7 @@ def action(config, args):
                             "break_on_hyphens": False}
                 args.comment = textwrap.fill(args.comment, 80, **wrapopts)
 
-            logging.info("Adding changelog record for '%s'" % author)
+            logging.info("Adding changelog record for '%s'", author)
             Spec(pkg.specfile).add_changelog_entry(author, args.comment)
 
     # GERRIT

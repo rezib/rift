@@ -444,10 +444,13 @@ def action_test(config, args, pkgs, repos):
         banner("Test suite FAILED!")
         return 2
 
-def action_validate(config, args, pkgs, repo, suppl_repos):
+def action_validate(config, args, pkgs, wkrepo, suppl_repos):
 
-    if args.publish and not repo:
+    if args.publish and not wkrepo:
         raise RiftError("Cannot publish if 'working_repo' is undefined")
+
+    if wkrepo:
+        suppl_repos.append(wkrepo)
 
     rc = 0
     for pkg in pkgs:
@@ -488,8 +491,6 @@ def action_validate(config, args, pkgs, repo, suppl_repos):
 
         message('Preparing Mock environment...')
         mock = Mock(config, config.get('version'))
-        if repo:
-            suppl_repos = suppl_repos + [repo]
         mock.init(suppl_repos)
 
         # Check build SRPM
@@ -509,10 +510,10 @@ def action_validate(config, args, pkgs, repo, suppl_repos):
         # XXX: All RPMs should be published when all of them have been validated
         if rc == 0 and args.publish:
             message("Publishing RPMS...")
-            mock.publish(repo)
+            mock.publish(wkrepo)
 
             message("Updating repository...")
-            repo.update()
+            wkrepo.update()
 
         mock.clean()
 

@@ -385,11 +385,15 @@ def action_build(config, args, pkg, repo, suppl_repos):
 
     mock.clean()
 
-def action_test_one(args, pkg, vm, results):
+def action_test_one(args, pkg, vm, results, disable):
 
     message("Preparing test environment")
     _vm_start(vm)
-    vm.cmd('yum -y -d0 --disablerepo=%s update' % 'working')
+    if disable:
+        disablestr = '--disablerepo=working'
+    else:
+        disablestr = ''
+    vm.cmd('yum -y -d0 %s update' % disablestr)
 
     banner("Starting tests")
 
@@ -414,7 +418,7 @@ def action_test_one(args, pkg, vm, results):
         vm.stop()
 
 
-def action_test(config, args, pkgs, repos):
+def action_test(config, args, pkgs, repos, disable=False):
     """Process 'test' command."""
 
     results = TestResults('test')
@@ -425,7 +429,7 @@ def action_test(config, args, pkgs, repos):
 
     for pkg in pkgs:
         pkg.load()
-        action_test_one(args, pkg, vm, results)
+        action_test_one(args, pkg, vm, results, disable)
 
     if getattr(args, 'noquit', False):
         message("Not stopping the VM. Use: rift vm connect")
@@ -504,7 +508,8 @@ def action_validate(config, args, pkgs, wkrepo, suppl_repos):
         # Check tests
         mock.publish(staging)
         staging.update()
-        rc = action_test(config, args, [pkg], suppl_repos + [staging]) or rc
+        rc = action_test(config, args, [pkg], suppl_repos + [staging],
+			 wkrepo is not None) or rc
 
         # Also publish on working repo if requested
         # XXX: All RPMs should be published when all of them have been validated
@@ -680,7 +685,8 @@ def action(config, args):
     elif args.command == 'test':
 
         pkgs = Package.list(config, staff, modules, args.packages)
-        return action_test(config, args, pkgs, suppl_repos + repos)
+        return action_test(config, args, pkgs, suppl_repos + repos,
+			   repo is not None)
 
     # VALIDATE
     elif args.command == 'validate':

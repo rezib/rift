@@ -62,7 +62,7 @@ def message(msg):
 def banner(title):
     print "** %s **" % title
 
-def parse_options():
+def parse_options(args=None):
     """Parse command line options"""
 
     parser = argparse.ArgumentParser()
@@ -228,7 +228,7 @@ def parse_options():
     subprs.add_argument('patch', metavar='PATCH', type=argparse.FileType('r'))
 
     # Parse options
-    return parser.parse_args()
+    return parser.parse_args(args)
 
 def action_check(args, config):
     """Action for 'check' sub-commands."""
@@ -858,11 +858,11 @@ def action(config, args):
 
     return 0
 
-def main():
+def main(args=None):
     """Main code of 'rift'"""
 
     # Parse options
-    args = parse_options()
+    args = parse_options(args)
 
     logging.basicConfig(format="%(levelname)-8s %(message)s",
                         level=(logging.WARNING - args.verbose * 10))

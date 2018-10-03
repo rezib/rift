@@ -54,7 +54,7 @@ class VM(object):
     """Manipulate VM process and related temporary files."""
 
     _PROJ_MOUNTPOINT = '/rift.project'
-    NAME = 'rift1'
+    NAME = 'rift1.domain'
 
     def __init__(self, config, repos, tmpmode=True):
         self._image = config.get('vm_image')

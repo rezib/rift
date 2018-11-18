@@ -57,10 +57,10 @@ from rift.VM import VM
 
 
 def message(msg):
-    print "> %s" % msg
+    print("> %s" % msg)
 
 def banner(title):
-    print "** %s **" % title
+    print("** %s **" % title)
 
 def parse_options(args=None):
     """Parse command line options"""
@@ -279,11 +279,11 @@ def action_annex(args, config):
     assert args.annex_cmd in ('list', 'get', 'push', 'delete', 'restore')
     if args.annex_cmd == 'list':
         fmt = "%-32s %10s  %-18s %s"
-        print fmt % ('ID', 'SIZE', 'DATE', 'FILENAMES')
-        print fmt % ('--', '----', '----', '---------')
+        print(fmt % ('ID', 'SIZE', 'DATE', 'FILENAMES'))
+        print(fmt % ('--', '----', '----', '---------'))
         for filename, size, mtime, names in annex.list():
             timestr = time.strftime('%x %X', time.localtime(mtime))
-            print fmt % (filename, size, timestr, ','.join(names))
+            print(fmt % (filename, size, timestr, ','.join(names)))
 
     elif args.annex_cmd == 'push':
         for srcfile in args.files:
@@ -439,7 +439,7 @@ def action_test(config, args, pkgs, repos, disable=False):
         results.junit(args.junit)
 
     if len(results) > 1:
-        print results.summary()
+        print(results.summary())
 
     if results.global_result:
         banner("Test suite SUCCEEDED")
@@ -674,7 +674,7 @@ def action(config, args):
         banner('All packages processed')
 
         if len(results) > 1:
-            print results.summary()
+            print(results.summary())
 
         if results.global_result:
             return 0
@@ -816,7 +816,7 @@ def action(config, args):
                         'changelogname': spec.changelog_name,
                         'changelogtime': date,
                         'maintainers': ', '.join(pkg.maintainers)})
-        print tbl
+        print(tbl)
 
     elif args.command == 'changelog':
 

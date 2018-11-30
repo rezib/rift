@@ -520,9 +520,11 @@ def action_validate(config, args, pkgs, wkrepo, suppl_repos):
             message("Updating repository...")
             wkrepo.update()
 
-        mock.clean()
-
-        stagedir.delete()
+        if getattr(args, 'noquit', False):
+            message("Keep environment, VM is running. Use: rift vm connect")
+        else:
+            mock.clean()
+            stagedir.delete()
 
     banner('All packages checked')
     return rc

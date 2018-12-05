@@ -137,17 +137,18 @@ class VM(object):
         (g_name, g_passwd, g_gid, g_mem) = grp.getgrgid(os.getgid())
         groupline = '%s:%s:%s:%s' % (g_name, g_passwd, g_gid, ','.join(g_mem))
 
+        msize=',msize=131096'
         # Build 9p mount point info.
         mkdirs = [self._PROJ_MOUNTPOINT]
-        fstab = ['project /%s 9p trans=virtio,version=9p2000.L,ro 0 0'
-                                                       % self._PROJ_MOUNTPOINT]
+        fstab = ['project /%s 9p trans=virtio,version=9p2000.L,ro%s 0 0'
+                                               % self._PROJ_MOUNTPOINT, msize]
         repos = []
         prio = 1000
         for repo in self._repos:
             if repo.is_file():
                 mkdirs.append('/rift.%s' % repo.name)
-                fstab.append('%s /rift.%s 9p trans=virtio,version=9p2000.L 0 0' %
-                             (repo.name, repo.name))
+                fstab.append('%s /rift.%s 9p trans=virtio,version=9p2000.L%s 0 0' %
+                             (repo.name, repo.name,msize))
                 url = 'file:///rift.%s/' % repo.name
             else:
                 url = repo.url

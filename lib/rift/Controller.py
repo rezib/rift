@@ -346,12 +346,18 @@ class BasicTest(Test):
         for pkg in %s; do
             i=$(( $i + 1 ))
             echo -e "[Testing '${pkg}' (${i}/%d)]"
+            yum history new
             if rpm -q --quiet $pkg; then
               yum -y -d1 upgrade $pkg || exit 1
             else
               yum -y -d1 install $pkg || exit 1
             fi
-            yum -y -d1 history undo last || exit 1
+            if [ $(yum history stats | awk '/Transactions:/ {print $2}') -gt 0 ]; then
+                echo '> Cleanup last transaction'
+                yum -y -d1 history undo last || exit 1
+            else
+                echo '> Warning: package already installed and up to date !'
+            fi
         done""" % (' '.join(rpmnames), len(rpmnames)))
         Test.__init__(self, cmd, "basic_install")
         self.local = False

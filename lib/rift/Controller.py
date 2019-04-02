@@ -191,6 +191,7 @@ def parse_options(args=None):
     subsubprs.add_argument('--notemp', action='store_false', dest='tmpimg',
                            default=True, help='modify the real VM image')
     subprs_vm.add_parser('stop', help='stop the running VM')
+    subprs_vm.add_parser('console', help='console of the running VM')
     subsubprs = subprs_vm.add_parser('cmd', help='run a command inside the VM')
     subsubprs.add_argument('commandline', help='command line arguments',
                            nargs=argparse.REMAINDER)
@@ -539,23 +540,25 @@ def action_vm(config, args, repos):
     """Action for 'vm' sub-commands."""
 
     vm = VM(config, repos)
+    ret = 1
 
-    assert args.vm_cmd in ('connect', 'start', 'stop', 'cmd', 'copy')
+    assert args.vm_cmd in ('connect', 'console', 'start', 'stop', 'cmd', 'copy')
     if args.vm_cmd == 'connect':
-        return vm.cmd(options=None)
+        ret = vm.cmd(options=None)
+    elif args.vm_cmd == 'console':
+        ret = vm.console()
     elif args.vm_cmd == 'cmd':
-        return vm.cmd(' '.join(args.commandline), options=None)
+        ret = vm.cmd(' '.join(args.commandline), options=None)
     elif args.vm_cmd == 'copy':
-        return vm.copy(args.source, args.dest)
+        ret = vm.copy(args.source, args.dest)
     elif args.vm_cmd == 'start':
         vm.tmpmode = args.tmpimg
         if _vm_start(vm):
             message("VM started. Use: rift vm connect")
-            return 0
-        else:
-            return 1
+            ret = 0
     elif args.vm_cmd == 'stop':
-        return vm.cmd('poweroff')
+        ret = vm.cmd('poweroff')
+    return ret
 
 def action_gerrit(args, config, staff, modules):
     """Review a patchset for Gerrit (specfiles)"""

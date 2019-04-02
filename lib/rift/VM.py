@@ -39,11 +39,15 @@ import pwd
 import grp
 import sys
 import time
+import datetime
 import shlex
 import pipes
 import logging
 import tempfile
 import textwrap
+import termios
+import select
+import struct
 from subprocess import Popen, PIPE, STDOUT
 
 from rift import RiftError
@@ -57,12 +61,13 @@ class VM(object):
     NAME = 'rift1.domain'
 
     def __init__(self, config, repos, tmpmode=True):
+        uniq_id = os.getuid() + 2000
         self._image = config.get('vm_image')
         self._project_dir = config.project_dir
         self._repos = repos or []
 
         self.address = config.get('vm_address')
-        self.port = config.get('vm_port', os.getuid() + 2000)
+        self.port = config.get('vm_port', uniq_id)
         self.cpus = config.get('vm_cpus', 1)
         self.cpu_type = config.get('vm_cpu', 'host')
         self.qemu = config.get('qemu')
@@ -70,6 +75,7 @@ class VM(object):
         self.tmpmode = tmpmode
         self._vm = None
         self._tmpimg = None
+        self.consolesock = '/tmp/rift-vm-console-{0}.sock'.format(uniq_id)
 
     def _mk_tmp_img(self):
         """Create a temp VM image to avoid modifying the real image disk."""
@@ -107,9 +113,14 @@ class VM(object):
         cmd += ['-drive', 'file=%s,if=virtio,format=qcow2,cache=unsafe'
                 % imgfile]
 
+        # Console
+        cmd += ['-chardev', 'socket,id=charserial0,path=%s,server,nowait,telnet'
+                % (self.consolesock)]
+        cmd += ['-device', 'isa-serial,chardev=charserial0,id=serial0']
+
         # NIC
         cmd += ['-netdev', 'user,id=hostnet0,hostname=%s,hostfwd=tcp::%d-:22'
-                              % (self.NAME, self.port)]
+                % (self.NAME, self.port)]
         cmd += ['-device', 'virtio-net-pci,netdev=hostnet0,bus=pci.0,addr=0x3']
 
 
@@ -211,6 +222,48 @@ class VM(object):
         popen = Popen(cmd, stderr=stderr)
         popen.wait()
         return popen.returncode
+
+    def console(self):
+        """Console of VM Hit Ctrl-C 3 times to exit"""
+        self_stdin = sys.stdin.fileno()
+        old = termios.tcgetattr(self_stdin)
+        new = list(old)
+        new[3] = new[3] & ~termios.ECHO & ~termios.ISIG & ~termios.ICANON
+        termios.tcsetattr(self_stdin, termios.TCSANOW, new)
+
+        s_ctl = Popen(shlex.split('nc -U %s' % (self.consolesock)), stdin=PIPE)
+
+        last_int = datetime.datetime.now()
+        int_count = 0
+
+        while 1:
+            rdy = select.select([sys.stdin, s_ctl.stdin], [], [s_ctl.stdin])
+
+            if s_ctl.stdin in rdy[2] or s_ctl.stdin in rdy[0]:
+                sys.stderr.write('Connection closed\n')
+                break
+
+            # Exit if Ctrl-C is pressed repeatedly
+            if sys.stdin in rdy[0]:
+                buf = os.read(self_stdin, 1024)
+                if struct.unpack('b', buf[0:1])[0] == 3:
+                    if (datetime.datetime.now() - last_int).total_seconds() > 2:
+                        last_int = datetime.datetime.now()
+                        int_count = 1
+                    else:
+                        int_count += 1
+
+                    if int_count == 3:
+                        print '\nDetaching ...'
+                        break
+
+                s_ctl.stdin.write(buf)
+
+        # Restore terminal now to let user interrupt the wait if needed
+        termios.tcsetattr(sys.stdin.fileno(), termios.TCSANOW, old)
+
+        s_ctl.terminate()
+        s_ctl.wait()
 
     def run_test(self, test):
         """

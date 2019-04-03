@@ -794,16 +794,20 @@ def action(config, args):
                          key=attrgetter('name'))
 
         tbl = TextTable()
-        tbl.fmt = args.fmt or '%name %module %maintainers %version %release %modulemanager'
+        tbl.fmt = args.fmt or '%name %module %maintainers %version %release '\
+                              '%modulemanager'
         tbl.show_header = args.headers
         tbl.color = True
 
         supported_keys = set(('name', 'module', 'origin', 'reason', 'tests',
                               'version', 'arch', 'release', 'changelogname',
-                              'changelogtime', 'maintainers', 'modulemanager'))
+                              'changelogtime', 'maintainers', 'modulemanager',
+                              'buildrequires'))
         diff_keys = set(tbl.pattern_fields()) - supported_keys
         if diff_keys:
-            raise RiftError('Unknown placeholder(s): %s' % ', '.join(diff_keys))
+            raise RiftError('Unknown placeholder(s): %s '\
+                            '(supported keys are: %s)' % (', '.join(diff_keys),
+                                                          tbl.pattern_fields()))
 
         for pkg in pkglist:
             logging.debug('Loading package %s', pkg.name)
@@ -824,6 +828,7 @@ def action(config, args):
                         'release': spec.release,
                         'changelogname': spec.changelog_name,
                         'changelogtime': date,
+                        'buildrequires': spec.buildrequires,
                         'modulemanager': modulemanager['email'],
                         'maintainers': ', '.join(pkg.maintainers)})
         print(tbl)

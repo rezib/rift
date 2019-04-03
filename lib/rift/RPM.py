@@ -127,6 +127,7 @@ class Spec(object):
         self.changelog_time = None
         self.evr = None
         self.arch = None
+        self.buildrequires = None
         if self.filepath is not None:
             self.load()
 
@@ -151,6 +152,8 @@ class Spec(object):
             self.changelog_time = hdr[rpm.RPMTAG_CHANGELOGTIME][0]
         self.sources.extend(hdr[rpm.RPMTAG_SOURCE])
         self.sources.extend(hdr[rpm.RPMTAG_PATCH])
+        self.buildrequires = ' '.join(hdr[rpm.RPMTAG_REQUIRENEVRS])
+
 
         # Reload to get information without dist macro set.
         rpm.delMacro('dist')

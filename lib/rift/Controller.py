@@ -705,7 +705,12 @@ def action(config, args):
     elif args.command == 'validdiff':
 
         pkglist = {}
-        for patchedfile in parse_unidiff(args.patch):
+        patchedfiles = parse_unidiff(args.patch)
+
+        if not patchedfiles:
+            raise RiftError("Invalid patch detected (empty commit ?)")
+
+        for patchedfile in patchedfiles:
 
             filepath = patchedfile.path
             names = filepath.split(os.path.sep)
@@ -758,7 +763,8 @@ def action(config, args):
 
                 # sources/
                 elif fullpath.startswith(pkg.sourcesdir) and len(names) == 2:
-                    # XXX: Check binary/no binary
+                    if not len(patchedfile):
+                        raise RiftError("Binary file detected: %s" % filepath)
                     logging.debug('Ignoring source file: %s', names[1])
 
                 # tests/

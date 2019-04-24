@@ -7,6 +7,7 @@ import os.path
 from TestUtils import make_temp_file, make_temp_dir, RiftTestCase
 
 from rift.Controller import Config, main
+from rift import RiftError
 
 
 class ControllerTest(RiftTestCase):
@@ -115,7 +116,7 @@ class ControllerProjectTest(RiftTestCase):
         srcdir = os.path.join(self.pkgdirs[name], 'sources')
         os.mkdir(srcdir)
 
-        # ./packages/pkg/sources/pkg-version-release.tar.gz
+        # ./packages/pkg/sources/pkg-version.tar.gz
         self.pkgsrc[name] = os.path.join(srcdir,
                                          "{0}-{1}.tar.gz".format(name, version))
         with open(self.pkgsrc[name], "w") as src:
@@ -158,3 +159,49 @@ index 0000000..e845566
             patch = make_temp_file(patch_template.format(filename))
             self.assertEqual(main(['validdiff', patch.name]), 0)
 
+    def test_validdiff_binary(self):
+        """ Should fail if source file is a binary file """
+        pkgname = 'pkg'
+        pkgvers = 1.0
+        self.make_pkg(name=pkgname, version=pkgvers)
+        pkgsrc = os.path.join('packages', 'pkgname', 'sources',
+                              '{0}-{1}.tar.gz'.format(pkgname, pkgvers))
+        patch = make_temp_file("""
+commit 0ac8155e2655321ceb28bbf716ff66d1a9e30f29 (HEAD -> master)
+Author: Myself <buddy@somewhere.org>
+Date:   Thu Apr 25 14:30:41 2019 +0200
+
+    packages: update 'pkg' sources
+
+diff --git /dev/null b/{0}
+index fcd49dd..91ef207 100644
+Binary files a/sources/a.tar.gz and b/sources/a.tar.gz differ
+""".format(pkgsrc))
+        self.assert_except(RiftError, "Binary file detected: {0}\n".format(pkgsrc),
+                           main, ['validdiff', patch.name])
+
+    def test_validdiff_binary_with_content(self):
+        """ Should fail if source file is a binary file (diff --binary) """
+        pkgname = 'pkg'
+        pkgvers = 1.0
+        self.make_pkg(name=pkgname, version=pkgvers)
+        pkgsrc = os.path.join('packages', 'pkgname', 'sources',
+                              '{0}-{1}.tar.gz'.format(pkgname, pkgvers))
+        patch = make_temp_file("""
+commit 0ac8155e2655321ceb28bbf716ff66d1a9e30f29 (HEAD -> master)
+Author: Myself <buddy@somewhere.org>
+Date:   Thu Apr 25 14:30:41 2019 +0200
+
+    packages: update 'pkg' sources
+
+diff --git /dev/null b/{0}
+index 6cd0ff6ec591f7f51a3479d7b66c6951a2b4afa9..91ef2076b67f3158ec1670fa7b88d88b2816aa91 100644
+GIT binary patch
+literal 8
+PcmZQ%;Sf+z_{{#tQ1BL-x
+
+literal 4
+LcmZQ%;Sc}}-05kv|
+""".format(pkgsrc))
+        self.assert_except(RiftError, "Binary file detected: {0}\n".format(pkgsrc),
+                           main, ['validdiff', patch.name])

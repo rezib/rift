@@ -30,8 +30,7 @@ LINE_TYPE_ADD = '+'
 LINE_TYPE_DELETE = '-'
 LINE_TYPE_CONTEXT = ' '
 
-RE_SOURCE_FILENAME = re.compile(r'^--- (?P<filename>[^\t\n]+)')
-RE_TARGET_FILENAME = re.compile(r'^\+\+\+ (?P<filename>[^\t\n]+)')
+RE_DIFF_PATCH = re.compile(r'^diff --git (?P<source>[^\t]+) (?P<target>[^\t]+)')
 
 # @@ (source offset, length) (target offset, length) @@ (section header)
 RE_HUNK_HEADER = re.compile(
@@ -265,19 +264,15 @@ def parse_unidiff(diff):
     """Unified diff parser, takes a file-like object as argument."""
     ret = PatchSet()
     current_patch = None
+    source_file = None
+    target_file = None
 
     for line in diff:
-        # check for source file header
-        check_source = RE_SOURCE_FILENAME.match(line)
-        if check_source:
-            source_file = check_source.group('filename')
-            current_patch = None
-            continue
-
-        # check for target file header
-        check_target = RE_TARGET_FILENAME.match(line)
-        if check_target:
-            target_file = check_target.group('filename')
+        ## check for source file header
+        check_binary = RE_DIFF_PATCH.match(line)
+        if check_binary and not source_file:
+            source_file = check_binary.group('source')
+            target_file = check_binary.group('target')
             current_patch = PatchedFile(source_file, target_file)
             ret.append(current_patch)
             continue

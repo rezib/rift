@@ -710,6 +710,7 @@ def action(config, args):
             filepath = patchedfile.path
             names = filepath.split(os.path.sep)
             fullpath = config.project_path(filepath)
+            ignored = False
 
             if filepath == config.get('staff_file'):
 
@@ -732,11 +733,6 @@ def action(config, args):
                 names.pop(0)
 
                 pkg = Package(names.pop(0), config, staff, modules)
-                if pkg not in pkglist:
-                    # If this patch removes a file for this package,
-                    # do not check it if the whole package is no more there.
-                    if not patchedfile.is_deleted_file or os.path.exists(pkg.dir):
-                        pkglist[pkg.name] = pkg
 
                 # info.yaml
                 if fullpath == pkg.metafile:
@@ -749,6 +745,7 @@ def action(config, args):
                 # backup specfile
                 elif fullpath == '%s.orig' % pkg.specfile:
                     logging.debug('Ignoring backup specfile')
+                    ignored = True
 
                 # rpmlint config file
                 elif names == [RPMLINT_CONFIG]:
@@ -768,6 +765,14 @@ def action(config, args):
 
                 else:
                     raise RiftError("Unknown file pattern: %s" % filepath)
+
+                if pkg not in pkglist:
+                    # Do not check if:
+                    # * this patch removes a file for this package and the
+                    #   whole package is no more there.
+                    # * this patch only modify a file that doesn't need a build (like spec.orig)
+                    if not ignored and (not patchedfile.is_deleted_file or os.path.exists(pkg.dir)):
+                        pkglist[pkg.name] = pkg
 
             elif filepath == 'mock.tpl':
                 logging.debug('Ignoring mock template file: %s', filepath)

@@ -48,6 +48,7 @@ class ControllerProjectTest(RiftTestCase):
         # Dict of created packages
         self.pkgdirs = {}
         self.pkgspecs = {}
+        self.pkgsrc = {}
 
     def tearDown(self):
         os.chdir(self.cwd)
@@ -57,13 +58,16 @@ class ControllerProjectTest(RiftTestCase):
         os.rmdir(self.annexdir)
         for spec in self.pkgspecs.values():
             os.unlink(spec)
+        for src in self.pkgsrc.values():
+            os.unlink(src)
         for pkgdir in self.pkgdirs.values():
             os.unlink(os.path.join(pkgdir, 'info.yaml'))
+            os.rmdir(os.path.join(pkgdir, 'sources'))
             os.rmdir(pkgdir)
         os.rmdir(self.packagesdir)
         os.rmdir(self.projdir)
 
-    def make_pkg(self, name='pkg'):
+    def make_pkg(self, name='pkg', version='1.0', release='1'):
         # ./packages/pkg
         self.pkgdirs[name] = os.path.join(self.packagesdir, name)
         os.mkdir(self.pkgdirs[name])
@@ -82,8 +86,8 @@ class ControllerProjectTest(RiftTestCase):
                                            "{0}.spec".format(name))
         with open(self.pkgspecs[name], "w") as spec:
             spec.write("Name:    {0}\n".format(name))
-            spec.write("Version:        1.0\n")
-            spec.write("Release:        1\n")
+            spec.write("Version:        {0}\n".format(version))
+            spec.write("Release:        {0}\n".format(release))
             spec.write("Summary:        A package\n")
             spec.write("Group:          System Environment/Base\n")
             spec.write("License:        GPL\n")
@@ -102,14 +106,55 @@ class ControllerProjectTest(RiftTestCase):
             spec.write("# Nothing to install\n")
             spec.write("%files\n")
             spec.write("# No files\n")
+            spec.write("%changelog\n")
+            spec.write("* Tue Feb 26 2019 Myself <buddy@somewhere.org>"
+                       " - {0}-{1}\n".format(version, release))
+            spec.write("- Update to {0} release\n".format(version))
 
+        # ./packages/pkg/sources
+        srcdir = os.path.join(self.pkgdirs[name], 'sources')
+        os.mkdir(srcdir)
+
+        # ./packages/pkg/sources/pkg-version-release.tar.gz
+        self.pkgsrc[name] = os.path.join(srcdir,
+                                         "{0}-{1}.tar.gz".format(name, version))
+        with open(self.pkgsrc[name], "w") as src:
+            src.write("ACACACACACACACAC")
 
 
     def test_action_query(self):
         """simple 'rift query' is ok """
         self.assertEqual(main(['query']), 0)
 
+
     def test_action_query_on_pkg(self):
         """ Test query on one package """
         self.make_pkg()
         self.assertEqual(main(['query', 'pkg']), 0)
+
+    def test_validdiff_readme(self):
+        """ Should allow README files """
+        self.make_pkg()
+        patch_template = """
+commit 0ac8155e2655321ceb28bbf716ff66d1a9e30f29 (HEAD -> master)
+Author: Myself <buddy@somewhere.org>
+Date:   Thu Apr 25 14:30:41 2019 +0200
+
+    packages: document 'pkg'
+
+diff --git a/packages/pkg/{0} b/packages/pkg/{0}
+new file mode 100644
+index 0000000..e845566
+--- /dev/null
++++ b/packages/pkg/{0}
+@@ -0,0 +1 @@
++README
+"""
+
+        for fmt in '', 'rst', 'md', 'txt':
+            filename = 'README'
+            if fmt:
+                filename = "{0}.{1}".format(filename, fmt)
+            patch = make_temp_file(patch_template.format(filename))
+            self.assertEqual(main(['validdiff', patch.name]), 0)
+

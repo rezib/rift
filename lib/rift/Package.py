@@ -46,6 +46,7 @@ from rift.Annex import Annex
 _META_FILE = 'info.yaml'
 _SOURCES_DIR = 'sources'
 _TESTS_DIR = 'tests'
+_DOC_FILES = ['README', 'README.md', 'README.rst', 'README.txt']
 
 class Package(object):
     """
@@ -75,6 +76,9 @@ class Package(object):
         self.testsdir = os.path.join(self.dir, _TESTS_DIR)
         self.metafile = os.path.join(self.dir, _META_FILE)
         self.specfile = os.path.join(self.dir, '%s.spec' % self.name)
+        self.docfiles = []
+        for doc in _DOC_FILES:
+            self.docfiles.append(os.path.join(self.dir, doc))
 
         self.sources = set()
 

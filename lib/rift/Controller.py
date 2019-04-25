@@ -751,6 +751,11 @@ def action(config, args):
                 elif names == [RPMLINT_CONFIG]:
                     logging.debug('Ignoring rpmlint config file')
 
+                # README file
+                elif fullpath in pkg.docfiles:
+                    logging.debug('Ignoring documentation file: %s', fullpath)
+                    ignored = True
+
                 # sources/
                 elif fullpath.startswith(pkg.sourcesdir) and len(names) == 2:
                     # XXX: Check binary/no binary

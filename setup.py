@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# Copyright (C) 2014-2016 CEA
+# Copyright (C) 2014-2018 CEA
 #
 # This file is part of Rift project.
 #
@@ -35,7 +35,7 @@
 from setuptools import setup
 
 setup(name='rift',
-      version='0.6',
+      version='0.7',
       license='CeCILL-C (French equivalent to LGPLv2+)',
       description='RPM repository management',
       author='Aurelien Degremont',

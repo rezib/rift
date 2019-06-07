@@ -742,9 +742,14 @@ def action(config, args):
 
                 pkg = Package(names.pop(0), config, staff, modules)
 
+                if patchedfile.is_deleted_file:
+                    logging.debug('Ignoring removed file: %s', filepath)
+                    ignored = True
+
                 # info.yaml
                 if fullpath == pkg.metafile:
-                    logging.info('Detected meta file')
+                    logging.info('Ignoring meta file')
+                    ignored = True
 
                 # specfile
                 elif fullpath == pkg.specfile:
@@ -757,7 +762,7 @@ def action(config, args):
 
                 # rpmlint config file
                 elif names == [RPMLINT_CONFIG]:
-                    logging.debug('Ignoring rpmlint config file')
+                    logging.debug('Detecting rpmlint config file')
 
                 # README file
                 elif fullpath in pkg.docfiles:
@@ -768,14 +773,11 @@ def action(config, args):
                 elif fullpath.startswith(pkg.sourcesdir) and len(names) == 2:
                     if not len(patchedfile):
                         raise RiftError("Binary file detected: %s" % filepath)
-                    logging.debug('Ignoring source file: %s', names[1])
+                    logging.debug('Detecting source file: %s', names[1])
 
                 # tests/
                 elif fullpath.startswith(pkg.testsdir) and len(names) == 2:
-                    logging.debug('Ignoring test script: %s', names[1])
-
-                elif patchedfile.is_deleted_file:
-                    logging.debug('Ignoring removed file: %s', filepath)
+                    logging.debug('Detecting test script: %s', names[1])
 
                 else:
                     raise RiftError("Unknown file pattern: %s" % filepath)
@@ -785,7 +787,7 @@ def action(config, args):
                     # * this patch removes a file for this package and the
                     #   whole package is no more there.
                     # * this patch only modify a file that doesn't need a build (like spec.orig)
-                    if not ignored and (not patchedfile.is_deleted_file or os.path.exists(pkg.dir)):
+                    if not ignored and os.path.exists(pkg.dir):
                         pkglist[pkg.name] = pkg
 
             elif filepath == 'mock.tpl':

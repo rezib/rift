@@ -205,3 +205,65 @@ LcmZQ%;Sc}}-05kv|
 """.format(pkgsrc))
         self.assert_except(RiftError, "Binary file detected: {0}\n".format(pkgsrc),
                            main, ['validdiff', patch.name])
+
+    def test_remove_package(self):
+        """ Test if removing a package doesn't trigger a build """
+        pkgname = 'pkg'
+        pkgvers = 1.0
+        self.make_pkg(name=pkgname, version=pkgvers)
+        pkgsrc = os.path.join('packages', 'pkgname', 'sources',
+                              '{0}-{1}.tar.gz'.format(pkgname, pkgvers))
+        patch = make_temp_file("""
+diff --git a/packages/pkg/info.yaml b/packages/pkg/info.yaml
+deleted file mode 100644
+index 32ac08e..0000000
+--- a/packages/pkg/info.yaml
++++ /dev/null
+@@ -1,6 +0,0 @@
+-package:
+-    maintainers:
+-        - Myself
+-    module: Great module
+-    origin: Vendor
+-    reason: Missing feature
+diff --git a/packages/pkg/pkg.spec b/packages/pkg/pkg.spec
+deleted file mode 100644
+index b92c49d..0000000
+--- a/packages/pkg/pkg.spec
++++ /dev/null
+@@ -1,24 +0,0 @@
+-Name:    pkg
+-Version:        1.0
+-Release:        1
+-Summary:        A package
+-Group:          System Environment/Base
+-License:        GPL
+-URL:            http://nowhere.com/projects/%{{name}}/
+-Source0:        %{{name}}-%{{version}}.tar.gz
+-BuildArch:      noarch
+-BuildRequires:  br-package
+-Requires:       another-package
+-Provides:       pkg-provide
+-%description
+-A package
+-%prep
+-%build
+-# Nothing to build
+-%install
+-# Nothing to install
+-%files
+-# No files
+-%changelog
+-* Tue Feb 26 2019 Myself <buddy@somewhere.org> - 1.0-1
+-- Update to 1.0 release
+diff --git a/{0} b/{0}
+deleted file mode 100644
+index 43bf48d..0000000
+--- a/{0}
++++ /dev/null
+@@ -1 +0,0 @@
+-ACACACACACACACAC
+\ No newline at end of file
+""".format(pkgsrc))
+
+        self.assertEqual(main(['validdiff', patch.name]), 0)

@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2014-2018 CEA
+# Copyright (C) 2014-2019 CEA
 #
 # This file is part of Rift project.
 #
@@ -69,7 +69,7 @@ def parse_options(args=None):
     # Generic options
     parser.add_argument('-v', '--verbose', action='count', default=0,
                         help="increase output verbosity (twice for debug)")
-    parser.add_argument('--version', action='version', version='%(prog)s 0.8')
+    parser.add_argument('--version', action='version', version='%(prog)s 0.9')
 
     subparsers = parser.add_subparsers(dest='command', metavar='COMMAND')
 

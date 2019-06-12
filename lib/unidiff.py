@@ -269,10 +269,10 @@ def parse_unidiff(diff):
 
     for line in diff:
         ## check for source file header
-        check_binary = RE_DIFF_PATCH.match(line)
-        if check_binary and not source_file:
-            source_file = check_binary.group('source')
-            target_file = check_binary.group('target')
+        check_source = RE_DIFF_PATCH.match(line)
+        if check_source:
+            source_file = check_source.group('source')
+            target_file = check_source.group('target')
             current_patch = PatchedFile(source_file, target_file)
             ret.append(current_patch)
             continue

@@ -771,7 +771,7 @@ def action(config, args):
 
                 # sources/
                 elif fullpath.startswith(pkg.sourcesdir) and len(names) == 2:
-                    if not len(patchedfile):
+                    if patchedfile.binary:
                         raise RiftError("Binary file detected: %s" % filepath)
                     logging.debug('Detecting source file: %s', names[1])
 

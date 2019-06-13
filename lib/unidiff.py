@@ -36,6 +36,12 @@ RE_DIFF_PATCH = re.compile(r'^diff --git (?P<source>[^\t]+) (?P<target>[^\t]+)')
 RE_HUNK_HEADER = re.compile(
     r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))?\ @@[ ]?(.*)")
 
+# Binary pattern
+RE_BINARY_FILE = re.compile(r'^(GIT )?[Bb]inary (files .*differ|patch)$')
+
+# renamed pattern
+RE_RENAMED_FILE = re.compile(r'^rename from .*$')
+
 #   kept line (context)
 # + added line
 # - deleted line
@@ -130,6 +136,8 @@ class PatchedFile(list):
         super(PatchedFile, self).__init__()
         self.source_file = source
         self.target_file = target
+        self.binary = False
+        self.renamed = False
 
     def __repr__(self):
         return "%s: %s" % (self.target_file,
@@ -276,6 +284,14 @@ def parse_unidiff(diff):
             current_patch = PatchedFile(source_file, target_file)
             ret.append(current_patch)
             continue
+
+        # check for binary format
+        if RE_BINARY_FILE.match(line):
+            current_patch.binary = True
+
+        # check for renamed file
+        if RE_RENAMED_FILE.match(line):
+            current_patch.renamed = True
 
         # check for hunk header
         re_hunk_header = RE_HUNK_HEADER.match(line)

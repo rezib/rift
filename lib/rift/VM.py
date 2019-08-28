@@ -114,7 +114,7 @@ class VM(object):
                 % imgfile]
 
         # Console
-        cmd += ['-chardev', 'socket,id=charserial0,path=%s,server,nowait,telnet'
+        cmd += ['-chardev', 'socket,id=charserial0,path=%s,server,nowait'
                 % (self.consolesock)]
         cmd += ['-device', 'isa-serial,chardev=charserial0,id=serial0']
 

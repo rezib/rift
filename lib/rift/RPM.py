@@ -153,13 +153,11 @@ class Spec(object):
         self.sources.extend(hdr[rpm.RPMTAG_SOURCE])
         self.sources.extend(hdr[rpm.RPMTAG_PATCH])
         self.buildrequires = ' '.join(hdr[rpm.RPMTAG_REQUIRENEVRS])
-
+        self.release = hdr.sprintf('%{RELEASE}')
 
         # Reload to get information without dist macro set.
         rpm.delMacro('dist')
         hdr = rpm.TransactionSet().parseSpec(self.filepath).sourceHeader
-
-        self.release = hdr.sprintf('%{RELEASE}')
         self.evr = hdr.sprintf('%|epoch?{%{epoch}:}:{}|%{version}-%{release}')
 
     def add_changelog_entry(self, userstring, comment):

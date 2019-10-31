@@ -258,7 +258,7 @@ class VM(object):
                         int_count += 1
 
                     if int_count == 3:
-                        print '\nDetaching ...'
+                        print('\nDetaching ...')
                         break
 
                 s_ctl.stdin.write(buf)

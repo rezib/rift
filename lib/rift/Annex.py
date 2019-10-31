@@ -46,7 +46,7 @@ import yaml
 from rift.TempDir import TempDir
 
 # List of ASCII printable characters
-_TEXTCHARS = bytearray([9, 10, 13] + range(32, 127))
+_TEXTCHARS = bytearray([9, 10, 13] + list(range(32, 127)))
 
 def is_binary(filepath, blocksize=65536):
     """
@@ -92,6 +92,9 @@ class Annex(object):
 
     For now, files are stored in a flat namespace.
     """
+    # Read and Write file modes
+    RMODE = 0o644
+    WMODE = 0o664
 
     def __init__(self, config, path=None):
         self.path = path or config.get('annex')
@@ -191,7 +194,7 @@ class Annex(object):
         metapath = os.path.join(self.path, digest + '.info')
         with open(metapath, 'w') as fyaml:
             yaml.dump(metadata, fyaml, default_flow_style=False)
-        os.chmod(metapath, 0664)
+        os.chmod(metapath, self.WMODE)
 
     def list(self):
         """
@@ -239,10 +242,10 @@ class Annex(object):
             # Move binary file to annex
             logging.debug('Importing %s into annex (%s)', filepath, digest)
             shutil.copyfile(filepath, destpath)
-            os.chmod(destpath, 0664)
+            os.chmod(destpath, self.WMODE)
 
         # Verify permission are correct before copying
-        os.chmod(filepath, 0644)
+        os.chmod(filepath, self.RMODE)
 
         # Create fake pointer file
         with open(filepath, 'w') as fakefile:

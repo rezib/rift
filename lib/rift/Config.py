@@ -135,7 +135,7 @@ class Config(object):
         """
         if filenames is None:
             filenames = self._DEFAULT_FILES
-        if isinstance(filenames, basestring):
+        if isinstance(filenames, str):
             filenames = [filenames]
 
         for filepath in filenames:
@@ -184,7 +184,7 @@ class Config(object):
         """
         if filenames is None:
             filenames = self._DEFAULT_FILES
-        if isinstance(filenames, basestring):
+        if isinstance(filenames, str):
             filenames = [filenames]
 
         for filepath in filenames:

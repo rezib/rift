@@ -36,7 +36,10 @@ Helper to push REST review to Gerrit Code Reviewer server.
 
 import json
 import logging
-import urllib2
+try:
+    import urllib2 as urllib
+except ImportError:
+    import urllib.request as urllib
 
 from rift import RiftError
 
@@ -87,11 +90,11 @@ class Review(object):
         if password is None:
             raise RiftError("Gerrit password is not defined")
 
-        authhandler = urllib2.HTTPDigestAuthHandler()
+        authhandler = urllib.HTTPDigestAuthHandler()
         authhandler.add_password(realm, server, username, password)
-        opener = urllib2.build_opener(authhandler)
+        opener = urllib.build_opener(authhandler)
 
-        urllib2.install_opener(opener)
+        urllib.install_opener(opener)
 
         api_url = "http://%s/gerrit/a/changes/%s/revisions/%s/review" % \
                                                       (server, changeid, revid)
@@ -108,7 +111,7 @@ class Review(object):
         logging.debug("Sending review request to %s", api_url)
         logging.debug("Request content: %s", data)
 
-        req = urllib2.Request(api_url, data,
+        req = urllib.Request(api_url, data,
                               {'Content-Type': 'application/json'})
         req.get_method = lambda: 'POST'
-        urllib2.urlopen(req).read()
+        urllib.urlopen(req).read()

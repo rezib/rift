@@ -343,19 +343,24 @@ class BasicTest(Test):
         random.shuffle(rpmnames)
 
         cmd = textwrap.dedent("""
+        if [ -x /usr/bin/dnf ] ; then
+            YUM="dnf"
+        else
+            YUM="yum"
+        fi
         i=0
         for pkg in %s; do
             i=$(( $i + 1 ))
             echo -e "[Testing '${pkg}' (${i}/%d)]"
-            yum history new
+            rm -rf /var/lib/${YUM}/history*
             if rpm -q --quiet $pkg; then
-              yum -y -d1 upgrade $pkg || exit 1
+              ${YUM} -y -d1 upgrade $pkg || exit 1
             else
-              yum -y -d1 install $pkg || exit 1
+              ${YUM} -y -d1 install $pkg || exit 1
             fi
-            if [ $(yum history stats | awk '/Transactions:/ {print $2}') -gt 0 ]; then
+            if [ -z "$(${YUM} history 2<&1| awk '/No transactions/')" ]; then
                 echo '> Cleanup last transaction'
-                yum -y -d1 history undo last || exit 1
+                ${YUM} -y -d1 history undo last || exit 1
             else
                 echo '> Warning: package already installed and up to date !'
             fi

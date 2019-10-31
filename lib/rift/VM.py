@@ -191,7 +191,11 @@ class VM(object):
             %s
             __EOC__
 
-            yum -d1 makecache fast
+            if [ -x /usr/bin/dnf ] ; then
+                dnf -d1 makecache
+            else
+                yum -d1 makecache fast
+            fi
 
             """) % (self.address, self.NAME, userline, groupline,
                     ' '.join(mkdirs), "\n".join(fstab), "\n".join(repos))

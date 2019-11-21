@@ -35,7 +35,7 @@
 from setuptools import setup
 
 setup(name='rift',
-      version='0.10rc1',
+      version='0.10rc2',
       license='CeCILL-C (French equivalent to LGPLv2+)',
       description='RPM repository management',
       author='Aurelien Degremont',

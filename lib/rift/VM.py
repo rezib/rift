@@ -90,7 +90,7 @@ class VM(object):
         cmd += ['-o', 'backing_file=%s' % os.path.realpath(self._image)]
         cmd += [self._tmpimg.name]
         logging.debug("Creating VM image file: %s", ' '.join(cmd))
-        popen = Popen(cmd, stdout=PIPE, stderr=STDOUT)
+        popen = Popen(cmd, stdout=PIPE, stderr=STDOUT, universal_newlines=True)
         stdout = popen.communicate()[0]
         if popen.returncode != 0:
             raise RiftError(stdout)

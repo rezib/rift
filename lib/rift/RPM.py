@@ -95,7 +95,7 @@ class RPM(object):
         cmd += ['--define', '_sourcedir %s' % srcdir]
         cmd += ['--define', '_specdir %s' % os.path.realpath(specdir)]
         cmd += [self.filepath]
-        popen = Popen(cmd, stdout=PIPE, stderr=STDOUT)
+        popen = Popen(cmd, stdout=PIPE, stderr=STDOUT, universal_newlines=True)
         stdout = popen.communicate()[0]
         if popen.returncode != 0:
             raise RiftError(stdout)
@@ -213,7 +213,7 @@ class Spec(object):
         cmd += ['--define', '_srcrpmdir %s' % destdir]
         cmd += [self.filepath]
 
-        popen = Popen(cmd, stdout=PIPE, stderr=STDOUT)
+        popen = Popen(cmd, stdout=PIPE, stderr=STDOUT, universal_newlines=True)
         stdout = popen.communicate()[0]
         if popen.returncode != 0:
             raise RiftError(stdout)
@@ -234,7 +234,7 @@ class Spec(object):
     def check(self, configdir=None):
         """Check specfile content using `rpmlint' tool."""
         cmd, env = self._check(configdir)
-        popen = Popen(cmd, stderr=PIPE, env=env)
+        popen = Popen(cmd, stderr=PIPE, env=env, universal_newlines=True)
         stderr = popen.communicate()[1]
         if popen.returncode != 0:
             raise RiftError(stderr or 'rpmlint reported errors')
@@ -242,7 +242,7 @@ class Spec(object):
     def analyze(self, review, configdir=None):
         """Run `rpmlint' for this specfile and fill provided `review'."""
         cmd, env = self._check(configdir)
-        popen = Popen(cmd, stdout=PIPE, stderr=PIPE, env=env)
+        popen = Popen(cmd, stdout=PIPE, stderr=PIPE, env=env, universal_newlines=True)
         stdout, stderr = popen.communicate()
         if popen.returncode not in (0, 64, 66):
             raise RiftError(stderr or 'rpmlint returned %d' % popen.returncode)

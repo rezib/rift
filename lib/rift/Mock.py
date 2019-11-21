@@ -117,7 +117,7 @@ class Mock(object):
             repo.create()
 
         cmd = self._mock_base() + ['--init']
-        popen = Popen(cmd, stdout=PIPE, cwd='/') #, stderr=STDOUT)
+        popen = Popen(cmd, stdout=PIPE, cwd='/', universal_newlines=True)
         stdout = popen.communicate()[0]
         if popen.returncode != 0:
             raise RiftError(stdout)
@@ -148,7 +148,7 @@ class Mock(object):
         cmd += ['--no-clean', '--no-cleanup-after']
         cmd += ['--spec', specpath, '--source', sourcedir]
         logging.debug('Running mock: %s', ' '.join(cmd))
-        popen = Popen(cmd, stdout=PIPE, cwd='/') #, stderr=STDOUT)
+        popen = Popen(cmd, stdout=PIPE, cwd='/', universal_newlines=True)
         stdout = popen.communicate()[0]
         if popen.returncode != 0:
             raise RiftError(stdout)
@@ -161,7 +161,7 @@ class Mock(object):
         cmd = self._mock_base() + ['--no-clean', '--no-cleanup-after']
         cmd += [srpm.filepath]
         logging.debug('Running mock: %s', ' '.join(cmd))
-        popen = Popen(cmd, stdout=PIPE, cwd='/') #, stderr=STDOUT)
+        popen = Popen(cmd, stdout=PIPE, cwd='/', universal_newlines=True)
         stdout = popen.communicate()[0]
         if popen.returncode != 0:
             raise RiftError(stdout)

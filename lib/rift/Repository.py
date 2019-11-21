@@ -103,13 +103,13 @@ class Repository(RemoteRepository):
     def update(self):
         """Update the repository metadata."""
         cmd = ['createrepo', '-q', '--update', self.rpms_dir]
-        popen = Popen(cmd, stdout=PIPE, stderr=STDOUT)
+        popen = Popen(cmd, stdout=PIPE, stderr=STDOUT, universal_newlines=True)
         stdout = popen.communicate()[0]
         if popen.returncode != 0:
             raise RiftError(stdout)
 
         cmd = ['createrepo', '-q', '--update', self.srpms_dir]
-        popen = Popen(cmd, stdout=PIPE, stderr=STDOUT)
+        popen = Popen(cmd, stdout=PIPE, stderr=STDOUT, universal_newlines=True)
         stdout = popen.communicate()[0]
         if popen.returncode != 0:
             raise RiftError(stdout)

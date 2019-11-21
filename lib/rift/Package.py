@@ -234,7 +234,7 @@ class Test(object):
         Look for special LOCAL PATTERN in file header and flag the file
         accordingly.
         """
-        with open(self.command, 'rb') as ftest:
+        with open(self.command, 'rt') as ftest:
             data = ftest.read(blocksize)
             if self._LOCAL_PATTERN in data:
                 logging.debug("Test '%s' detected as local", self.name)

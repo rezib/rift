@@ -170,8 +170,11 @@ class Spec(object):
 
         # Reload to get information without dist macro set.
         rpm.delMacro('dist')
-        hdr = rpm.TransactionSet().parseSpec(self.filepath).sourceHeader
-        self.evr = hdr.sprintf('%|epoch?{%{epoch}:}:{}|%{version}-%{release}')
+        try:
+            hdr = rpm.TransactionSet().parseSpec(self.filepath).sourceHeader
+            self.evr = hdr.sprintf('%|epoch?{%{epoch}:}:{}|%{version}-%{release}')
+        except ValueError as exp:
+            raise RiftError('%s: %s' % (self.filepath, exp))
 
     def add_changelog_entry(self, userstring, comment):
         """

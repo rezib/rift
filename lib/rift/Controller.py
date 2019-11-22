@@ -841,7 +841,12 @@ def action(config, args):
             spec = Spec()
             if args.spec:
                 spec.filepath = pkg.specfile
-                spec.load()
+                try:
+                    spec.load()
+                except RiftError as exp:
+                    logging.error(str(exp))
+                    continue
+
             date = str(time.strftime("%Y-%m-%d", time.localtime(spec.changelog_time)))
             modulemanager = staff.get(modules.get(pkg.module).get('manager')[0])
             tbl.append({'name': pkg.name,

@@ -155,12 +155,17 @@ class Spec(object):
         self.version = hdr.sprintf('%{VERSION}')
         self.arch = hdr.sprintf('%{ARCH}')
         if hdr[rpm.RPMTAG_CHANGELOGNAME]:
-            self.changelog_name = self._header_values(hdr[rpm.RPMTAG_CHANGELOGNAME][0])
+            self.changelog_name = self._header_values(
+                                        hdr[rpm.RPMTAG_CHANGELOGNAME][0])
         if hdr[rpm.RPMTAG_CHANGELOGTIME]:
-            self.changelog_time = self._header_values(hdr[rpm.RPMTAG_CHANGELOGTIME][0])
-        self.sources.extend(self._header_values(hdr[rpm.RPMTAG_SOURCE]))
-        self.sources.extend(self._header_values(hdr[rpm.RPMTAG_PATCH]))
-        self.buildrequires = ' '.join(self._header_values(hdr[rpm.RPMTAG_REQUIRENEVRS]))
+            self.changelog_time = int(self._header_values(
+                                        hdr[rpm.RPMTAG_CHANGELOGTIME][0]))
+        self.sources.extend(self._header_values(
+                                        hdr[rpm.RPMTAG_SOURCE]))
+        self.sources.extend(self._header_values(
+                                        hdr[rpm.RPMTAG_PATCH]))
+        self.buildrequires = ' '.join(self._header_values(
+                                        hdr[rpm.RPMTAG_REQUIRENEVRS]))
         self.release = hdr.sprintf('%{RELEASE}')
 
         # Reload to get information without dist macro set.

@@ -833,7 +833,7 @@ def action(config, args):
         if diff_keys:
             raise RiftError('Unknown placeholder(s): %s '\
                             '(supported keys are: %s)' % (', '.join(diff_keys),
-                                                          tbl.pattern_fields()))
+                                                          ', '.join(supported_keys)))
 
         for pkg in pkglist:
             logging.debug('Loading package %s', pkg.name)

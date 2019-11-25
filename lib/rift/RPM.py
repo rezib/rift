@@ -49,6 +49,14 @@ from rift.Annex import Annex, is_binary
 
 RPMLINT_CONFIG = 'rpmlint'
 
+def _header_values(values):
+    """ Convert values from header specfile to strings """
+    if isinstance(values, list):
+        return [_header_values(val) for val in values]
+    if isinstance(values, bytes):
+        return values.decode("utf8")
+    return str(values)
+
 class RPM(object):
     """Manipulate a source or binary RPM."""
 
@@ -73,11 +81,11 @@ class RPM(object):
         os.close(fileno)
 
         # Extract data
-        self.name = hdr[rpm.RPMTAG_NAME]
-        self.arch = hdr[rpm.RPMTAG_ARCH]
+        self.name = _header_values(hdr[rpm.RPMTAG_NAME])
+        self.arch = _header_values(hdr[rpm.RPMTAG_ARCH])
         self.is_source = hdr.isSource()
-        self._srcfiles.extend(hdr[rpm.RPMTAG_SOURCE])
-        self._srcfiles.extend(hdr[rpm.RPMTAG_PATCH])
+        self._srcfiles.extend(_header_values(hdr[rpm.RPMTAG_SOURCE]))
+        self._srcfiles.extend(_header_values(hdr[rpm.RPMTAG_PATCH]))
 
     def extract_srpm(self, specdir, srcdir, annex=None):
         """
@@ -131,14 +139,6 @@ class Spec(object):
         if self.filepath is not None:
             self.load()
 
-    def _header_values(self, values):
-        """ Convert values from header specfile to strings """
-        if type(values) is list:
-            return [ self._header_values(val) for val in values ]
-        if type(values) is bytes:
-            return values.decode("utf8")
-        return str(values)
-
     def load(self):
         """Extract interesting information from spec file."""
         if not os.path.exists(self.filepath):
@@ -148,24 +148,24 @@ class Spec(object):
             spec = rpm.TransactionSet().parseSpec(self.filepath)
         except ValueError as exp:
             raise RiftError("%s: %s" % (self.filepath, exp))
-        self.pkgnames = [self._header_values(pkg.header['name']) for pkg in spec.packages]
+        self.pkgnames = [_header_values(pkg.header['name']) for pkg in spec.packages]
         hdr = spec.sourceHeader
         self.srpmname = hdr.sprintf('%{NAME}-%{VERSION}-%{RELEASE}.src.rpm')
         self.basename = hdr.sprintf('%{NAME}')
         self.version = hdr.sprintf('%{VERSION}')
         self.arch = hdr.sprintf('%{ARCH}')
         if hdr[rpm.RPMTAG_CHANGELOGNAME]:
-            self.changelog_name = self._header_values(
-                                        hdr[rpm.RPMTAG_CHANGELOGNAME][0])
+            self.changelog_name = _header_values(
+                hdr[rpm.RPMTAG_CHANGELOGNAME][0])
         if hdr[rpm.RPMTAG_CHANGELOGTIME]:
-            self.changelog_time = int(self._header_values(
-                                        hdr[rpm.RPMTAG_CHANGELOGTIME][0]))
-        self.sources.extend(self._header_values(
-                                        hdr[rpm.RPMTAG_SOURCE]))
-        self.sources.extend(self._header_values(
-                                        hdr[rpm.RPMTAG_PATCH]))
-        self.buildrequires = ' '.join(self._header_values(
-                                        hdr[rpm.RPMTAG_REQUIRENEVRS]))
+            self.changelog_time = int(_header_values(
+                hdr[rpm.RPMTAG_CHANGELOGTIME][0]))
+        self.sources.extend(_header_values(
+            hdr[rpm.RPMTAG_SOURCE]))
+        self.sources.extend(_header_values(
+            hdr[rpm.RPMTAG_PATCH]))
+        self.buildrequires = ' '.join(_header_values(
+            hdr[rpm.RPMTAG_REQUIRENEVRS]))
         self.release = hdr.sprintf('%{RELEASE}')
 
         # Reload to get information without dist macro set.

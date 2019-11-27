@@ -97,6 +97,7 @@ class Config():
         'arch': {
             'default':  'x86_64',
         },
+        'arch_efi_bios': {},
         'version': {},
         'maintainer':  {},
         'qemu': {

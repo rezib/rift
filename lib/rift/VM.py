@@ -49,11 +49,14 @@ import termios
 import select
 import struct
 import socket
+#import subprocess
 from subprocess import Popen, PIPE, STDOUT
 
 from rift import RiftError
 
 __all__ = ['VM']
+
+ARCH_EFI_BIOS="./usr/share/edk2/aarch64/QEMU_EFI.silent.fd"
 
 class VM():
     """Manipulate VM process and related temporary files."""
@@ -70,8 +73,18 @@ class VM():
         self.address = config.get('vm_address')
         self.port = config.get('vm_port', uniq_id)
         self.cpus = config.get('vm_cpus', 1)
-        self.cpu_type = config.get('vm_cpu', 'host')
         self.qemu = config.get('qemu')
+        self.arch = config.get('arch')
+
+        # default emulated cpu architecture
+        if self.arch == 'x86_64':
+            self.cpu_type = config.get('vm_cpu', 'host')
+        else:
+            self.cpu_type = config.get('vm_cpu', 'cortex-a72')
+
+        # Specific aarch64 options
+        self.arch_efi_bios = config.get('arch_efi_bios', ARCH_EFI_BIOS)
+        ##
 
         self.tmpmode = tmpmode
         self.copymode = config.get('vm_image_copy')
@@ -116,8 +129,19 @@ class VM():
 
         # Start VM process
         cmd = shlex.split(self.qemu)
-        cmd += ['-enable-kvm', '-name', 'rift', '-display', 'none']
-        cmd += ['-m', '8192', '-smp', str(self.cpus), '-cpu', self.cpu_type]
+        if self.arch == 'x86_64':
+            cmd += ['-enable-kvm']
+        else:
+            cmd += ['-machine', 'virt']
+
+        cmd += ['-cpu', self.cpu_type ]
+
+        cmd += ['-name', 'rift', '-display', 'none']
+        cmd += ['-m', '8192', '-smp', str(self.cpus)]
+
+        # UEFI for aarch64
+        if self.arch == 'aarch64':
+            cmd += [ '-bios', self.arch_efi_bios ]
 
         # Drive
         # TODO: switch to --device syntax
@@ -127,12 +151,20 @@ class VM():
         # Console
         cmd += ['-chardev', 'socket,id=charserial0,path=%s,server,nowait'
                 % (self.consolesock)]
-        cmd += ['-device', 'isa-serial,chardev=charserial0,id=serial0']
+        if self.arch == 'aarch64':
+            cmd += ['-device', 'virtio-serial,id=ser0,max_ports=8']
+            cmd += ['-serial', 'chardev:charserial0']
+        else:
+            cmd += ['-device', 'isa-serial,chardev=charserial0,id=serial0']
+
 
         # NIC
         cmd += ['-netdev', 'user,id=hostnet0,hostname=%s,hostfwd=tcp::%d-:22'
                 % (self.NAME, self.port)]
-        cmd += ['-device', 'virtio-net-pci,netdev=hostnet0,bus=pci.0,addr=0x3']
+        if self.arch == 'aarch64':
+            cmd += ['-device', 'virtio-net-device,netdev=hostnet0']
+        else:
+            cmd += ['-device', 'virtio-net-pci,netdev=hostnet0,bus=pci.0,addr=0x3']
 
 
         cmd += ['-virtfs', 'local,id=project,path=/%s,mount_tag=project,'
@@ -347,12 +379,16 @@ class VM():
 
         Return False if it is not ready after 25 seconds.
         """
+        sleeping_time = 5
+        if self.arch == 'aarch64': # VM very long to boot in emulation mode
+            sleeping_time = 20
+
         for _ in range(1, 5):
             # Check if Qemu process is really running
             if self._vm.poll() is not None:
                 raise RiftError("Unable to get VM running {}".format(
                     self._vm.stderr.read().decode()))
-            time.sleep(5)
+            time.sleep(sleeping_time)
             if self.running():
                 return True
             sys.stdout.write('.')

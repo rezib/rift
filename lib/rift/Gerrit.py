@@ -66,7 +66,8 @@ class Review(object):
         self.comments.setdefault(filepath, []).append(comment)
 
     def _message(self):
-        stats = ((cnt, self.labels[code]) for code, cnt in self.stats.items())
+        stats = ((cnt, self.labels[code])
+                 for code, cnt in list(self.stats.items()))
         msg = ", ".join("%d %s(s)" % (cnt, label) for cnt, label in stats)
         return "%s: %s" % (self.msg_header, msg)
 
@@ -111,7 +112,7 @@ class Review(object):
         logging.debug("Sending review request to %s", api_url)
         logging.debug("Request content: %s", data)
 
-        req = urllib.Request(api_url, data,
-                              {'Content-Type': 'application/json'})
+        req = urllib.Request(api_url, data.encode("utf8"),
+                             {'Content-Type': 'application/json'})
         req.get_method = lambda: 'POST'
         urllib.urlopen(req).read()

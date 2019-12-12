@@ -123,7 +123,7 @@ class RPM(object):
 class Spec(object):
     """Access information from a Specfile and build SRPMS."""
 
-    def __init__(self, filepath=None):
+    def __init__(self, filepath=None, config=None):
         self.filepath = filepath
         self.srpmname = None
         self.pkgnames = []
@@ -136,8 +136,17 @@ class Spec(object):
         self.evr = None
         self.arch = None
         self.buildrequires = None
+        self._config = config
         if self.filepath is not None:
             self.load()
+
+    def _set_macros(self):
+        """Set macros specified in configuration file"""
+        macros = self._config.get('rpm_macros', {})
+        for macro, value in macros.items():
+            rpm.delMacro(macro)
+            if value:
+                rpm.addMacro(macro, value)
 
     def load(self):
         """Extract interesting information from spec file."""
@@ -145,6 +154,7 @@ class Spec(object):
             raise RiftError('%s does not exist' % self.filepath)
         try:
             rpm.reloadConfig()
+            self._set_macros()
             spec = rpm.TransactionSet().parseSpec(self.filepath)
         except ValueError as exp:
             raise RiftError("%s: %s" % (self.filepath, exp))

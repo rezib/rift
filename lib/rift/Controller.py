@@ -268,7 +268,7 @@ def action_check(args, config):
         if args.file is None:
             raise RiftError("You must specifiy a file path (-f)")
 
-        spec = Spec(args.file)
+        spec = Spec(args.file, config=config)
         spec.check()
         logging.info('Spec file is OK.')
 
@@ -327,11 +327,11 @@ def _vm_start(vm):
 
 class BasicTest(Test):
 
-    def __init__(self, pkg):
+    def __init__(self, pkg, config=None):
         if pkg.rpmnames:
             rpmnames = pkg.rpmnames
         else:
-            rpmnames = Spec(pkg.specfile).pkgnames
+            rpmnames = Spec(pkg.specfile, config=config).pkgnames
 
         try:
             for name in pkg.ignore_rpms:
@@ -397,7 +397,7 @@ def action_build(config, args, pkg, repo, suppl_repos):
 
     mock.clean()
 
-def action_test_one(args, pkg, vm, results, disable):
+def action_test_one(args, pkg, vm, results, disable, config=None):
 
     message("Preparing test environment")
     _vm_start(vm)
@@ -411,7 +411,7 @@ def action_test_one(args, pkg, vm, results, disable):
 
     tests = list(pkg.tests())
     if not args.noauto:
-        tests.insert(0, BasicTest(pkg))
+        tests.insert(0, BasicTest(pkg, config=config))
     for test in tests:
         testname = '%s.%s' % (pkg.name, test.name)
         now = time.time()
@@ -441,7 +441,7 @@ def action_test(config, args, pkgs, repos, disable=False):
 
     for pkg in pkgs:
         pkg.load()
-        action_test_one(args, pkg, vm, results, disable)
+        action_test_one(args, pkg, vm, results, disable, config=config)
 
     if getattr(args, 'noquit', False):
         message("Not stopping the VM. Use: rift vm connect")
@@ -480,7 +480,7 @@ def action_validate(config, args, pkgs, wkrepo, suppl_repos):
 
         # Check spec
         message('Validate specfile...')
-        spec = Spec(pkg.specfile)
+        spec = Spec(pkg.specfile, config=config)
         spec.check(pkg.dir)
 
         if spec.basename != pkg.name:
@@ -577,7 +577,7 @@ def action_gerrit(args, config, staff, modules):
         if names[0] == config.get('packages_dir'):
             pkg = Package(names[1], config, staff, modules)
             if filepath == pkg.specfile and not patchedfile.is_deleted_file:
-                Spec(pkg.specfile).analyze(review, pkg.dir)
+                Spec(pkg.specfile, config=config).analyze(review, pkg.dir)
 
     # Push review
     review.msg_header = 'rpmlint analysis'
@@ -838,7 +838,7 @@ def action(config, args):
         for pkg in pkglist:
             logging.debug('Loading package %s', pkg.name)
             pkg.load()
-            spec = Spec()
+            spec = Spec(config=config)
             if args.spec:
                 spec.filepath = pkg.specfile
                 try:
@@ -902,7 +902,8 @@ def action(config, args):
                 args.comment = textwrap.fill(args.comment, 80, **wrapopts)
 
             logging.info("Adding changelog record for '%s'", author)
-            Spec(pkg.specfile).add_changelog_entry(author, args.comment)
+            Spec(pkg.specfile,
+                 config=config).add_changelog_entry(author, args.comment)
 
     # GERRIT
     elif args.command == 'gerrit':

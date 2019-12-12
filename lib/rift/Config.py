@@ -115,6 +115,9 @@ class Config(object):
         'gerrit_server': {},
         'gerrit_username': {},
         'gerrit_password': {},
+        'rpm_macros': {
+            'check':    'dict',
+        },
         # XXX?: 'mock.name' ?
         # XXX?: 'mock.template' ?
     }
@@ -231,7 +234,6 @@ class Config(object):
             if not isinstance(value, int):
                 raise DeclError("Bad data type %s for '%s'" % (value.__class__.__name__, key))
             self.options[key] = int(value)
-
 
     def update(self, data):
         """

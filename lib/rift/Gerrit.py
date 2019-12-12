@@ -54,6 +54,7 @@ class Review(object):
         self.validated = True
 
     def add_comment(self, filepath, line, label, message):
+        """Define comment in gerrit review process"""
         self.stats.setdefault(label, 0)
         self.stats[label] += 1
 
@@ -72,6 +73,7 @@ class Review(object):
         return "%s: %s" % (self.msg_header, msg)
 
     def invalidate(self):
+        """Review is considered as invalide, checked commit is not approved"""
         self.validated = False
 
     def push(self, config, changeid, revid):

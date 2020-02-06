@@ -135,7 +135,7 @@ class VM(object):
 
         logging.info("Starting VM process")
         logging.debug("Running VM command: %s", ' '.join(cmd))
-        self._vm = Popen(cmd)
+        self._vm = Popen(cmd, stderr=PIPE)
 
     def prepare(self):
         """
@@ -322,6 +322,10 @@ class VM(object):
         Return False if it is not ready after 25 seconds.
         """
         for _ in range(1, 5):
+            # Check if Qemu process is really running
+            if self._vm.poll() is not None:
+                raise RiftError("Unable to get VM running {}".format(
+                                     self._vm.stderr.read().decode()))
             time.sleep(5)
             if self.running():
                 return True

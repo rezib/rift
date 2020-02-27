@@ -78,7 +78,7 @@ def parse_options(args=None):
     # Generic options
     parser.add_argument('-v', '--verbose', action='count', default=0,
                         help="increase output verbosity (twice for debug)")
-    parser.add_argument('--version', action='version', version='%(prog)s 0.10')
+    parser.add_argument('--version', action='version', version='%(prog)s 0.10.1')
 
     subparsers = parser.add_subparsers(dest='command', metavar='COMMAND')
 

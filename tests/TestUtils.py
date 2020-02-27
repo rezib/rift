@@ -39,6 +39,6 @@ def make_temp_filename():
 def make_temp_file(text):
     """ Create a temporary file with the provided text."""
     tmp = tempfile.NamedTemporaryFile(prefix='rift-test-')
-    tmp.write(text)
+    tmp.write(text.encode())
     tmp.flush()
     return tmp

@@ -106,6 +106,10 @@ class Config(object):
             'required': True,
             # XXX?: default value?
         },
+        'vm_image_copy':    {
+            'check':    'digit',
+            'default': 0,
+        },
         'vm_port': {
             'check':    'digit',
         },

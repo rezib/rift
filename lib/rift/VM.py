@@ -73,6 +73,7 @@ class VM(object):
         self.qemu = config.get('qemu')
 
         self.tmpmode = tmpmode
+        self.copymode = config.get('vm_image_copy')
         self._vm = None
         self._tmpimg = None
         self.consolesock = '/tmp/rift-vm-console-{0}.sock'.format(uniq_id)
@@ -85,10 +86,17 @@ class VM(object):
         # when VM process is not stopped in purpose
         self._tmpimg = tempfile.NamedTemporaryFile(prefix='rift-vm-img-')
 
-        # Create qcow image for VM, based on temp file
-        cmd = ['qemu-img', 'create', '-f', 'qcow2']
-        cmd += ['-o', 'backing_file=%s' % os.path.realpath(self._image)]
-        cmd += [self._tmpimg.name]
+        if self.copymode:
+            # Copy qcow image for VM, based on temp file
+            cmd = ['dd', 'status=progress', 'conv=sparse', 'bs=1M']
+            cmd += ['if=%s' % os.path.realpath(self._image)]
+            cmd += ['of=%s' % self._tmpimg.name]
+        else:
+            # Create qcow image for VM, based on temp file
+            cmd = ['qemu-img', 'create', '-f', 'qcow2']
+            cmd += ['-o', 'backing_file=%s' % os.path.realpath(self._image)]
+            cmd += [self._tmpimg.name]
+
         logging.debug("Creating VM image file: %s", ' '.join(cmd))
         popen = Popen(cmd, stdout=PIPE, stderr=STDOUT, universal_newlines=True)
         stdout = popen.communicate()[0]
@@ -98,6 +106,7 @@ class VM(object):
     def spawn(self):
         """Start VM process in background"""
 
+        # TODO: use -snapshot from qemu cmdline instead of creating temporary VM image
         if self.tmpmode:
             self._mk_tmp_img()
             imgfile = self._tmpimg.name
@@ -110,6 +119,7 @@ class VM(object):
         cmd += ['-m', '8192', '-smp', str(self.cpus), '-cpu', self.cpu_type]
 
         # Drive
+        # TODO: switch to --device syntax
         cmd += ['-drive', 'file=%s,if=virtio,format=qcow2,cache=unsafe'
                 % imgfile]
 

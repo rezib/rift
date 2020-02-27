@@ -39,6 +39,9 @@ RE_HUNK_HEADER = re.compile(
 # Binary pattern
 RE_BINARY_FILE = re.compile(r'^(GIT )?[Bb]inary (files .*differ|patch)$')
 
+# Deleted patterne
+RE_DELETED_BINARY_FILE = re.compile(r'^(GIT )?[Bb]inary (files .* /dev/null differ)$')
+
 # renamed pattern
 RE_RENAMED_FILE = re.compile(r'^rename from .*$')
 
@@ -138,6 +141,7 @@ class PatchedFile(list):
         self.target_file = target
         self.binary = False
         self.renamed = False
+        self._deleted = False
 
     def __repr__(self):
         return "%s: %s" % (self.target_file,
@@ -204,8 +208,8 @@ class PatchedFile(list):
     @property
     def is_deleted_file(self):
         """Return True if this patch deletes a file."""
-        return (len(self) == 1 and self[0].target_start == 0 and
-                self[0].target_length == 0)
+        return self._deleted or (len(self) == 1 and self[0].target_start == 0 and
+                                self[0].target_length == 0)
 
     @property
     def is_modified_file(self):
@@ -288,6 +292,9 @@ def parse_unidiff(diff):
         # check for binary format
         if RE_BINARY_FILE.match(line):
             current_patch.binary = True
+
+        if RE_DELETED_BINARY_FILE.match(line):
+            current_patch._deleted = True
 
         # check for renamed file
         if RE_RENAMED_FILE.match(line):

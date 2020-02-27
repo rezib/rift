@@ -82,6 +82,11 @@ index 6a7d848..0000000
 +++ /dev/null
 @@ -1,1 +0,0 @@
 -include scripts/rift
+
+diff --git a/foo.bin b/foo.bin
+deleted file mode 100644
+index c2e4672..0000000
+Binary files a/packages/slurm/sources/slurm-18.08.6.tar.bz2 and /dev/null differ
 """)
         with open(unifiedpatch.name, 'r') as f:
             patchedfiles = parse_unidiff(f)

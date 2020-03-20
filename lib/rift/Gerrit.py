@@ -38,9 +38,12 @@ import json
 import logging
 try:
     import urllib2 as urllib
+    from urllib2 import HTTPError as urlerror
 except ImportError:
+    from urllib.error import URLError as urlerror
     import urllib.request as urllib
 
+import ssl
 from rift import RiftError
 
 class Review(object):
@@ -93,13 +96,21 @@ class Review(object):
         if password is None:
             raise RiftError("Gerrit password is not defined")
 
+        # FIXME: Don't check certificate
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        #https_sslv3_handler = urllib.HTTPSHandler(context=ssl.SSLContext(ssl.PROTOCOL_SSLv3))
+        https_sslv3_handler = urllib.HTTPSHandler(context=ctx)
+
         authhandler = urllib.HTTPDigestAuthHandler()
         authhandler.add_password(realm, server, username, password)
-        opener = urllib.build_opener(authhandler)
+
+        opener = urllib.build_opener(authhandler, https_sslv3_handler)
 
         urllib.install_opener(opener)
 
-        api_url = "http://%s/gerrit/a/changes/%s/revisions/%s/review" % \
+        api_url = "https://%s/gerrit/a/changes/%s/revisions/%s/review" % \
                                                       (server, changeid, revid)
         # Create request data structure
         request = {
@@ -114,7 +125,17 @@ class Review(object):
         logging.debug("Sending review request to %s", api_url)
         logging.debug("Request content: %s", data)
 
-        req = urllib.Request(api_url, data.encode("utf8"),
-                             {'Content-Type': 'application/json'})
-        req.get_method = lambda: 'POST'
-        urllib.urlopen(req).read()
+        try:
+            req = urllib.Request(api_url, data.encode("utf8"),
+                                 {'Content-Type': 'application/json'})
+            req.get_method = lambda: 'POST'
+            urllib.urlopen(req).read()
+
+        except urlerror:
+            api_url.replace('https://', 'http://')
+            logging.debug("Failed to send request with https protocol, trying to %s", api_url)
+
+            req = urllib.Request(api_url, data.encode("utf8"),
+                                 {'Content-Type': 'application/json'})
+            req.get_method = lambda: 'POST'
+            urllib.urlopen(req).read()

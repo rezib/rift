@@ -45,7 +45,7 @@ import textwrap
 from rpm import error as RpmError
 from unidiff import parse_unidiff
 
-from rift import RiftError
+from rift import RiftError, __version__
 from rift.Annex import Annex, is_binary
 from rift.Config import Config, Staff, Modules
 from rift.Gerrit import Review
@@ -78,7 +78,8 @@ def parse_options(args=None):
     # Generic options
     parser.add_argument('-v', '--verbose', action='count', default=0,
                         help="increase output verbosity (twice for debug)")
-    parser.add_argument('--version', action='version', version='%(prog)s 0.10.1')
+    parser.add_argument('--version', action='version',
+                        version='%%(prog)s %s' % __version__)
 
     subparsers = parser.add_subparsers(dest='command', metavar='COMMAND')
 
@@ -180,7 +181,7 @@ def parse_options(args=None):
     subsubprs.add_argument('files', metavar='FILENAME', nargs='+',
                            help='file path to be move')
     subsubprs = subprs_annex.add_parser('restore',
-                         help='restore file content previously pushed to annex')
+                                        help='restore file content previously pushed to annex')
     subsubprs.add_argument('files', metavar='FILENAME', nargs='+',
                            help='file path to be restored')
     subsubprs = subprs_annex.add_parser('delete',
@@ -550,7 +551,7 @@ def action_validate(config, args, pkgs, wkrepo, suppl_repos):
         mock.publish(staging)
         staging.update()
         rc = action_test(config, args, [pkg], suppl_repos + [staging],
-			 wkrepo is not None) or rc
+                         wkrepo is not None) or rc
 
         # Also publish on working repo if requested
         # XXX: All RPMs should be published when all of them have been validated
@@ -733,7 +734,7 @@ def action(config, args):
 
         pkgs = Package.list(config, staff, modules, args.packages)
         return action_test(config, args, pkgs, suppl_repos + repos,
-			   repo is not None)
+                           repo is not None)
 
     # VALIDATE
     elif args.command == 'validate':

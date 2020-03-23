@@ -29,7 +29,10 @@
 # The fact that you are presently reading this means that you have had
 # knowledge of the CeCILL license and that you accept its terms.
 #
-
+"""
+Config:
+    This package manage rift configuration files.
+"""
 import errno
 import os
 import yaml
@@ -62,11 +65,16 @@ _DEFAULT_STAFF_FILE = 'packages/staff.yaml'
 _DEFAULT_MODULES_FILE = 'packages/modules.yaml'
 
 class Config(object):
-
+    """
+    Config: Manage rift configuration files
+        This class parses project.conf and local.conf from the current working
+        package repository. It merges content of both files and gives access to
+        stored values.
+    """
     # XXX: Support hierarchical configuration (vm.image = ...)
 
     _DEFAULT_FILES = ['project.conf', 'local.conf']
-    ALLOW_MISSING  = True
+    ALLOW_MISSING = True
 
     SYNTAX = {
         'staff_file': {
@@ -171,12 +179,14 @@ class Config(object):
         return filepath
 
     def get(self, option, default=None):
+        """
+        Config getter (manage default values)
+        """
         if option in self.options:
             return self.options[option]
-        elif option in self.SYNTAX:
+        if option in self.SYNTAX:
             return self.SYNTAX[option].get('default', default)
-        else:
-            return default
+        return default
 
     def load(self, filenames=None):
         """
@@ -214,7 +224,9 @@ class Config(object):
         self._check()
 
     def set(self, key, value):
-
+        """
+        Config setter (check value type)
+        """
         # Key is known
         if key not in self.SYNTAX:
             raise DeclError("Unknown '%s' key" % key)
@@ -260,9 +272,9 @@ class Staff(object):
     """
 
     DEFAULT_PATH = _DEFAULT_STAFF_FILE
-    DATA_NAME    = 'staff'
+    DATA_NAME = 'staff'
     ITEMS_HEADER = 'staff'
-    ITEMS_KEYS   = ['email']
+    ITEMS_KEYS = ['email']
 
     def __init__(self, config):
         self._data = {}
@@ -272,6 +284,9 @@ class Staff(object):
         return item in self._data
 
     def get(self, item):
+        """
+        Staff getter
+        """
         return self._data.get(item)
 
     def load(self, filepath=None):
@@ -301,8 +316,7 @@ class Staff(object):
         except IOError as exp:
             if exp.errno == errno.ENOENT:
                 raise DeclError("Could not find '%s'" % filepath)
-            else:
-                raise DeclError(str(exp))
+            raise DeclError(str(exp))
 
     def _check(self):
         """
@@ -320,7 +334,7 @@ class Staff(object):
             # Unnecessary elements
             not_needed = set(data.keys()) - set(self.ITEMS_KEYS)
             if not_needed:
-                items = ', '.join(["'%s'" % item for item in not_needed])
+                items = ', '.join(sorted(["'%s'" % item for item in not_needed]))
                 raise DeclError("Unknown %s item(s) for %s" % (items, people))
 
 
@@ -332,9 +346,9 @@ class Modules(Staff):
     """
 
     DEFAULT_PATH = _DEFAULT_MODULES_FILE
-    DATA_NAME    = 'modules'
+    DATA_NAME = 'modules'
     ITEMS_HEADER = 'modules'
-    ITEMS_KEYS   = ['manager']
+    ITEMS_KEYS = ['manager']
 
     def __init__(self, config, staff):
         Staff.__init__(self, config)
@@ -350,7 +364,7 @@ class Modules(Staff):
 
         for module in self._data.values():
             # Maintainer exists
-            if type(module['manager']) is str:
+            if isinstance(module['manager'], str):
                 module['manager'] = [module['manager']]
             for mngr in module['manager']:
                 if mngr not in self.staff:

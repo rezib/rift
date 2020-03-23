@@ -94,8 +94,7 @@ class Mock(object):
         """Return base argument to launch mock"""
         if logging.getLogger().isEnabledFor(logging.INFO):
             return ['mock', '--configdir=%s' % self._tmpdir.path]
-        else:
-            return ['mock', '-q', '--configdir=%s' % self._tmpdir.path]
+        return ['mock', '-q', '--configdir=%s' % self._tmpdir.path]
 
     def init(self, repolist):
         """

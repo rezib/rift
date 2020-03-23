@@ -46,8 +46,7 @@ class TestCase(object):
     def fullname(self):
         if self.classname:
             return '%s.%s' % (self.classname, self.name)
-        else:
-            return self.name
+        return self.name
 
 class TestResults(object):
 

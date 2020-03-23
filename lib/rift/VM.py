@@ -229,6 +229,7 @@ class VM(object):
 
     def console(self):
         """Console of VM Hit Ctrl-C 3 times to exit"""
+        retcode = 0
         self_stdin = sys.stdin.fileno()
         old = termios.tcgetattr(self_stdin)
         new = list(old)
@@ -245,6 +246,7 @@ class VM(object):
 
             if s_ctl.stdin in rdy[2] or s_ctl.stdin in rdy[0]:
                 sys.stderr.write('Connection closed\n')
+                retcode = 1
                 break
 
             # Exit if Ctrl-C is pressed repeatedly
@@ -268,6 +270,7 @@ class VM(object):
 
         s_ctl.terminate()
         s_ctl.wait()
+        return retcode
 
     def run_test(self, test):
         """
@@ -300,16 +303,16 @@ class VM(object):
                 testcmd = test.command
             cmd = "cd %s; %s" % (self._PROJ_MOUNTPOINT, testcmd)
             return self.cmd(cmd)
-        else:
-            cmd = ''
-            for func, code in funcs.items():
-                cmd += '%s() { %s;}; export -f %s; ' % (func, code, func)
-            cmd += pipes.quote(test.command)
 
-            logging.debug("Running command outside VM: %s", cmd)
-            popen = Popen(cmd, shell=True) #, stdout=PIPE, stderr=STDOUT)
-            popen.wait()
-            return popen.returncode
+        cmd = ''
+        for func, code in funcs.items():
+            cmd += '%s() { %s;}; export -f %s; ' % (func, code, func)
+        cmd += pipes.quote(test.command)
+
+        logging.debug("Running command outside VM: %s", cmd)
+        popen = Popen(cmd, shell=True) #, stdout=PIPE, stderr=STDOUT)
+        popen.wait()
+        return popen.returncode
 
     def running(self):
         """Check if VM is already running."""
@@ -325,7 +328,7 @@ class VM(object):
             # Check if Qemu process is really running
             if self._vm.poll() is not None:
                 raise RiftError("Unable to get VM running {}".format(
-                                     self._vm.stderr.read().decode()))
+                    self._vm.stderr.read().decode()))
             time.sleep(5)
             if self.running():
                 return True

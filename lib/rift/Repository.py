@@ -63,7 +63,7 @@ class RemoteRepository(object):
         """
         if self.url.startswith('/'):
             return self.url
-        elif self.url.startswith('file://'):
+        if self.url.startswith('file://'):
             return self.url[len('file://'):]
 
     def create(self):

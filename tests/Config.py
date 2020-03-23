@@ -160,7 +160,8 @@ class StaffTest(RiftTestCase):
         """load an unaccessible staff file"""
         tmp = make_temp_file("{staff: {'J. Doe': {email: 'j.doe@rift.org'}} }")
         self.staff.load(tmp.name)
-        os.chmod(tmp.name, oct(0o200))
+        # Compat python2/3 syntax
+        os.chmod(tmp.name, int(oct(0o200), 8))
         self.assertRaises(DeclError, self.staff.load, tmp.name)
 
     def test_load_error(self):

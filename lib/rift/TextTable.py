@@ -149,8 +149,7 @@ class TextTable(object):
                 value = "%s..." % value[:length - 3]
             if matchobj.group(1):
                 return "%*s" % (length, value)
-            else:
-                return "%-*s" % (length, value)
+            return "%-*s" % (length, value)
 
         replacement = re.sub(self.RE_PATTERN, replacer, self.fmt)
 

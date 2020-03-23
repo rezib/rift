@@ -148,17 +148,17 @@ class Package(object):
 
         data = data.pop('package') or {}
         self.module = data.get('module')
-        if type(data.get('maintainers')) is str:
+        if isinstance(data.get('maintainers'), str):
             self.maintainers = [data['maintainers']]
         else:
             self.maintainers = data.get('maintainers')
         self.reason = data.get('reason')
         self.origin = data.get('origin')
-        if type(data.get('rpm_names')) is str:
+        if isinstance(data.get('rpm_names'), str):
             self.rpmnames = [data.get('rpm_names')]
         else:
             self.rpmnames = data.get('rpm_names')
-        if type(data.get('ignore_rpms')) is str:
+        if isinstance(data.get('ignore_rpms'), str):
             self.ignore_rpms = [data.get('ignore_rpms')]
         else:
             self.ignore_rpms = data.get('ignore_rpms', [])

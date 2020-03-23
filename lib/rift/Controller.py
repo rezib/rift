@@ -29,7 +29,10 @@
 # The fact that you are presently reading this means that you have had
 # knowledge of the CeCILL license and that you accept its terms.
 #
-
+"""
+Controler.py:
+    Core package to manage rift actions
+"""
 import re
 import os
 import argparse
@@ -39,8 +42,8 @@ import random
 import subprocess
 import time
 import textwrap
-from unidiff import parse_unidiff
 from rpm import error as RpmError
+from unidiff import parse_unidiff
 
 from rift import RiftError
 from rift.Annex import Annex, is_binary
@@ -57,9 +60,15 @@ from rift.VM import VM
 
 
 def message(msg):
+    """
+    helper function to print a log message
+    """
     print("> %s" % msg)
 
 def banner(title):
+    """
+    helper function to print a banner
+    """
     print("** %s **" % title)
 
 def parse_options(args=None):
@@ -317,15 +326,21 @@ def _vm_start(vm):
     if vm.running():
         message('VM is already running')
         return False
-    else:
-        message('Launching VM ...')
-        vm.spawn()
-        vm.ready()
-        vm.prepare()
-        return True
+
+    message('Launching VM ...')
+    vm.spawn()
+    vm.ready()
+    vm.prepare()
+    return True
 
 
 class BasicTest(Test):
+    """
+    Auto-generated test for a Package.
+    Setup a test to install a package and its dependencies.
+        - pkg: package to test
+        - config: rift configuration
+    """
 
     def __init__(self, pkg, config=None):
         if pkg.rpmnames:
@@ -369,6 +384,13 @@ class BasicTest(Test):
         self.local = False
 
 def action_build(config, args, pkg, repo, suppl_repos):
+    """
+    Build a package
+      - config: rift configuration
+      - pkg: package to build
+      - repo: rpm repositories to use
+      - suppl_repos: optional additional repositories
+    """
 
     message('Preparing Mock environment...')
     mock = Mock(config, config.get('version'))
@@ -398,7 +420,9 @@ def action_build(config, args, pkg, repo, suppl_repos):
     mock.clean()
 
 def action_test_one(args, pkg, vm, results, disable, config=None):
-
+    """
+    Launch tests on given packages
+    """
     message("Preparing test environment")
     _vm_start(vm)
     if disable:
@@ -456,12 +480,17 @@ def action_test(config, args, pkgs, repos, disable=False):
     if results.global_result:
         banner("Test suite SUCCEEDED")
         return 0
-    else:
-        banner("Test suite FAILED!")
-        return 2
+    banner("Test suite FAILED!")
+    return 2
 
 def action_validate(config, args, pkgs, wkrepo, suppl_repos):
-
+    """
+    Validate a package:
+        - rpmlint on specfile
+        - check file patterns
+        - build it
+        - lauch tests
+    """
     if args.publish and not wkrepo:
         raise RiftError("Cannot publish if 'working_repo' is undefined")
 
@@ -585,6 +614,9 @@ def action_gerrit(args, config, staff, modules):
 
 
 def action(config, args):
+    """
+    Manage rift actions on annex, vm, packages or repositories
+    """
 
     if getattr(args, 'file', None) is not None:
         args.file = os.path.abspath(args.file)
@@ -595,7 +627,7 @@ def action(config, args):
         return
 
     # ANNEX
-    elif args.command == 'annex':
+    if args.command == 'annex':
         action_annex(args, config)
         return
 
@@ -694,8 +726,7 @@ def action(config, args):
 
         if results.global_result:
             return 0
-        else:
-            return 2
+        return 2
 
     # TEST
     elif args.command == 'test':
@@ -933,9 +964,8 @@ def main(args=None):
     except (RpmError, RiftError, IOError, OSError) as exp:
         if logging.getLogger().isEnabledFor(logging.DEBUG):
             raise
-        else:
-            logging.error(str(exp))
-            return 1
+        logging.error(str(exp))
+        return 1
     except KeyboardInterrupt:
         message('Keyboard interrupt. Exiting...')
         return 1

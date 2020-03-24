@@ -136,7 +136,7 @@ class Spec(object):
         self.evr = None
         self.arch = None
         self.buildrequires = None
-        self._config = config
+        self._config = config or {}
         if self.filepath is not None:
             self.load()
 
@@ -249,8 +249,30 @@ class Spec(object):
         logging.debug('Running rpmlint: %s', ' '.join(cmd))
         return cmd, env
 
-    def check(self, configdir=None):
-        """Check specfile content using `rpmlint' tool."""
+    def check(self, pkg=None):
+        """
+        Check specfile content using `rpmlint' tool and check missing items
+        in package directory.
+        """
+        configdir = None
+        if pkg:
+            configdir = pkg.dir
+            if self.basename != pkg.name:
+                msg = "name '%s' does not match '%s' in spec file" % (pkg.name, spec.basename)
+                raise RiftError(msg)
+
+            # Changelog section is mandatory
+            if not (self.changelog_name or self.changelog_time):
+                raise RiftError('Proper changelog section is needed in specfile')
+
+            # Check if all sources are declared and present in package directory
+            if pkg.sources - set(self.sources):
+                msg = "Unused source file(s): %s" % ' '.join(pkg.sources - set(self.sources))
+                raise RiftError(msg)
+            if set(self.sources) - pkg.sources:
+                msg = "Missing source file(s): %s" % ' '.join(set(self.sources) - pkg.sources)
+                raise RiftError(msg)
+
         cmd, env = self._check(configdir)
         popen = Popen(cmd, stderr=PIPE, env=env, universal_newlines=True)
         stderr = popen.communicate()[1]

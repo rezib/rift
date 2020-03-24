@@ -511,23 +511,7 @@ def action_validate(config, args, pkgs, wkrepo, suppl_repos):
         # Check spec
         message('Validate specfile...')
         spec = Spec(pkg.specfile, config=config)
-        spec.check(pkg.dir)
-
-        if spec.basename != pkg.name:
-            msg = "name '%s' does not match '%s' in spec file" % (pkg.name, spec.basename)
-            raise RiftError(msg)
-
-        # Changelog section is mandatory
-        if not (spec.changelog_name or spec.changelog_time):
-            raise RiftError('Proper changelog section is needed in specfile')
-
-        # This should be more generic and moved into rift.Package/rift.RPM
-        if pkg.sources - set(spec.sources):
-            msg = "Unused source file(s): %s" % ' '.join(pkg.sources - set(spec.sources))
-            raise RiftError(msg)
-        if set(spec.sources) - pkg.sources:
-            msg = "Missing source file(s): %s" % ' '.join(set(spec.sources) - pkg.sources)
-            raise RiftError(msg)
+        spec.check(pkg)
 
         logging.info('Creating temporary repository')
         stagedir = TempDir('stagedir')

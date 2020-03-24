@@ -746,101 +746,13 @@ def action(config, args):
 
         pkglist = {}
         patchedfiles = parse_unidiff(args.patch)
-
         if not patchedfiles:
             raise RiftError("Invalid patch detected (empty commit ?)")
 
         for patchedfile in patchedfiles:
-
-            filepath = patchedfile.path
-            names = filepath.split(os.path.sep)
-            fullpath = config.project_path(filepath)
-            ignored = False
-
-            if filepath == config.get('staff_file'):
-
-                staff = Staff(config)
-                staff.load(filepath)
-                logging.info('Staff file is OK.')
-
-            elif filepath == config.get('modules_file'):
-
-                staff = Staff(config)
-                staff.load(config.get('staff_file'))
-
-                modules = Modules(config, staff)
-                modules.load(filepath)
-                logging.info('Modules file is OK.')
-
-            elif names[0] == config.get('packages_dir'):
-
-                # Drop config.get('packages_dir') from list
-                names.pop(0)
-
-                pkg = Package(names.pop(0), config, staff, modules)
-
-                if patchedfile.is_deleted_file:
-                    logging.debug('Ignoring removed file: %s', filepath)
-                    ignored = True
-
-                # info.yaml
-                if fullpath == pkg.metafile:
-                    logging.info('Ignoring meta file')
-                    ignored = True
-
-                # specfile
-                elif fullpath == pkg.specfile:
-                    logging.info('Detected spec file')
-
-                # backup specfile
-                elif fullpath == '%s.orig' % pkg.specfile:
-                    logging.debug('Ignoring backup specfile')
-                    ignored = True
-
-                # rpmlint config file
-                elif names == [RPMLINT_CONFIG]:
-                    logging.debug('Detecting rpmlint config file')
-
-                # README file
-                elif fullpath in pkg.docfiles:
-                    logging.debug('Ignoring documentation file: %s', fullpath)
-                    ignored = True
-
-                # sources/
-                elif fullpath.startswith(pkg.sourcesdir) and len(names) == 2:
-                    if not ignored and patchedfile.binary:
-                        raise RiftError("Binary file detected: %s" % filepath)
-                    logging.debug('Detecting source file: %s', names[1])
-
-                # tests/
-                elif fullpath.startswith(pkg.testsdir) and len(names) == 2:
-                    logging.debug('Detecting test script: %s', names[1])
-
-                else:
-                    raise RiftError("Unknown file pattern: %s" % filepath)
-
-                if pkg not in pkglist:
-                    # Do not check if:
-                    # * this patch removes a file for this package and the
-                    #   whole package is no more there.
-                    # * this patch only modify a file that doesn't need a build (like spec.orig)
-                    if not ignored and os.path.exists(pkg.dir):
-                        pkglist[pkg.name] = pkg
-
-            elif filepath == 'mock.tpl':
-                logging.debug('Ignoring mock template file: %s', filepath)
-
-            elif filepath == '.gitignore':
-                logging.debug('Ignoring git file: %s', filepath)
-
-            elif filepath == 'project.conf':
-                logging.debug('Ignoring project config file: %s', filepath)
-
-            elif patchedfile.is_deleted_file:
-                logging.debug('Ignoring removed file: %s', filepath)
-
-            else:
-                raise RiftError("Unknown file pattern: %s" % filepath)
+            pkg = _validate_patch(patchedfile, config)
+            if pkg is not None and pkg not in pkglist:
+                pkglist[pkg.name] = pkg
 
         # Re-validate each package
         return action_validate(config, args, pkglist.values(), repo, suppl_repos)
@@ -942,6 +854,105 @@ def action(config, args):
         return action_gerrit(args, config, staff, modules)
 
     return 0
+
+def _validate_patch(patch, config):
+    """
+    Check if patch is fine regarding rift restrictions
+        - patch: patch for a patched file
+        - config: rift configuration
+    """
+    filepath = patch.path
+    names = filepath.split(os.path.sep)
+    fullpath = config.project_path(filepath)
+    ignored = False
+    staff = Staff(config)
+    modules = Modules(config, staff)
+
+    if filepath == config.get('staff_file'):
+
+        staff.load(filepath)
+        logging.info('Staff file is OK.')
+
+    elif filepath == config.get('modules_file'):
+
+        staff.load(config.get('staff_file'))
+
+        modules.load(filepath)
+        logging.info('Modules file is OK.')
+
+    elif names[0] == config.get('packages_dir'):
+
+        # Drop config.get('packages_dir') from list
+        names.pop(0)
+
+        pkg = Package(names.pop(0), config, staff, modules)
+
+        if patch.is_deleted_file:
+            logging.debug('Ignoring removed file: %s', filepath)
+            ignored = True
+
+        # info.yaml
+        if fullpath == pkg.metafile:
+            logging.info('Ignoring meta file')
+            ignored = True
+
+        # specfile
+        elif fullpath == pkg.specfile:
+            logging.info('Detected spec file')
+
+        # backup specfile
+        elif fullpath == '%s.orig' % pkg.specfile:
+            logging.debug('Ignoring backup specfile')
+            ignored = True
+
+        # rpmlint config file
+        elif names == [RPMLINT_CONFIG]:
+            logging.debug('Detecting rpmlint config file')
+
+        # README file
+        elif fullpath in pkg.docfiles:
+            logging.debug('Ignoring documentation file: %s', fullpath)
+            ignored = True
+
+        # sources/
+        elif fullpath.startswith(pkg.sourcesdir) and len(names) == 2:
+            if not ignored and patch.binary:
+                raise RiftError("Binary file detected: %s" % filepath)
+            logging.debug('Detecting source file: %s', names[1])
+
+        # tests/
+        elif fullpath.startswith(pkg.testsdir):
+            if not ignored and patch.binary:
+                raise RiftError("Binary file detected: %s" % filepath)
+            logging.debug('Detecting test script: %s', names[1])
+
+        else:
+            raise RiftError("Unknown file pattern: %s" % filepath)
+
+
+    elif filepath == 'mock.tpl':
+        logging.debug('Ignoring mock template file: %s', filepath)
+
+    elif filepath == '.gitignore':
+        logging.debug('Ignoring git file: %s', filepath)
+
+    elif filepath == 'project.conf':
+        logging.debug('Ignoring project config file: %s', filepath)
+
+    elif patch.is_deleted_file:
+        logging.debug('Ignoring removed file: %s', filepath)
+
+    else:
+        raise RiftError("Unknown file pattern: %s" % filepath)
+
+    if not ignored and os.path.exists(pkg.dir):
+        # Don't return the given package if
+        # * this patch removes a file for this package and the
+        #   whole package is no more there.
+        # * this patch only modify a file that doesn't need a build (like spec.orig)
+        return pkg
+    return None
+
 
 def main(args=None):
     """Main code of 'rift'"""

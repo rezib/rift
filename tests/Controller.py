@@ -4,9 +4,10 @@
 
 import os.path
 
+from unidiff import parse_unidiff
 from TestUtils import make_temp_file, make_temp_dir, RiftTestCase
 
-from rift.Controller import Config, main
+from rift.Controller import Config, main, _validate_patch
 from rift import RiftError
 
 
@@ -267,3 +268,33 @@ index 43bf48d..0000000
 """.format(pkgsrc))
 
         self.assertEqual(main(['validdiff', patch.name]), 0)
+
+    def test_validdiff_on_tests_directory(self):
+        """ Test if package tests directory structure is fine """
+        patch = make_temp_file("""
+commit 0ac8155e2655321ceb28bbf716ff66d1a9e30f29 (HEAD -> master)
+Author: Myself <buddy@somewhere.org>
+Date:   Thu Apr 25 14:30:41 2019 +0200
+
+    packages: update 'pkg' tests
+
+diff --git a/packages/pkg/tests/sources/deep//source.c b/packages/pkg/tests/sources/deep/source.c
+new file mode 100644
+index 0000000..68344bf
+--- /dev/null
++++ b/packages/pkg/tests/sources/deep/source.c
+@@ -0,0 +1,4 @@
++#include <stdlib.h>
++int main(int argc, char **argv){
++    exit(0);
++}
+""")
+        config = Config()
+        config.load()
+
+        patchedfiles = parse_unidiff(patch)
+        for patchedfile in patchedfiles:
+            pkg = _validate_patch(patchedfile, config)
+            self.assertiNotEqual(pkg, None)
+
+

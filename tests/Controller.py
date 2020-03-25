@@ -321,3 +321,26 @@ index 0000000..68344bf
         self.assert_except(RiftError, "Unknown file pattern: packages/pkg/wrong",
                            main, ['validdiff', patch.name])
 
+    def test_validdiff_on_info(self):
+        patch = make_temp_file("""
+commit 0ac8155e2655321ceb28bbf716ff66d1a9e30f29 (HEAD -> master)
+Author: Myself <buddy@somewhere.org>
+Date:   Thu Apr 25 14:30:41 2019 +0200
+
+    packages: update 'pkg' infos
+
+diff --git a/packages/pkg/info.yaml b/packages/pkg/info.yaml
+new file mode 100644
+index 0000000..68344bf
+--- a/packages/pkg/info.yaml
++++ b/packages/pkg/info.yaml
+@@ -2,5 +2,5 @@ package:
+   maintainers:
+   - Myself
+   module: Great module
+-  origin: Somewhere
++  origin: Elsewhere
+   reason: Missing feature
+""")
+        self.make_pkg()
+        self.assertEqual(main(['validdiff', patch.name]), 0)

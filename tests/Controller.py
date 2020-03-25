@@ -302,4 +302,22 @@ index 0000000..68344bf
                                   staff=staff)
             self.assertIsNotNone(pkg)
 
+    def test_validdiff_on_invalid_file(self):
+        patch = make_temp_file("""
+commit 0ac8155e2655321ceb28bbf716ff66d1a9e30f29 (HEAD -> master)
+Author: Myself <buddy@somewhere.org>
+Date:   Thu Apr 25 14:30:41 2019 +0200
+
+    packages: Wrong file
+
+diff --git a/packages/pkg/wrong b/packages/pkg/wrong
+new file mode 100644
+index 0000000..68344bf
+--- a/packages/pkg/wrong
++++ b/packages/pkg/wrong
+@@ -0,0 +1 @@
++README
+""")
+        self.assert_except(RiftError, "Unknown file pattern: packages/pkg/wrong",
+                           main, ['validdiff', patch.name])
 

@@ -8,6 +8,7 @@ from unidiff import parse_unidiff
 from TestUtils import make_temp_file, make_temp_dir, RiftTestCase
 
 from rift.Controller import Config, main, _validate_patch
+from rift.Config import Staff, Modules
 from rift import RiftError
 
 
@@ -272,13 +273,7 @@ index 43bf48d..0000000
     def test_validdiff_on_tests_directory(self):
         """ Test if package tests directory structure is fine """
         patch = make_temp_file("""
-commit 0ac8155e2655321ceb28bbf716ff66d1a9e30f29 (HEAD -> master)
-Author: Myself <buddy@somewhere.org>
-Date:   Thu Apr 25 14:30:41 2019 +0200
-
-    packages: update 'pkg' tests
-
-diff --git a/packages/pkg/tests/sources/deep//source.c b/packages/pkg/tests/sources/deep/source.c
+diff --git a/packages/pkg/tests/sources/deep/source.c b/packages/pkg/tests/sources/deep/source.c
 new file mode 100644
 index 0000000..68344bf
 --- /dev/null
@@ -288,13 +283,23 @@ index 0000000..68344bf
 +int main(int argc, char **argv){
 +    exit(0);
 +}
+\ No newline at end of file
 """)
+        # Ensure package exists
+        self.make_pkg('pkg')
         config = Config()
         config.load()
-
-        patchedfiles = parse_unidiff(patch)
+        staff = Staff(config=config)
+        staff.load(self.staff)
+        modules = Modules(config=config, staff=staff)
+        modules.load(self.modules)
+        with open(patch.name, 'r') as f:
+            patchedfiles = parse_unidiff(f)
+        self.assertNotEqual(len(patchedfiles), 0)
         for patchedfile in patchedfiles:
-            pkg = _validate_patch(patchedfile, config)
-            self.assertiNotEqual(pkg, None)
+            pkg = _validate_patch(patchedfile, config,
+                                  modules=modules,
+                                  staff=staff)
+            self.assertIsNotNone(pkg)
 
 

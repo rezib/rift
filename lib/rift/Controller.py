@@ -750,7 +750,7 @@ def action(config, args):
             raise RiftError("Invalid patch detected (empty commit ?)")
 
         for patchedfile in patchedfiles:
-            pkg = _validate_patch(patchedfile, config)
+            pkg = _validate_patch(patchedfile, config=config, modules=modules, staff=staff)
             if pkg is not None and pkg not in pkglist:
                 pkglist[pkg.name] = pkg
 
@@ -855,7 +855,7 @@ def action(config, args):
 
     return 0
 
-def _validate_patch(patch, config):
+def _validate_patch(patch, config, modules, staff):
     """
     Check if patch is fine regarding rift restrictions
         - patch: patch for a patched file
@@ -865,18 +865,14 @@ def _validate_patch(patch, config):
     names = filepath.split(os.path.sep)
     fullpath = config.project_path(filepath)
     ignored = False
-    staff = Staff(config)
-    modules = Modules(config, staff)
 
     if filepath == config.get('staff_file'):
-
+        staff = Staff(config)
         staff.load(filepath)
         logging.info('Staff file is OK.')
 
     elif filepath == config.get('modules_file'):
-
-        staff.load(config.get('staff_file'))
-
+        modules = Modules(config, staff)
         modules.load(filepath)
         logging.info('Modules file is OK.')
 
@@ -924,7 +920,7 @@ def _validate_patch(patch, config):
         elif fullpath.startswith(pkg.testsdir):
             if not ignored and patch.binary:
                 raise RiftError("Binary file detected: %s" % filepath)
-            logging.debug('Detecting test script: %s', names[1])
+            logging.debug('Detecting test script: %s', filepath)
 
         else:
             raise RiftError("Unknown file pattern: %s" % filepath)

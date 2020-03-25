@@ -125,6 +125,7 @@ class Config(object):
         },
         'gerrit_realm': {},
         'gerrit_server': {},
+        'gerrit_url': {},
         'gerrit_username': {},
         'gerrit_password': {},
         'rpm_macros': {

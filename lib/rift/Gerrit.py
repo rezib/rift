@@ -38,9 +38,7 @@ import json
 import logging
 try:
     import urllib2 as urllib
-    from urllib2 import HTTPError as urlerror
 except ImportError:
-    from urllib.error import URLError as urlerror
     import urllib.request as urllib
 
 import ssl
@@ -81,20 +79,26 @@ class Review(object):
 
     def push(self, config, changeid, revid):
         """Send REST request to Gerrit server from config"""
-
+        auth_methods = ('digest', 'basic')
         realm = config.get('gerrit_realm')
         server = config.get('gerrit_server')
         username = config.get('gerrit_username')
         password = config.get('gerrit_password')
+        auth_method = config.get('gerrit_auth_method', 'basic')
 
         if realm is None:
             raise RiftError("Gerrit realm is not defined")
-        if server is None:
-            raise RiftError("Gerrit server is not defined")
+        if server is None and config.get('gerrit_url') is None:
+            raise RiftError("Gerrit url is not defined")
         if username is None:
             raise RiftError("Gerrit username is not defined")
         if password is None:
             raise RiftError("Gerrit password is not defined")
+        if auth_method not in auth_methods:
+            raise RiftError("Gerrit auth_method is not correct (supported %s)" % auth_methods)
+
+        # Set a default url if only gerrit_server was defined
+        url = config.get('gerrit_url', 'https://{}'.format(server))
 
         # FIXME: Don't check certificate
         ctx = ssl.create_default_context()
@@ -103,15 +107,21 @@ class Review(object):
         #https_sslv3_handler = urllib.HTTPSHandler(context=ssl.SSLContext(ssl.PROTOCOL_SSLv3))
         https_sslv3_handler = urllib.HTTPSHandler(context=ctx)
 
-        authhandler = urllib.HTTPDigestAuthHandler()
-        authhandler.add_password(realm, server, username, password)
+        api_url = "%s/gerrit/a/changes/%s/revisions/%s/review" % \
+                                                      (url, changeid, revid)
+        if auth_method == 'digest':
+            authhandler = urllib.HTTPDigestAuthHandler()
+            authhandler.add_password(realm, server, username, password)
+        elif auth_method == 'basic':
+            pw_mgr = urllib.HTTPPasswordMgrWithDefaultRealm()
+            # this creates a password manager
+            pw_mgr.add_password(None, url, username, password)
+            authhandler = urllib.HTTPBasicAuthHandler(pw_mgr)
 
         opener = urllib.build_opener(authhandler, https_sslv3_handler)
 
         urllib.install_opener(opener)
 
-        api_url = "https://%s/gerrit/a/changes/%s/revisions/%s/review" % \
-                                                      (server, changeid, revid)
         # Create request data structure
         request = {
             "message": self._message(),
@@ -125,17 +135,7 @@ class Review(object):
         logging.debug("Sending review request to %s", api_url)
         logging.debug("Request content: %s", data)
 
-        try:
-            req = urllib.Request(api_url, data.encode("utf8"),
-                                 {'Content-Type': 'application/json'})
-            req.get_method = lambda: 'POST'
-            urllib.urlopen(req).read()
-
-        except urlerror:
-            api_url.replace('https://', 'http://')
-            logging.debug("Failed to send request with https protocol, trying to %s", api_url)
-
-            req = urllib.Request(api_url, data.encode("utf8"),
-                                 {'Content-Type': 'application/json'})
-            req.get_method = lambda: 'POST'
-            urllib.urlopen(req).read()
+        req = urllib.Request(api_url, data.encode("utf8"),
+                             {'Content-Type': 'application/json'})
+        req.get_method = lambda: 'POST'
+        urllib.urlopen(req).read()

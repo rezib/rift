@@ -344,3 +344,23 @@ index 0000000..68344bf
 """)
         self.make_pkg()
         self.assertEqual(main(['validdiff', patch.name]), 0)
+
+    def test_validdiff_on_modules(self):
+        patch = make_temp_file("""
+commit 0ac8155e2655321ceb28bbf716ff66d1a9e30f29 (HEAD -> master)
+Author: Myself <buddy@somewhere.org>
+Date:   Thu Apr 25 14:30:41 2019 +0200
+
+    modules: add 'Section'
+
+diff --git a/packages/modules.yaml b/packages/modules.yaml
+new file mode 100644
+index 0000000..68344bf
+--- a/packages/modules.yaml
++++ b/packages/modules.yaml
+@@ -0,0 +3 @@
++modules:
++  User Tools:
++    manager: John Doe
+""")
+        self.assertEqual(main(['validdiff', patch.name]), 0)

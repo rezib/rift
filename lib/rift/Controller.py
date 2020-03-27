@@ -860,94 +860,93 @@ def _validate_patch(patch, config, modules, staff):
     Check if patch is fine regarding rift restrictions
         - patch: patch for a patched file
         - config: rift configuration
+      Return a validated Package
+      Return None:
+      * if patch removes file for this package and the whole package is
+        no more there.
+      * if patch only modify file that doesn't need a build (like spec.orig)
     """
     filepath = patch.path
     names = filepath.split(os.path.sep)
     fullpath = config.project_path(filepath)
-    ignored = False
+    pkg = None
 
     if filepath == config.get('staff_file'):
         staff = Staff(config)
         staff.load(filepath)
         logging.info('Staff file is OK.')
+        return None
 
-    elif filepath == config.get('modules_file'):
+    if filepath == config.get('modules_file'):
         modules = Modules(config, staff)
         modules.load(filepath)
         logging.info('Modules file is OK.')
+        return None
 
-    elif names[0] == config.get('packages_dir'):
+    if filepath == 'mock.tpl':
+        logging.debug('Ignoring mock template file: %s', filepath)
+        return None
+
+    if filepath == '.gitignore':
+        logging.debug('Ignoring git file: %s', filepath)
+        return None
+
+    if filepath == 'project.conf':
+        logging.debug('Ignoring project config file: %s', filepath)
+        return None
+
+    if patch.is_deleted_file:
+        logging.debug('Ignoring removed file: %s', filepath)
+        return None
+
+    if patch.binary:
+        raise RiftError("Binary file detected: %s" % filepath)
+
+    if names[0] == config.get('packages_dir'):
 
         # Drop config.get('packages_dir') from list
         names.pop(0)
 
         pkg = Package(names.pop(0), config, staff, modules)
 
-        if patch.is_deleted_file:
-            logging.debug('Ignoring removed file: %s', filepath)
-            ignored = True
-
         # info.yaml
         if fullpath == pkg.metafile:
             logging.info('Ignoring meta file')
-            ignored = True
+            return None
 
-        # specfile
-        elif fullpath == pkg.specfile:
-            logging.info('Detected spec file')
+        # README file
+        if fullpath in pkg.docfiles:
+            logging.debug('Ignoring documentation file: %s', fullpath)
+            return None
 
         # backup specfile
-        elif fullpath == '%s.orig' % pkg.specfile:
+        if fullpath == '%s.orig' % pkg.specfile:
             logging.debug('Ignoring backup specfile')
-            ignored = True
+            return None
+
+        # specfile
+        if fullpath == pkg.specfile:
+            logging.info('Detected spec file')
 
         # rpmlint config file
         elif names == [RPMLINT_CONFIG]:
             logging.debug('Detecting rpmlint config file')
 
-        # README file
-        elif fullpath in pkg.docfiles:
-            logging.debug('Ignoring documentation file: %s', fullpath)
-            ignored = True
-
         # sources/
         elif fullpath.startswith(pkg.sourcesdir) and len(names) == 2:
-            if not ignored and patch.binary:
-                raise RiftError("Binary file detected: %s" % filepath)
             logging.debug('Detecting source file: %s', names[1])
 
         # tests/
         elif fullpath.startswith(pkg.testsdir):
-            if not ignored and patch.binary:
-                raise RiftError("Binary file detected: %s" % filepath)
             logging.debug('Detecting test script: %s', filepath)
 
         else:
             raise RiftError("Unknown file pattern: %s" % filepath)
 
-
-    elif filepath == 'mock.tpl':
-        logging.debug('Ignoring mock template file: %s', filepath)
-
-    elif filepath == '.gitignore':
-        logging.debug('Ignoring git file: %s', filepath)
-
-    elif filepath == 'project.conf':
-        logging.debug('Ignoring project config file: %s', filepath)
-
-    elif patch.is_deleted_file:
-        logging.debug('Ignoring removed file: %s', filepath)
-
     else:
         raise RiftError("Unknown file pattern: %s" % filepath)
 
-    if not ignored and os.path.exists(pkg.dir):
-        # Don't return the given package if
-        # * this patch removes a file for this package and the
-        #   whole package is no more there.
-        # * this patch only modify a file that doesn't need a build (like spec.orig)
-        return pkg
-    return None
+    return pkg
 
 
 def main(args=None):

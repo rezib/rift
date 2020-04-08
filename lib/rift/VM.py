@@ -48,6 +48,7 @@ import textwrap
 import termios
 import select
 import struct
+import socket
 from subprocess import Popen, PIPE, STDOUT
 
 from rift import RiftError
@@ -237,32 +238,36 @@ class VM(object):
         popen.wait()
         return popen.returncode
 
+
     def console(self):
         """Console of VM Hit Ctrl-C 3 times to exit"""
         retcode = 0
+        output = memoryview(bytearray(32))
+
+        # We use SOCK_STREAM as it comes the qemu UNIX socket confiuration
+        console_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        console_socket.connect(self.consolesock)
+        console_socket.setblocking(0)
+
         self_stdin = sys.stdin.fileno()
         old = termios.tcgetattr(self_stdin)
         new = list(old)
         new[3] = new[3] & ~termios.ECHO & ~termios.ISIG & ~termios.ICANON
         termios.tcsetattr(self_stdin, termios.TCSANOW, new)
 
-        s_ctl = Popen(shlex.split('nc -U %s' % (self.consolesock)), stdin=PIPE)
-
         last_int = datetime.datetime.now()
         int_count = 0
-
         while 1:
-            rdy = select.select([sys.stdin, s_ctl.stdin], [], [s_ctl.stdin])
-
-            if s_ctl.stdin in rdy[2] or s_ctl.stdin in rdy[0]:
+            rdy = select.select([sys.stdin, console_socket], [], [console_socket])
+            if console_socket in rdy[2]:
                 sys.stderr.write('Connection closed\n')
                 retcode = 1
                 break
-
             # Exit if Ctrl-C is pressed repeatedly
             if sys.stdin in rdy[0]:
-                buf = os.read(self_stdin, 1024)
-                if struct.unpack('b', buf[0:1])[0] == 3:
+                buf = os.read(self_stdin, 4)
+                # Here 3 == ^C
+                if len(buf) and struct.unpack('b', buf[0:1])[0] == 3:
                     if (datetime.datetime.now() - last_int).total_seconds() > 2:
                         last_int = datetime.datetime.now()
                         int_count = 1
@@ -272,15 +277,19 @@ class VM(object):
                     if int_count == 3:
                         print('\nDetaching ...')
                         break
+                console_socket.sendall(buf)
 
-                s_ctl.stdin.write(buf)
+            ## Get distant output (recv_into metod)
+            if console_socket in rdy[0]:
+                msg_len = console_socket.recv_into(output, 32)
+                # Write to bytes array converted into strings
+                sys.stdout.write(''.join(['%c' % m for m in output[:msg_len]]))
+                sys.stdout.flush()
 
         # Restore terminal now to let user interrupt the wait if needed
-        termios.tcsetattr(sys.stdin.fileno(), termios.TCSANOW, old)
-
-        s_ctl.terminate()
-        s_ctl.wait()
+        termios.tcsetattr(self_stdin, termios.TCSANOW, old)
         return retcode
+
 
     def run_test(self, test):
         """

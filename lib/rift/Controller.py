@@ -801,36 +801,25 @@ def action(config, args):
 
         author = '%s <%s>' % (args.maintainer, staff.get(args.maintainer)['email'])
 
-        if getattr(args, 'bump', False):
-            cmd = "rpmdev-bumpspec -u '%s' -c '%s' %s" % \
-                  (author, args.comment, pkg.specfile)
-
-            popen = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE,
-                                     stderr=subprocess.STDOUT)
-            stdout = popen.communicate()[0]
-            if popen.returncode != 0:
-                raise RiftError(stdout)
-
+        # Format comment.
+        # Grab bullet, insert one if not found.
+        bullet = "-"
+        match = re.search(r'^([^\s\w])\s', args.comment, re.UNICODE)
+        if match:
+            bullet = match.group(1)
         else:
+            args.comment = bullet + " " + args.comment
 
-            # Format comment.
-            # Grab bullet, insert one if not found.
-            bullet = "-"
-            match = re.search(r'^([^\s\w])\s', args.comment, re.UNICODE)
-            if match:
-                bullet = match.group(1)
-            else:
-                args.comment = bullet + " " + args.comment
+        if args.comment.find("\n") == -1:
+            wrapopts = {"subsequent_indent": (len(bullet) + 1) * " ",
+                        "break_long_words": False,
+                        "break_on_hyphens": False}
+            args.comment = textwrap.fill(args.comment, 80, **wrapopts)
 
-            if args.comment.find("\n") == -1:
-                wrapopts = {"subsequent_indent": (len(bullet) + 1) * " ",
-                            "break_long_words": False,
-                            "break_on_hyphens": False}
-                args.comment = textwrap.fill(args.comment, 80, **wrapopts)
-
-            logging.info("Adding changelog record for '%s'", author)
-            Spec(pkg.specfile,
-                 config=config).add_changelog_entry(author, args.comment)
+        logging.info("Adding changelog record for '%s'", author)
+        Spec(pkg.specfile,
+             config=config).add_changelog_entry(author, args.comment,
+                                                bump=getattr(args, 'bump', False))
 
     # GERRIT
     elif args.command == 'gerrit':

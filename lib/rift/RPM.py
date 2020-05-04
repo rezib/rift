@@ -135,6 +135,8 @@ class Spec(object):
         self.changelog_time = None
         self.evr = None
         self.arch = None
+        self.epoch = None
+        self.dist = None
         self.buildrequires = None
         self._config = config or {}
         if self.filepath is not None:
@@ -177,21 +179,46 @@ class Spec(object):
         self.buildrequires = ' '.join(_header_values(
             hdr[rpm.RPMTAG_REQUIRENEVRS]))
         self.release = hdr.sprintf('%{RELEASE}')
+        self.epoch = hdr.sprintf('%|epoch?{%{epoch}:}:{}|')
+        self.dist = rpm.expandMacro('%dist')
+        self.update_evr()
 
-        # Reload to get information without dist macro set.
-        rpm.delMacro('dist')
-        try:
-            hdr = rpm.TransactionSet().parseSpec(self.filepath).sourceHeader
-            self.evr = hdr.sprintf('%|epoch?{%{epoch}:}:{}|%{version}-%{release}')
-        except ValueError as exp:
-            raise RiftError('%s: %s' % (self.filepath, exp))
+    def update_evr(self):
+        """
+        Update epoch:version-release
+        """
+        self.evr = "{}{}-{}".format(self.epoch,
+                                    self.version,
+                                    self.release.rstrip(self.dist))
 
-    def add_changelog_entry(self, userstring, comment):
+    def bump_release(self):
+        """
+        Increase package release
+        """
+        dist = self.dist
+        pattern = "(?P<baserelease>.*)?(?P<num>[0-9]+)"
+        if self.release.endswith(dist):
+            pattern += "({})".format(dist)
+        else:
+            dist = ''
+        release_id = re.match(pattern, self.release)
+        if release_id is None:
+            raise RiftError('Cannot parse package release: {}'.format(self.release))
+        newrelease = int(release_id.group('num')) + 1
+        baserelease = release_id.group('baserelease')
+        self.release = "{}{}{}".format(baserelease, newrelease, dist)
+        self.update_evr()
+
+
+    def add_changelog_entry(self, userstring, comment, bump=False):
         """
         Add a new entry to changelog.
 
         New record is based on current time and is first in list.
         """
+
+        if bump:
+            self.bump_release()
 
         lines = []
         with open(self.filepath, 'r') as fspec:
@@ -200,15 +227,22 @@ class Spec(object):
         date = time.strftime("%a %b %d %Y", time.gmtime())
         newchangelogentry = "* %s %s - %s\n%s\n" % \
             (date, userstring, self.evr, comment)
+        chlg_match = None
 
-        for i in range(len(lines)):
-            if re.match(r'^%changelog(\s|$)', lines[i]):
+        for i, _ in enumerate(lines):
+            if bump:
+                release_match = re.match(r'^[Rr]elease:(?P<spaces>\s+)', lines[i])
+                if release_match:
+                    lines[i] = "Release:{}{}\n".format(release_match.group('spaces'),
+                                                       self.release)
+            chlg_match = re.match(r'^%changelog(\s|$)', lines[i])
+            if chlg_match:
                 if len(lines) > i + 1 and lines[i + 1].strip() != "":
                     newchangelogentry += "\n"
 
                 lines[i] += newchangelogentry
                 break
-        else:
+        if not chlg_match:
             if lines[-1].strip() != "":
                 lines.append("\n")
             lines.append("%changelog\n")

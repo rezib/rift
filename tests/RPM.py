@@ -2,6 +2,8 @@
 # Copyright (C) 2020 CEA
 #
 import os
+import time
+import rpm
 
 from TestUtils import make_temp_dir, RiftTestCase
 from rift import RiftError
@@ -66,3 +68,52 @@ class SpecTest(RiftTestCase):
     def test_specfile_check(self):
         """ Test specfile check function """
         self.assertIsNone(Spec(self.spec).check())
+
+    def test_bump_release(self):
+        """ Test bump_release """
+        spec = Spec(self.spec)
+        spec.release = '1'
+        spec.bump_release()
+        self.assertEqual(spec.release, '2')
+        # Check with %dist macro
+        dist = rpm.expandMacro('%dist')
+        spec.release = "1{}".format(dist)
+        spec.bump_release()
+        self.assertEqual(spec.release, '2{}'.format(dist))
+        # Check with prefix in release
+        spec.release = "1.keyword1{}".format(dist)
+        spec.bump_release()
+        self.assertEqual(spec.release, '1.keyword2{}'.format(dist))
+        # Check with invalid release
+        spec.release = 'a'
+        self.assert_except(RiftError,
+                           'Cannot parse package release: {}'.format(spec.release),
+                           spec.bump_release)
+
+    def test_add_changelog_entry(self):
+        """ Test add_changelog_entry """
+        spec = Spec(self.spec)
+        comment = "- New feature"
+        userstr = "John Doe"
+        date = time.strftime("%a %b %d %Y", time.gmtime())
+
+        # Check adding changelog entry
+        spec.add_changelog_entry(userstr, comment)
+        with open(spec.filepath, 'r') as fspec:
+            lines = fspec.readlines()
+        self.assertTrue("* {} {} - {}\n".format(date, userstr, spec.evr) in lines)
+        self.assertTrue("{}\n".format(comment) in lines)
+
+    def test_add_changelog_entry_bump(self):
+        """ Test add_changelog_entry with bump release"""
+        spec = Spec(self.spec)
+        comment = "- New feature (Bumped)"
+        userstr = "John Doe"
+        date = time.strftime("%a %b %d %Y", time.gmtime())
+
+        spec.add_changelog_entry(userstr, comment, bump=True)
+        with open(spec.filepath, 'r') as fspec:
+            lines = fspec.readlines()
+        self.assertTrue("Release:        {}\n".format(spec.release) in lines)
+        self.assertTrue("* {} {} - {}\n".format(date, userstr, spec.evr) in lines)
+        self.assertTrue("{}\n".format(comment) in lines)

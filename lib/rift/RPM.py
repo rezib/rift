@@ -75,9 +75,9 @@ class RPM(object):
         """Extract interesting information from RPM file header"""
         # Read header
         fileno = os.open(self.filepath, os.O_RDONLY)
-        ts = rpm.TransactionSet()
-        ts.setVSFlags(rpm._RPMVSF_NOSIGNATURES)
-        hdr = ts.hdrFromFdno(fileno)
+        transaction = rpm.TransactionSet()
+        transaction.setVSFlags(rpm._RPMVSF_NOSIGNATURES)
+        hdr = transaction.hdrFromFdno(fileno)
         os.close(fileno)
 
         # Extract data

@@ -258,7 +258,7 @@ class Spec(object):
         if pkg:
             configdir = pkg.dir
             if self.basename != pkg.name:
-                msg = "name '%s' does not match '%s' in spec file" % (pkg.name, spec.basename)
+                msg = "name '%s' does not match '%s' in spec file" % (pkg.name, self.basename)
                 raise RiftError(msg)
 
             # Changelog section is mandatory

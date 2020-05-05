@@ -39,7 +39,6 @@ import argparse
 import logging
 from operator import attrgetter
 import random
-import subprocess
 import time
 import textwrap
 from rpm import error as RpmError
@@ -161,7 +160,7 @@ def parse_options(args=None):
     subprs.add_argument('-p', '--publish', action='store_true',
                         help='publish build RPMS to repository')
 
-    # XXX: Validate diff
+    # Validate diff
     subprs = subparsers.add_parser('validdiff')
     subprs.add_argument('patch', metavar='PATCH', type=argparse.FileType('r'))
     subprs.add_argument('--noquit', action='store_true',

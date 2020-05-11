@@ -138,6 +138,8 @@ class Spec(object):
         self.epoch = None
         self.dist = None
         self.buildrequires = None
+        self.lines = []
+        self.variables = {}
         self._config = config or {}
         if self.filepath is not None:
             self.load()
@@ -149,6 +151,21 @@ class Spec(object):
             rpm.delMacro(macro)
             if value:
                 rpm.addMacro(macro, value)
+
+    def _parse_vars(self):
+        self.variables = {}
+        pattern = r"%(?P<keyword>(global|define))\s+(?P<name>.*?)\s+(?P<value>.*)"
+        for index, line in enumerate(self.lines):
+            match = re.match(pattern, line)
+            if match:
+                name = match.group('name')
+                value = match.group('value')
+                keyword = match.group('keyword')
+                if name and value:
+                    self.variables[name] = Variable(index=index,
+                                                    name=name,
+                                                    value=value,
+                                                    keyword=keyword)
 
     def load(self):
         """Extract interesting information from spec file."""
@@ -182,6 +199,11 @@ class Spec(object):
         self.epoch = hdr.sprintf('%|epoch?{%{epoch}:}:{}|')
         self.dist = rpm.expandMacro('%dist')
         self.update_evr()
+
+        with open(self.filepath, 'r') as fspec:
+            self.lines = fspec.readlines()
+
+        self._parse_vars()
 
     def update_evr(self):
         """
@@ -337,3 +359,46 @@ class Spec(object):
 
         if popen.returncode != 0:
             review.invalidate()
+
+
+class Variable(object):
+
+    """
+        This class represents specfile variables
+        Args:
+            index (int): Line where variable is defined in specfile
+            name: The variable name
+            value: The variable value
+            keyword: The keyword used to define the variable
+
+        Attributes:
+            index (int): Line where variable is defined in specfile
+            name: The variable name
+            value: The variable value
+            keyword: The keyword used to define the variable
+    """
+    def __init__(self, index, name, value, keyword):
+        self.index = index
+        self.name = name
+        self.value = value
+        self.keyword = keyword
+
+    def __str__(self):
+        return '{}'.format(self.value)
+
+    def spec_output(self, buffer=None):
+        """
+            Return variable definition with specfile syntax.
+            Args:
+                buffer (list): Buffer containing specfile content
+
+            Raises:
+                IndexError: If buffer is not large enough
+
+            Returns:
+                define_str: String syntax to define the variable
+        """
+        define_str = '%{} {} {}'.format(self.keyword, self.name, self.value)
+        if buffer:
+            buffer[self.index] = '{}\n'.format(define_str)
+        return define_str

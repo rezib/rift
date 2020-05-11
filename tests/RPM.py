@@ -7,7 +7,7 @@ import rpm
 
 from TestUtils import make_temp_dir, RiftTestCase
 from rift import RiftError
-from rift.RPM import Spec
+from rift.RPM import Spec, Variable
 
 class SpecTest(RiftTestCase):
     """
@@ -23,6 +23,8 @@ class SpecTest(RiftTestCase):
         self.directory = make_temp_dir()
         self.spec = os.path.join(self.directory, "{0}.spec".format(self.name))
         with open(self.spec, "w") as spec:
+            spec.write("%global foo 1.%{bar}\n")
+            spec.write("%define bar 1\n")
             spec.write("Name:    {0}\n".format(self.name))
             spec.write("Version:        {0}\n".format(self.version))
             spec.write("Release:        {0}\n".format(self.release))
@@ -59,6 +61,7 @@ class SpecTest(RiftTestCase):
         self.assertEqual(len(spec.pkgnames), 1)
         self.assertEqual(spec.arch, self.arch)
         self.assertTrue("{0}-{1}.tar.gz".format(self.name, self.version) in spec.sources)
+        self.assertTrue(len(spec.lines) == 26)
 
     def test_init_fails(self):
         """ Test Spec instanciation with error """
@@ -117,3 +120,32 @@ class SpecTest(RiftTestCase):
         self.assertTrue("Release:        {}\n".format(spec.release) in lines)
         self.assertTrue("* {} {} - {}\n".format(date, userstr, spec.evr) in lines)
         self.assertTrue("{}\n".format(comment) in lines)
+
+
+    def test_parse_vars(self):
+        """ Test spec variables parsing """
+        spec = Spec(self.spec)
+        self.assertTrue(str(spec.variables['foo']) == '1.%{bar}')
+        self.assertTrue(spec.variables['foo'].value == '1.%{bar}')
+        self.assertTrue(spec.variables['foo'].name == 'foo')
+        self.assertTrue(spec.variables['foo'].index == 0)
+        self.assertTrue(spec.variables['foo'].keyword == 'global')
+        self.assertTrue(str(spec.variables['bar']) == '1')
+        self.assertTrue(spec.variables['bar'].keyword == 'define')
+        self.assertTrue(spec.variables['bar'].index == 1)
+
+
+class VariableTest(RiftTestCase):
+    """ Test Variable class """
+    def test_str(self):
+        """ Test string representation """
+        var = Variable(index=3, name='foo', value='bar', keyword='define')
+        self.assertTrue(str(var) == 'bar' )
+
+    def test_spec_output(self):
+        """ Test variable format output """
+        var = Variable(index=0, name='foo', value='bar', keyword='define')
+        self.assertTrue(var.spec_output() == '%define foo bar' )
+        buff = ['']
+        var.spec_output(buff)
+        self.assertTrue(buff[0] == '%define foo bar\n')

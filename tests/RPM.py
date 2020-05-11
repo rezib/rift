@@ -134,6 +134,22 @@ class SpecTest(RiftTestCase):
         self.assertTrue(spec.variables['bar'].keyword == 'define')
         self.assertTrue(spec.variables['bar'].index == 1)
 
+    def test_match_var(self):
+        """ Tests variable detection in pattern """
+        spec = Spec(self.spec)
+        foo = spec.variables['foo']
+        bar = spec.variables['bar']
+        self.assertTrue(spec._match_var('%{foo}', r'^1') == foo)
+        self.assertTrue(spec._match_var('%{foo}') == bar)
+        self.assertTrue(spec._match_var('%{?foo}') == bar)
+        self.assertTrue(spec._match_var('%{foo}%{bar}') == bar)
+        self.assertTrue(spec._match_var('%{bar}') == bar)
+        self.assertTrue(spec._match_var('%{notthere}') is None)
+        self.assertTrue(spec._match_var('%{notthere}%{foo}') == bar)
+        self.assertTrue(spec._match_var('%{foo}%{?dist}') == bar)
+        self.assertTrue(spec._match_var('%{foo}%{bar}%{?dist}') == bar)
+        self.assertTrue(spec._match_var('no vars inside') is None)
+
 
 class VariableTest(RiftTestCase):
     """ Test Variable class """

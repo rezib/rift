@@ -213,22 +213,56 @@ class Spec(object):
                                     self.version,
                                     self.release.rstrip(self.dist))
 
+    def _inc_release(self, release):
+        dist = self.dist
+        pattern = r"(?P<baserelease>.*?)?(?P<num>[0-9]+)"
+        dist_match = re.match(r".*(?P<dist>%{\??dist}(\s+|$))", release)
+
+        if release.endswith(self.dist):
+            pattern += "({})".format(dist)
+        elif dist_match:
+            dist = dist_match.group('dist')
+            pattern += '({})'.format(dist.replace('?', r'\?'))
+        else:
+            dist = ''
+        pattern += '$'
+        release_id = re.match(pattern, release)
+        if release_id is None:
+            raise RiftError('Cannot parse package release: {}'.format(release))
+        newrelease = int(release_id.group('num')) + 1
+        logging.debug("New release from %s to %s", release_id.group('num'),
+                      newrelease)
+        baserelease = release_id.group('baserelease')
+        return "{}{}{}".format(baserelease, newrelease, dist)
+
+
+    def _match_var(self, expression, pattern='.*[0-9]$'):
+        """ Get variable with value matching pattern in expression """
+        match = re.match(r'(?P<leftbehind>.*)%{?\??(?P<varname>[^}]*)}?', "%s" % expression)
+        if match:
+            name = match.group('varname')
+            left = match.group('leftbehind')
+            if name:
+                logging.debug('Spec._match_var: found %s', name)
+                try:
+                    if re.match(pattern, str(self.variables[name])):
+                        return self.variables[name]
+                    var = self._match_var(str(self.variables[name]), pattern)
+                    if var:
+                        return var
+                    if left:
+                        return self._match_var(left, pattern)
+                except KeyError:
+                    logging.warning("Warning: unable to resolve %s", name)
+            if left:
+                return self._match_var(left, pattern)
+        return None
+
     def bump_release(self):
         """
         Increase package release
         """
-        dist = self.dist
-        pattern = "(?P<baserelease>.*)?(?P<num>[0-9]+)"
-        if self.release.endswith(dist):
-            pattern += "({})".format(dist)
-        else:
-            dist = ''
-        release_id = re.match(pattern, self.release)
-        if release_id is None:
-            raise RiftError('Cannot parse package release: {}'.format(self.release))
-        newrelease = int(release_id.group('num')) + 1
-        baserelease = release_id.group('baserelease')
-        self.release = "{}{}{}".format(baserelease, newrelease, dist)
+        self.release = self._inc_release(self.release)
         self.update_evr()
 
 
@@ -242,36 +276,44 @@ class Spec(object):
         if bump:
             self.bump_release()
 
-        lines = []
-        with open(self.filepath, 'r') as fspec:
-            lines = fspec.readlines()
-
         date = time.strftime("%a %b %d %Y", time.gmtime())
         newchangelogentry = "* %s %s - %s\n%s\n" % \
             (date, userstring, self.evr, comment)
         chlg_match = None
-
-        for i, _ in enumerate(lines):
+        for i, _ in enumerate(self.lines):
             if bump:
-                release_match = re.match(r'^[Rr]elease:(?P<spaces>\s+)', lines[i])
+                release_match = re.match(r'^[Rr]elease:(?P<spaces>\s+)(?P<release>.*$)',
+                                         self.lines[i])
                 if release_match:
-                    lines[i] = "Release:{}{}\n".format(release_match.group('spaces'),
-                                                       self.release)
-            chlg_match = re.match(r'^%changelog(\s|$)', lines[i])
+                    release_str = release_match.group('release')
+                    # If Release field contains only variables, we may need to
+                    # resolv and increment last variable:
+                    # Release: %{something}%{?dist}
+                    # If no variables found, increment last numeric ID from release
+                    try:
+                        self.lines[i] = "Release:{}{}\n".format(release_match.group('spaces'),
+                                                                self._inc_release(release_str))
+                    except RiftError:
+                        var = self._match_var(release_str)
+                        if var:
+                            var.value = self._inc_release(var.value)
+                            var.spec_output(self.lines)
+
+            chlg_match = re.match(r'^%changelog(\s|$)', self.lines[i])
             if chlg_match:
-                if len(lines) > i + 1 and lines[i + 1].strip() != "":
+                if len(self.lines) > i + 1 and self.lines[i + 1].strip() != "":
                     newchangelogentry += "\n"
 
-                lines[i] += newchangelogentry
+                self.lines[i] += newchangelogentry
                 break
         if not chlg_match:
-            if lines[-1].strip() != "":
-                lines.append("\n")
-            lines.append("%changelog\n")
-            lines.append(newchangelogentry)
+            if self.lines[-1].strip() != "":
+                self.lines.append("\n")
+            self.lines.append("%changelog\n")
+            self.lines.append(newchangelogentry)
 
         with open(self.filepath, 'w') as fspec:
-            fspec.writelines(lines)
+            fspec.writelines(self.lines)
 
         # Reload
         self.load()

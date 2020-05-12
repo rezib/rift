@@ -318,7 +318,7 @@ index 0000000..68344bf
 @@ -0,0 +1 @@
 +README
 """)
-        self.assert_except(RiftError, "Unknown file pattern: packages/pkg/wrong",
+        self.assert_except(RiftError, "Unknown file pattern in 'pkg' directory: packages/pkg/wrong",
                            main, ['validdiff', patch.name])
 
     def test_validdiff_on_info(self):

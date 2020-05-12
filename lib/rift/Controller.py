@@ -921,7 +921,7 @@ def _validate_patch(patch, config, modules, staff):
             logging.debug('Detecting test script: %s', filepath)
 
         else:
-            raise RiftError("Unknown file pattern: %s" % filepath)
+            raise RiftError("Unknown file pattern in '%s' directory: %s" % (pkg.name, filepath))
 
     else:
         raise RiftError("Unknown file pattern: %s" % filepath)

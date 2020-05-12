@@ -171,18 +171,15 @@ class PatchedFile(list):
     def path(self):
         """Return the file path abstracted from VCS."""
         # TODO: improve git/hg detection
-        if (self.source_file.startswith('a/') and
-                self.target_file.startswith('b/')):
-            filepath = self.source_file[2:]
-        elif (self.source_file.startswith('a/') and
-                self.target_file == '/dev/null'):
-            filepath = self.source_file[2:]
-        elif (self.target_file.startswith('b/') and
-                self.source_file == '/dev/null'):
-            filepath = self.target_file[2:]
+        if self.renamed:
+            filepath = self.target_file
+        elif self.source_file == '/dev/null':
+            filepath = self.target_file
         else:
             filepath = self.source_file
-        return filepath
+        if filepath.startswith('a/') or filepath.startswith('b/'):
+            filepath = filepath[2:]
+        return filepath.strip()
 
     @property
     def added(self):

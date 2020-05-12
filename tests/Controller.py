@@ -7,10 +7,10 @@ import os.path
 from unidiff import parse_unidiff
 from TestUtils import make_temp_file, make_temp_dir, RiftTestCase
 
-from rift.Controller import Config, main, _validate_patch
+from rift.Controller import (Config, main, _validate_patch,
+                             get_packages_from_patch)
 from rift.Config import Staff, Modules
 from rift import RiftError
-
 
 class ControllerTest(RiftTestCase):
 
@@ -31,13 +31,13 @@ class ControllerProjectTest(RiftTestCase):
         self.packagesdir = os.path.join(self.projdir, 'packages')
         os.mkdir(self.packagesdir)
         # ./packages/staff.yaml
-        self.staff = os.path.join(self.packagesdir, 'staff.yaml')
-        with open(self.staff, "w") as staff:
+        self.staffpath = os.path.join(self.packagesdir, 'staff.yaml')
+        with open(self.staffpath, "w") as staff:
             staff.write('staff: {Myself: {email: buddy@somewhere.org}}')
         # ./packages/modules.yaml
-        self.modules = os.path.join(self.packagesdir, 'modules.yaml')
-        with open(self.modules, "w") as staff:
-            staff.write('modules: {Great module: {manager: Myself}}')
+        self.modulespath = os.path.join(self.packagesdir, 'modules.yaml')
+        with open(self.modulespath, "w") as mod:
+            mod.write('modules: {Great module: {manager: Myself}}')
         # ./annex/
         self.annexdir = os.path.join(self.projdir, 'annex')
         os.mkdir(self.annexdir)
@@ -52,12 +52,19 @@ class ControllerProjectTest(RiftTestCase):
         self.pkgdirs = {}
         self.pkgspecs = {}
         self.pkgsrc = {}
+        # Load project/staff/modules
+        self.config = Config()
+        self.config.load()
+        self.staff = Staff(config=self.config)
+        self.staff.load(self.staffpath)
+        self.modules = Modules(config=self.config, staff=self.staff)
+        self.modules.load(self.modulespath)
 
     def tearDown(self):
         os.chdir(self.cwd)
         os.unlink(self.projectconf)
-        os.unlink(self.staff)
-        os.unlink(self.modules)
+        os.unlink(self.staffpath)
+        os.unlink(self.modulespath)
         os.rmdir(self.annexdir)
         for spec in self.pkgspecs.values():
             os.unlink(spec)
@@ -179,7 +186,7 @@ diff --git /dev/null b/{0}
 index fcd49dd..91ef207 100644
 Binary files a/sources/a.tar.gz and b/sources/a.tar.gz differ
 """.format(pkgsrc))
-        self.assert_except(RiftError, "Binary file detected: {0}\n".format(pkgsrc),
+        self.assert_except(RiftError, "Binary file detected: {0}".format(pkgsrc),
                            main, ['validdiff', patch.name])
 
     def test_validdiff_binary_with_content(self):
@@ -205,7 +212,7 @@ PcmZQ%;Sf+z_{{#tQ1BL-x
 literal 4
 LcmZQ%;Sc}}-05kv|
 """.format(pkgsrc))
-        self.assert_except(RiftError, "Binary file detected: {0}\n".format(pkgsrc),
+        self.assert_except(RiftError, "Binary file detected: {0}".format(pkgsrc),
                            main, ['validdiff', patch.name])
 
     def test_remove_package(self):
@@ -287,19 +294,13 @@ index 0000000..68344bf
 """)
         # Ensure package exists
         self.make_pkg('pkg')
-        config = Config()
-        config.load()
-        staff = Staff(config=config)
-        staff.load(self.staff)
-        modules = Modules(config=config, staff=staff)
-        modules.load(self.modules)
         with open(patch.name, 'r') as f:
             patchedfiles = parse_unidiff(f)
         self.assertNotEqual(len(patchedfiles), 0)
         for patchedfile in patchedfiles:
-            pkg = _validate_patch(patchedfile, config,
-                                  modules=modules,
-                                  staff=staff)
+            pkg = _validate_patch(patchedfile, self.config,
+                                  modules=self.modules,
+                                  staff=self.staff)
             self.assertIsNotNone(pkg)
 
     def test_validdiff_on_invalid_file(self):
@@ -364,3 +365,77 @@ index 0000000..68344bf
 +    manager: John Doe
 """)
         self.assertEqual(main(['validdiff', patch.name]), 0)
+
+
+    def test_rename_package(self):
+        """ Test if renaming a package trigger a build """
+        pkgname = 'pkg'
+        pkgvers = 1.0
+        self.make_pkg(name=pkgname, version=pkgvers)
+        patch = make_temp_file("""
+diff --git a/packages/pkg/pkg.spec b/packages/pkgnew/pkgnew.spec
+similarity index 100%
+rename from packages/pkg/pkg.spec
+rename to packages/pkgnew/pkgnew.spec
+diff --git a/packages/pkg/info.yaml b/packages/pkgnew/info.yaml
+similarity index 100%
+rename from packages/pkg/info.yaml
+rename to packages/pkgnew/info.yaml
+diff --git a/packages/pkg/sources/pkg-1.0.tar.gz b/packages/pkgnew/sources/pkgnew-1.0.tar.gz
+similarity index 100%
+rename from packages/pkg/sources/pkg-1.0.tar.gz
+rename to packages/pkgnew/sources/pkgnew-1.0.tar.gz
+""")
+
+        with open(patch.name, 'r') as p:
+            pkgs = get_packages_from_patch(p, config=self.config,
+                                           modules=self.modules, staff=self.staff)
+        print("pkg: %s" % pkgs.keys())
+        self.assertEqual(len(pkgs), 1)
+        self.assertTrue('pkgnew' in pkgs.keys())
+
+    def test_rename_and_update_package(self):
+        """ Test if renaming and updating a package trigger a build """
+        pkgname = 'pkg'
+        pkgvers = 1.0
+        self.make_pkg(name=pkgname, version=pkgvers)
+        patch = make_temp_file("""
+commit f8c1a88ea96adfccddab0bf43c0a90f05ab26dc5 (HEAD -> playground)
+Author: Myself <buddy@somewhere.org>
+Date:   Thu Apr 25 14:30:41 2019 +0200
+
+    packages: rename 'pkg' to 'pkgnew'
+
+diff --git a/packages/pkg/info.yaml b/packages/pkgnew/info.yaml
+similarity index 100%
+rename from packages/pkg/info.yaml
+rename to packages/pkgnew/info.yaml
+diff --git a/packages/pkg/pkg.spec b/packages/pkgnew/pkgnew.spec
+similarity index 93%
+rename from packages/pkg/pkg.spec
+rename to packages/pkgnew/pkgnew.spec
+index b92c49d..0fa690c 100644
+--- a/packages/pkg/pkg.spec
++++ b/packages/pkgnew/pkgnew.spec
+@@ -1,6 +1,6 @@
+-Name:    pkg
++Name:    pkgnew
+ Version:        1.0
+-Release:        1
++Release:        2
+ Summary:        A package
+ Group:          System Environment/Base
+ License:        GPL
+diff --git a/packages/pkg/sources/pkg-1.0.tar.gz b/packages/pkgnew/sources/pkgnew-1.0.tar.gz
+similarity index 100%
+rename from packages/pkg/sources/pkg-1.0.tar.gz
+rename to packages/pkgnew/sources/pkgnew-1.0.tar.gz
+""")
+
+        with open(patch.name, 'r') as p:
+            pkgs = get_packages_from_patch(p, config=self.config,
+                                           modules=self.modules, staff=self.staff)
+        print("pkg: %s" % pkgs.keys())
+        self.assertEqual(len(pkgs), 1)
+        self.assertTrue('pkgnew' in pkgs.keys())
+

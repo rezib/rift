@@ -1,0 +1,6 @@
+Tue May 12 2020 Aurelien Cedeyn <aurelien.cedeyn@cea.fr>
+	* Release: 0.10.3
+	* RIFT-764: Fix validdiff failed when renaming package
+	* rift validdiff: Better error message on invalid file pattern in patch
+	* rift changelog: fix bump release
+	* rift vm: rewrite console code

@@ -596,6 +596,22 @@ def action_gerrit(args, config, staff, modules):
     review.msg_header = 'rpmlint analysis'
     review.push(config, args.change, args.patchset)
 
+def get_packages_from_patch(patch, config, modules, staff):
+    """
+    Extract packages from given patch
+    """
+    pkglist = {}
+    patchedfiles = parse_unidiff(patch)
+    if not patchedfiles:
+        raise RiftError("Invalid patch detected (empty commit ?)")
+
+    for patchedfile in patchedfiles:
+        pkg = _validate_patch(patchedfile, config=config, modules=modules, staff=staff)
+        if pkg is not None and pkg not in pkglist:
+            pkglist[pkg.name] = pkg
+
+    return pkglist
+
 
 def action(config, args):
     """
@@ -727,16 +743,8 @@ def action(config, args):
 
     elif args.command == 'validdiff':
 
-        pkglist = {}
-        patchedfiles = parse_unidiff(args.patch)
-        if not patchedfiles:
-            raise RiftError("Invalid patch detected (empty commit ?)")
-
-        for patchedfile in patchedfiles:
-            pkg = _validate_patch(patchedfile, config=config, modules=modules, staff=staff)
-            if pkg is not None and pkg not in pkglist:
-                pkglist[pkg.name] = pkg
-
+        pkglist = get_packages_from_patch(args.patch, config=config,
+                                          modules=modules, staff=staff)
         # Re-validate each package
         return action_validate(config, args, pkglist.values(), repo, suppl_repos)
 

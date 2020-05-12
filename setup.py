@@ -47,9 +47,6 @@ setup(name='rift',
                   ('/usr/share/rift/template', ['template/project.conf', 'template/local.conf', 'template/mock.tpl']),
                   ('/usr/share/rift/template/packages', ['template/packages/modules.yaml', 'template/packages/staff.yaml']),
               ],
-      install_requires=[
-        'pylint',
-      ],
       entry_points = {
         'console_scripts': [
             'rift = rift.Controller:main',

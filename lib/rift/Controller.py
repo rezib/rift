@@ -373,7 +373,7 @@ class BasicTest(Test):
             else
               ${YUM} -y -d1 install $pkg || exit 1
             fi
-            if [ -z "$(${YUM} history 2<&1| awk '/No transactions/')" ]; then
+            if [ -n "$(${YUM} history | tail -n +3)" ]; then
                 echo '> Cleanup last transaction'
                 ${YUM} -y -d1 history undo last || exit 1
             else

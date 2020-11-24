@@ -1,3 +1,7 @@
+Tue Nov 24 2020 Aurelien Cedeyn <aurelien.cedeyn@cea.fr>
+    * Release: 0.10.4
+	* Fix dnf history management during simple tests
+
 Tue May 12 2020 Aurelien Cedeyn <aurelien.cedeyn@cea.fr>
 	* Release: 0.10.3
 	* RIFT-764: Fix validdiff failed when renaming package

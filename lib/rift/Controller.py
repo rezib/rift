@@ -643,7 +643,7 @@ def action(config, args):
         if isinstance(data, str):
             suppl_repos.append(RemoteRepository(data, name))
         else:
-            remote = RemoteRepository(data['url'], name, data.get('priority'))
+            remote = RemoteRepository(data['url'], name, data.get('priority'), data.get('excludepkgs'))
             suppl_repos.append(remote)
 
     # VM

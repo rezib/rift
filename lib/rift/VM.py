@@ -181,6 +181,8 @@ class VM(object):
                 gpgcheck=0
                 priority=%s
                 """) % (repo.name, repo.name, url, prio))
+            if repo.excludepkgs :
+                repos.append("excludepkgs={}\n".format(repo.excludepkgs))
 
         # Build the full command line
         cmd = textwrap.dedent("""\

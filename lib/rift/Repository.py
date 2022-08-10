@@ -47,10 +47,11 @@ class RemoteRepository(object):
     ftp.
     """
 
-    def __init__(self, url, name=None, priority=None):
+    def __init__(self, url, name=None, priority=None, excludepkgs=None):
         self.url = url
         self.name = name
         self.priority = priority
+        self.excludepkgs = excludepkgs
 
     def is_file(self):
         """True if repository URL looks like a file URI."""

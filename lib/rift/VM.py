@@ -183,6 +183,8 @@ class VM(object):
                 """) % (repo.name, repo.name, url, prio))
             if repo.excludepkgs :
                 repos.append("excludepkgs={}\n".format(repo.excludepkgs))
+            if repo.module_hotfixes:
+                repos.append("module_hotfixes={}\n".format(repo.module_hotfixes))
 
         # Build the full command line
         cmd = textwrap.dedent("""\

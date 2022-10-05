@@ -66,29 +66,40 @@ class Mock(object):
             self._mockname = '%s-%s' % (self._mockname, proj_vers)
         logging.debug(self._mockname)
 
-    def _create_template(self, repolist, dstpath):
-        """Create 'default.cfg' config file based on a template."""
-        # Read template
-        tplfile = self._config.project_path(self.MOCK_TEMPLATE)
-        tpl = Template(open(tplfile).read())
-        context = {'name': self._mockname, 'repos': []}
 
+    def _build_template_ctx(self, repolist):
+        """ Create a context to build mock template """
+        context = {'name': self._mockname, 'repos': []}
         # Populate with repolist
         prio = 1000
         for idx, repo in enumerate(repolist, start=1):
             assert repo.url is not None
             prio = repo.priority or (prio - 1)
-            context['repos'].append({
+            repo_ctx = {
                 'name': repo.name or 'repo%s' % idx,
                 'priority': prio,
-                'url': repo.url})
+                'url': repo.url,
+                }
+            if repo.module_hotfixes:
+                repo_ctx['module_hotfixes'] = repo.module_hotfixes
+            if repo.excludepkgs:
+                repo_ctx['excludepkgs'] = repo.excludepkgs
+            context['repos'].append(repo_ctx)
+        return context
 
+
+    def _create_template(self, repolist, dstpath):
+        """Create 'default.cfg' config file based on a template."""
+        # Read template
+        tplfile = self._config.project_path(self.MOCK_TEMPLATE)
+        tpl = Template(open(tplfile).read())
         # Write file content
         with open(dstpath, 'w') as fmock:
-            fmock.write(tpl.render(context))
+            fmock.write(tpl.render(self._build_template_ctx(repolist)))
         # We have to keep template timestamp to avoid being detected as a new
         # one each time.
         shutil.copystat(tplfile, dstpath)
+
 
     def _mock_base(self):
         """Return base argument to launch mock"""

@@ -137,6 +137,8 @@ def parse_options(args=None):
                         help='publish build RPMS to repository')
     subprs.add_argument('--junit', metavar='FILENAME',
                         help='write junit result file')
+    subprs.add_argument('--dont-update-repo', dest='updaterepo', action='store_false',
+                        help='do not update repository metadata when publishing a package')
 
     # Test options
     subprs = subparsers.add_parser('test', help='execute package tests')
@@ -412,8 +414,9 @@ def action_build(config, args, pkg, repo, suppl_repos):
         message("Publishing RPMS...")
         mock.publish(repo)
 
-        message("Updating repository...")
-        repo.update()
+        if args.updaterepo:
+            message("Updating repository...")
+            repo.update()
     else:
         logging.info("Skipping publication")
 

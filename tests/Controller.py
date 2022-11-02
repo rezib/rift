@@ -8,7 +8,7 @@ from unidiff import parse_unidiff
 from TestUtils import make_temp_file, make_temp_dir, RiftTestCase
 
 from rift.Controller import (Config, main, _validate_patch,
-                             get_packages_from_patch)
+                             get_packages_from_patch, parse_options)
 from rift.Config import Staff, Modules
 from rift import RiftError
 
@@ -439,3 +439,12 @@ rename to packages/pkgnew/sources/pkgnew-1.0.tar.gz
         self.assertEqual(len(pkgs), 1)
         self.assertTrue('pkgnew' in pkgs.keys())
 
+
+class ControllerSimpleTest(RiftTestCase):
+    """ Simple test for Class Controler """
+
+    def test_parse_options_updaterepo(self):
+        """ Test option parsing """
+        args = ["build", "a_package", "--dont-update-repo"]
+        parser = parse_options(args)
+        self.assertFalse(parser.updaterepo)

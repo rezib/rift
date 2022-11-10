@@ -343,7 +343,9 @@ class Spec(object):
         else:
             env = None
 
-        cmd = ['rpmlint', '-o', 'NetworkEnabled False', self.filepath]
+        cmd = ['rpmlint', '-o', 'NetworkEnabled False', '-f',
+               os.path.join(os.path.dirname(self.filepath), RPMLINT_CONFIG),
+               self.filepath]
         logging.debug('Running rpmlint: %s', ' '.join(cmd))
         return cmd, env
 

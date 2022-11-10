@@ -7,7 +7,7 @@ import rpm
 
 from TestUtils import make_temp_dir, RiftTestCase
 from rift import RiftError
-from rift.RPM import Spec, Variable
+from rift.RPM import Spec, Variable, RPMLINT_CONFIG
 
 class SpecTest(RiftTestCase):
     """
@@ -22,6 +22,14 @@ class SpecTest(RiftTestCase):
         # /tmp/rift-*/pkg.spec
         self.directory = make_temp_dir()
         self.spec = os.path.join(self.directory, "{0}.spec".format(self.name))
+        self.prepsteps = ""
+        self.buildsteps = ""
+        self.installsteps = ""
+        self.files = ""
+        self.update_spec()
+
+
+    def update_spec(self):
         with open(self.spec, "w") as spec:
             spec.write("%global foo 1.%{bar}\n")
             spec.write("%define bar 1\n")
@@ -40,19 +48,25 @@ class SpecTest(RiftTestCase):
             spec.write("%description\n")
             spec.write("A package\n")
             spec.write("%prep\n")
+            spec.write("{}".format(self.prepsteps))
             spec.write("%build\n")
             spec.write("# Nothing to build\n")
+            spec.write("{}".format(self.buildsteps))
             spec.write("%install\n")
             spec.write("# Nothing to install\n")
+            spec.write("{}".format(self.installsteps))
             spec.write("%files\n")
             spec.write("# No files\n")
+            spec.write("{}".format(self.files))
             spec.write("%changelog\n")
             spec.write("* Tue Feb 26 2019 Myself <buddy@somewhere.org>"
                        " - {0}-{1}\n".format(self.version, self.release))
             spec.write("- Update to {0} release\n".format(self.version))
 
+
     def tearDown(self):
         os.unlink(self.spec)
+
 
     def test_init(self):
         """ Test Spec instanciation """
@@ -63,14 +77,32 @@ class SpecTest(RiftTestCase):
         self.assertTrue("{0}-{1}.tar.gz".format(self.name, self.version) in spec.sources)
         self.assertTrue(len(spec.lines) == 26)
 
+
     def test_init_fails(self):
         """ Test Spec instanciation with error """
         path = '/nowhere.spec'
         self.assert_except(RiftError, "{0} does not exist".format(path), Spec, path)
 
+
     def test_specfile_check(self):
         """ Test specfile check function """
         self.assertIsNone(Spec(self.spec).check())
+
+
+    def test_specfile_check_with_rpmlint(self):
+        """ Test specfile check function with a custom rpmlint file"""
+        # Make an errorneous specfile with hardcoded /lib
+        self.files = "/lib/test"
+        self.update_spec()
+        with self.assertRaisesRegex(RiftError, 'rpmlint reported errors'):
+            Spec(self.spec).check()
+
+        # Create rpmlintfile to ignore hardcoded library path
+        rpmlintfile = os.sep.join([self.directory, RPMLINT_CONFIG])
+        with open(rpmlintfile, "w") as rpmlint:
+            rpmlint.write('addFilter("E: hardcoded-library-path")')
+        self.assertIsNone(Spec(self.spec).check())
+
 
     def test_bump_release(self):
         """ Test bump_release """

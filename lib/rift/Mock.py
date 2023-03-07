@@ -66,10 +66,9 @@ class Mock(object):
             self._mockname = '%s-%s' % (self._mockname, proj_vers)
         logging.debug(self._mockname)
 
-
     def _build_template_ctx(self, repolist):
         """ Create a context to build mock template """
-        context = {'name': self._mockname, 'repos': []}
+        context = {'name': self._mockname, 'arch': self._config.get('arch'), 'repos': []}
         # Populate with repolist
         prio = 1000
         for idx, repo in enumerate(repolist, start=1):

@@ -1,8 +1,8 @@
 config_opts.setdefault('plugin_conf', {})
 config_opts['plugin_conf']['ccache_enable'] = False
 config_opts['root'] = '{{ name }}'
-config_opts['target_arch'] = 'x86_64'
-config_opts['legal_host_arches'] = ('x86_64',)
+config_opts['target_arch'] = '{{ arch }}'
+config_opts['legal_host_arches'] = ('{{ arch }}',)
 config_opts['chroot_setup_cmd'] = 'groupinstall base development'
 config_opts['dist'] = 'el6'  # only useful for --resultdir variable subst
 

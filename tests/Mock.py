@@ -20,19 +20,21 @@ class MockTest(RiftTestCase):
 
     def test_build_context(self):
         """ Test mock context generation """
-        repolist = []
         arch = 'aarch64'
-        _config = {
-                'module_hotfixes': True,
-                'excludepkgs': 'kernel*',
-                }
-        repolist.append(Repository('/tmp', arch, name='tmp', config=_config))
+        repolist = []
+        _config = {'arch': arch,}
+        _repo_config = {
+                        'module_hotfixes': True,
+                        'excludepkgs': 'somepkg',
+                    }
         mock = Mock(_config)
+        repolist.append(Repository('/tmp', arch, name='tmp', config=_repo_config))
         context = mock._build_template_ctx(repolist)
         self.assertEqual(context['name'], 'rift-{}'.format(getpass.getuser()))
+        self.assertEqual(context['arch'], arch)
         repos_ctx = context['repos'][0]
         self.assertEqual(repos_ctx['name'], 'tmp')
         self.assertEqual(repos_ctx['priority'], 999)
         self.assertEqual(repos_ctx['url'], 'file:///tmp/{}'.format(arch))
         self.assertEqual(repos_ctx['module_hotfixes'], True)
-        self.assertEqual(repos_ctx['excludepkgs'], 'kernel*')
+        self.assertEqual(repos_ctx['excludepkgs'], 'somepkg')

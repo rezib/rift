@@ -25,7 +25,7 @@ COLORS = {'header': '\033[34m',
           'stop': '\033[0m',
          }
 
-class TextTable(object):
+class TextTable():
     """
     Display a list of dict into a ASCII table, based an a printf-like format.
 

@@ -57,7 +57,7 @@ def _header_values(values):
         return values.decode("utf8")
     return str(values)
 
-class RPM(object):
+class RPM():
     """Manipulate a source or binary RPM."""
 
     def __init__(self, filepath, config=None):
@@ -120,7 +120,7 @@ class RPM(object):
                 annex.push(filepath)
 
 
-class Spec(object):
+class Spec():
     """Access information from a Specfile and build SRPMS."""
 
     def __init__(self, filepath=None, config=None):
@@ -405,7 +405,7 @@ class Spec(object):
             review.invalidate()
 
 
-class Variable(object):
+class Variable():
 
     """
         This class represents specfile variables

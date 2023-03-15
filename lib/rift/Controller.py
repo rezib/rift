@@ -41,7 +41,8 @@ from operator import attrgetter
 import random
 import time
 import textwrap
-from rpm import error as RpmError
+# Since pylint can not found rpm.error, disable this check
+from rpm import error as RpmError # pylint: disable=no-name-in-module
 from unidiff import parse_unidiff
 
 from rift import RiftError, __version__

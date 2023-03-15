@@ -82,7 +82,7 @@ def hashfile(filepath, iosize=65536):
     return hasher.hexdigest()
 
 
-class Annex(object):
+class Annex():
     """
     Repository of binary files.
 
@@ -230,7 +230,7 @@ class Annex(object):
             destinfo = os.stat(destpath)
         if destinfo and destinfo.st_size == originfo.st_size and \
           filename in metadata.get('filenames', {}):
-            logging.debug('%s is already into annex, skipping it' % filename)
+            logging.debug('%s is already into annex, skipping it', filename)
 
         else:
             # Update them and write them back

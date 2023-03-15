@@ -34,9 +34,15 @@ import xml.etree.cElementTree as ET
 
 from rift.TextTable import TextTable
 
-class TestCase(object):
+class TestCase():
+    """
+    TestCase: oject for to manage a Test to format ajunit file in TestResult
+    """
 
     def __init__(self, name):
+        """
+        name: TestCase name
+        """
         self.name = name
         self.classname = None
         self.result = None
@@ -44,28 +50,51 @@ class TestCase(object):
         self.time = None
 
     def fullname(self):
+        """
+        return the TestCase fullname
+        """
         if self.classname:
             return '%s.%s' % (self.classname, self.name)
         return self.name
 
 class TestResults(object):
+    """
+    TestResults: gather and mange TestCase results
+    """
 
     def __init__(self, name=None):
+        """
+        name: TestResults name
+        properties:
+            - results: list containing tests results
+        """
         self.name = name
         self.results = []
         self.global_result = True
 
     def __len__(self):
+        """
+        return number of results
+        """
         return len(self.results)
 
     def add_failure(self, name, classname=None, time=None, output=None):
+        """
+        Add a failed TestCase
+        """
         self._add_result(classname, name, 'Failure', time, output)
         self.global_result = False
 
     def add_success(self, name, classname=None, time=None, output=None):
+        """
+        Add a successful TestCase
+        """
         self._add_result(classname, name, 'Success', time, output)
 
     def _add_result(self, classname, name, result, time, output):
+        """
+        Add a result from a TestCase
+        """
         case = TestCase(name)
         case.time = time
         case.result = result
@@ -74,6 +103,9 @@ class TestResults(object):
         self.results.append(case)
 
     def junit(self, filename):
+        """
+        Generate a junit xml file containing all tests results
+        """
 
         suite = ET.Element('testsuite', tests=str(len(self.results)))
         if self.name:
@@ -93,6 +125,9 @@ class TestResults(object):
         tree.write(filename, encoding='UTF-8', xml_declaration=True)
 
     def summary(self):
+        """
+        Get a summary table of all tests
+        """
         tbl = TextTable("%name %>duration %result")
         for case in self.results:
             result = case.result

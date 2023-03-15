@@ -64,7 +64,7 @@ OrderedLoader.add_constructor(
 _DEFAULT_STAFF_FILE = 'packages/staff.yaml'
 _DEFAULT_MODULES_FILE = 'packages/modules.yaml'
 
-class Config(object):
+class Config():
     """
     Config: Manage rift configuration files
         This class parses project.conf and local.conf from the current working
@@ -269,7 +269,7 @@ class Config(object):
                     raise DeclError("'%s' is not defined" % key)
 
 
-class Staff(object):
+class Staff():
     """
     List of staff members of a rift project.
 

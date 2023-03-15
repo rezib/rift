@@ -47,7 +47,7 @@ from rift import RiftError
 from rift.TempDir import TempDir
 from rift.RPM import RPM
 
-class Mock(object):
+class Mock():
     """
     Interact with 'mock' command, manage its config files and created RPMS.
     """

@@ -55,7 +55,7 @@ from rift import RiftError
 
 __all__ = ['VM']
 
-class VM(object):
+class VM():
     """Manipulate VM process and related temporary files."""
 
     _PROJ_MOUNTPOINT = '/rift.project'
@@ -181,7 +181,7 @@ class VM(object):
                 gpgcheck=0
                 priority=%s
                 """) % (repo.name, repo.name, url, prio))
-            if repo.excludepkgs :
+            if repo.excludepkgs:
                 repos.append("excludepkgs={}\n".format(repo.excludepkgs))
             if repo.module_hotfixes:
                 repos.append("module_hotfixes={}\n".format(repo.module_hotfixes))
@@ -271,7 +271,7 @@ class VM(object):
             if sys.stdin in rdy[0]:
                 buf = os.read(self_stdin, 4)
                 # Here 3 == ^C
-                if len(buf) and struct.unpack('b', buf[0:1])[0] == 3:
+                if len(buf) > 0 and struct.unpack('b', buf[0:1])[0] == 3:
                     if (datetime.datetime.now() - last_int).total_seconds() > 2:
                         last_int = datetime.datetime.now()
                         int_count = 1

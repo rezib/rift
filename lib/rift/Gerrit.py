@@ -44,7 +44,7 @@ except ImportError:
 import ssl
 from rift import RiftError
 
-class Review(object):
+class Review():
     """Gerrit review."""
 
     def __init__(self):

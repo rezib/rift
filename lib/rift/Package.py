@@ -48,7 +48,7 @@ _SOURCES_DIR = 'sources'
 _TESTS_DIR = 'tests'
 _DOC_FILES = ['README', 'README.md', 'README.rst', 'README.txt']
 
-class Package(object):
+class Package():
     """
     Base object in Rift framework.
 
@@ -211,7 +211,7 @@ class Package(object):
             yield cls(name, config, staff, modules)
 
 
-class Test(object):
+class Test():
     """
     Wrapper around test scripts or test commands.
 

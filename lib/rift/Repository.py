@@ -41,7 +41,7 @@ from subprocess import Popen, PIPE, STDOUT
 
 from rift import RiftError
 
-class RemoteRepository(object):
+class RemoteRepository():
     """
     Simple container for dealing with read-only remote repository using http or
     ftp.
@@ -68,13 +68,13 @@ class RemoteRepository(object):
             return self.url
         if self.url.startswith('file://'):
             return self.url[len('file://'):]
+        return None
 
     def create(self):
         """
         Read-only repository, create() is a no-op, considering it is always
         created and usable.
         """
-        pass
 
 
 class Repository(RemoteRepository):

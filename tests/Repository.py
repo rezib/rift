@@ -3,7 +3,7 @@
 #
 
 from TestUtils import make_temp_dir, RiftTestCase
-from rift.Repository import Repository
+from rift.Repository import Repository, RemoteRepository
 
 class RepositoryTest(RiftTestCase):
     """
@@ -42,3 +42,31 @@ class RepositoryTest(RiftTestCase):
         self.assertEqual(repo.priority, None)
         self.assertEqual(repo.module_hotfixes, True)
         self.assertEqual(repo.excludepkgs, 'somepkg')
+
+
+class RemoteRepositoryTest(RiftTestCase):
+    """
+    Tests class for RemoteRepository
+    """
+
+    def test_rpms_dir_local_file(self):
+        """ test rpms_dir method """
+        directory = '/somewhere'
+        repo = RemoteRepository(directory)
+        self.assertEqual(repo.rpms_dir, directory)
+
+    def test_rpms_dir_local_file_url(self):
+        """ test rpms_dir method with a local url"""
+        directory = '/somewhere'
+        repo =  RemoteRepository('file://{}'.format(directory))
+        self.assertEqual(repo.rpms_dir, directory)
+
+    def test_rpms_dir_remote_url(self):
+        """ test rpms_dir method with a remote url"""
+        directory = '/somewhere'
+        repo =  RemoteRepository('http://{}'.format(directory))
+        self.assertIsNone(repo.rpms_dir)
+
+    def test_create(self):
+        """ test empty method create """
+        self.assertIsNone(RemoteRepository('/nowhere').create())

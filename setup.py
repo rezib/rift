@@ -46,7 +46,7 @@ setup(name='rift',
       data_files = [
                   ('/usr/share/rift/template', ['template/project.conf', 'template/local.conf', 'template/mock.tpl']),
                   ('/usr/share/rift/template/packages', ['template/packages/modules.yaml', 'template/packages/staff.yaml']),
-                  ('/usr/share/rift/vendor', ['vendor/*']),
+                  ('/usr/share/rift/vendor', ['vendor/QEMU_EFI.fd', 'vendor/QEMU_EFI.silent.fd']),
               ],
       entry_points = {
         'console_scripts': [

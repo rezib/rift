@@ -1,3 +1,12 @@
+Tue Jun  6 2023 Aurelien Cedeyn <aurelien.cedeyn@cea.fr>
+	* Release: 0.10.5
+	* Add excludepks support in repositories
+	* Add proxy support in repositories
+	* Add module_hotfixes support in repositories
+	* Add --dont-update-repo when using --publish
+	* Fix rpmlint configuration file detection
+	* Add support of aarch64
+
 Tue Nov 24 2020 Aurelien Cedeyn <aurelien.cedeyn@cea.fr>
     * Release: 0.10.4
 	* Fix dnf history management during simple tests

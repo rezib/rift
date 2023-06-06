@@ -30,7 +30,7 @@
 # knowledge of the CeCILL license and that you accept its terms.
 #
 
-__version__ = '0.10.4'
+__version__ = '0.10.5'
 
 class RiftError(Exception):
     """Generic error in Rift"""

@@ -28,5 +28,8 @@ priority={{ repo.priority }}
 {%if repo.module_hotfixes %}
 module_hotfixes={{ repo.module_hotfixes }}
 {% endif %}
+{%if repo.proxy %}
+proxy={{ repo.proxy }}
+{% endif %}
 {% endfor %}
 """

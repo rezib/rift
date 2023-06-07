@@ -54,6 +54,7 @@ class RemoteRepository():
             config = {}
         self.module_hotfixes = config.get('module_hotfixes')
         self.excludepkgs = config.get('excludepkgs')
+        self.proxy = config.get('proxy')
 
     def is_file(self):
         """True if repository URL looks like a file URI."""

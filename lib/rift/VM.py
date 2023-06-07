@@ -217,6 +217,8 @@ class VM():
                 repos.append("excludepkgs={}\n".format(repo.excludepkgs))
             if repo.module_hotfixes:
                 repos.append("module_hotfixes={}\n".format(repo.module_hotfixes))
+            if repo.proxy:
+                repos.append("proxy={}\n".format(repo.proxy))
 
         # Build the full command line
         cmd = textwrap.dedent("""\

@@ -23,6 +23,7 @@ class RepositoryTest(RiftTestCase):
         self.assertEqual(repo.priority, None)
         self.assertEqual(repo.module_hotfixes, None)
         self.assertEqual(repo.excludepkgs, None)
+        self.assertEqual(repo.proxy, None)
 
 
     def test_init_with_config(self):
@@ -30,6 +31,7 @@ class RepositoryTest(RiftTestCase):
         _config={
                 'module_hotfixes': True,
                 'excludepkgs': 'somepkg',
+                'proxy': 'myproxy',
                 }
         arch = 'x86_64'
         repo_name='nowhere'
@@ -42,6 +44,7 @@ class RepositoryTest(RiftTestCase):
         self.assertEqual(repo.priority, None)
         self.assertEqual(repo.module_hotfixes, True)
         self.assertEqual(repo.excludepkgs, 'somepkg')
+        self.assertEqual(repo.proxy, 'myproxy')
 
 
 class RemoteRepositoryTest(RiftTestCase):

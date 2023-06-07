@@ -83,6 +83,8 @@ class Mock():
                 repo_ctx['module_hotfixes'] = repo.module_hotfixes
             if repo.excludepkgs:
                 repo_ctx['excludepkgs'] = repo.excludepkgs
+            if repo.proxy:
+                repo_ctx['proxy'] = repo.proxy
             context['repos'].append(repo_ctx)
         return context
 

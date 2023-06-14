@@ -785,15 +785,15 @@ def action(config, args):
 
         for pkg in pkglist:
             logging.debug('Loading package %s', pkg.name)
-            pkg.load()
-            spec = Spec(config=config)
-            if args.spec:
-                spec.filepath = pkg.specfile
-                try:
+            try:
+                pkg.load()
+                spec = Spec(config=config)
+                if args.spec:
+                    spec.filepath = pkg.specfile
                     spec.load()
-                except RiftError as exp:
-                    logging.error(str(exp))
-                    continue
+            except RiftError as exp:
+                logging.error("{}: {}".format(pkg.name, str(exp)))
+                continue
 
             date = str(time.strftime("%Y-%m-%d", time.localtime(spec.changelog_time)))
             modulemanager = staff.get(modules.get(pkg.module).get('manager')[0])

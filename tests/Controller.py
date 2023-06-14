@@ -77,7 +77,8 @@ class ControllerProjectTest(RiftTestCase):
         os.rmdir(self.packagesdir)
         os.rmdir(self.projdir)
 
-    def make_pkg(self, name='pkg', version='1.0', release='1'):
+    def make_pkg(self, name='pkg', version='1.0', release='1',
+                 metadata={'module': 'Great module', 'origin': 'Vendor', 'reason': 'Missing feature'}):
         # ./packages/pkg
         self.pkgdirs[name] = os.path.join(self.packagesdir, name)
         os.mkdir(self.pkgdirs[name])
@@ -87,9 +88,9 @@ class ControllerProjectTest(RiftTestCase):
             nfo.write("package:\n")
             nfo.write("    maintainers:\n")
             nfo.write("        - Myself\n")
-            nfo.write("    module: Great module\n")
-            nfo.write("    origin: Vendor\n")
-            nfo.write("    reason: Missing feature\n")
+            nfo.write("    module: {}\n".format(metadata.get('module', '')))
+            nfo.write("    origin: {}\n".format(metadata.get('origin', '')))
+            nfo.write("    reason: {}\n".format(metadata.get('reason', '')))
 
         # ./packages/pkg/pkg.spec
         self.pkgspecs[name] = os.path.join(self.pkgdirs[name],
@@ -141,6 +142,13 @@ class ControllerProjectTest(RiftTestCase):
         """ Test query on one package """
         self.make_pkg()
         self.assertEqual(main(['query', 'pkg']), 0)
+
+    def test_action_query_on_bad_pkg(self):
+        """ Test query on multiple packages with one errorneous package """
+        self.make_pkg()
+        ## A package with no name should be wrong but the command should not fail
+        self.make_pkg(name='pkg2', metadata={})
+        self.assertEqual(main(['query']), 0)
 
     def test_validdiff_readme(self):
         """ Should allow README files """

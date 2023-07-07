@@ -42,6 +42,7 @@ import yaml
 
 from rift import RiftError
 from rift.Annex import Annex
+from rift.Config import OrderedLoader
 
 _META_FILE = 'info.yaml'
 _SOURCES_DIR = 'sources'
@@ -144,7 +145,7 @@ class Package():
             infopath = self.metafile
 
         with open(infopath) as fyaml:
-            data = yaml.load(fyaml)
+            data = yaml.load(fyaml, Loader=OrderedLoader)
 
         data = data.pop('package') or {}
         self.module = data.get('module')

@@ -306,7 +306,7 @@ class Staff():
 
         try:
             with open(self._config.project_path(filepath)) as fyaml:
-                data = yaml.load(fyaml)
+                data = yaml.load(fyaml, Loader=OrderedLoader)
 
             self._data = data.pop(self.ITEMS_HEADER) or {}
 

@@ -44,6 +44,7 @@ import time
 import yaml
 
 from rift.TempDir import TempDir
+from rift.Config import OrderedLoader
 
 # List of ASCII printable characters
 _TEXTCHARS = bytearray([9, 10, 13] + list(range(32, 127)))
@@ -186,7 +187,7 @@ class Annex():
         # Read current metadata if present
         if os.path.exists(metapath):
             with open(metapath) as fyaml:
-                metadata = yaml.load(fyaml) or {} # Protect against empty file
+                metadata = yaml.load(fyaml, Loader=OrderedLoader) or {} # Protect against empty file
         return metadata
 
     def _save_metadata(self, digest, metadata):

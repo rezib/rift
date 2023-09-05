@@ -160,6 +160,8 @@ def parse_options(args=None):
                         help='do not stop VM at the end')
     subprs.add_argument('--noauto', action='store_true',
                         help='do not run auto tests')
+    subprs.add_argument('--notest', dest='test', action='store_false', default=True,
+                        help='do not run ANY tests')
     subprs.add_argument('-p', '--publish', action='store_true',
                         help='publish build RPMS to repository')
 
@@ -170,6 +172,8 @@ def parse_options(args=None):
                         help='do not stop VM at the end')
     subprs.add_argument('--noauto', action='store_true',
                         help='do not run auto tests')
+    subprs.add_argument('--notest', dest='test', action='store_false', default=True,
+                        help='do not run ANY tests')
     subprs.add_argument('-p', '--publish', action='store_true',
                         help='publish build RPMS to repository')
 
@@ -540,8 +544,9 @@ def action_validate(config, args, pkgs, wkrepo, suppl_repos):
         # Check tests
         mock.publish(staging)
         staging.update()
-        rc = action_test(config, args, [pkg], suppl_repos + [staging],
-                         wkrepo is not None) or rc
+        if args.test:
+            rc = action_test(config, args, [pkg], suppl_repos + [staging],
+                             wkrepo is not None) or rc
 
         # Also publish on working repo if requested
         # XXX: All RPMs should be published when all of them have been validated

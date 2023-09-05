@@ -56,7 +56,7 @@ from rift import RiftError
 
 __all__ = ['VM']
 
-ARCH_EFI_BIOS="./usr/share/edk2/aarch64/QEMU_EFI.silent.fd"
+ARCH_EFI_BIOS = "./usr/share/edk2/aarch64/QEMU_EFI.silent.fd"
 
 class VM():
     """Manipulate VM process and related temporary files."""
@@ -134,14 +134,14 @@ class VM():
         else:
             cmd += ['-machine', 'virt']
 
-        cmd += ['-cpu', self.cpu_type ]
+        cmd += ['-cpu', self.cpu_type]
 
         cmd += ['-name', 'rift', '-display', 'none']
         cmd += ['-m', '8192', '-smp', str(self.cpus)]
 
         # UEFI for aarch64
         if self.arch == 'aarch64':
-            cmd += [ '-bios', self.arch_efi_bios ]
+            cmd += ['-bios', self.arch_efi_bios]
 
         # Drive
         # TODO: switch to --device syntax

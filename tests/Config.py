@@ -7,7 +7,10 @@ import os.path
 from TestUtils import make_temp_file, make_temp_dir, RiftTestCase
 
 from rift import DeclError
-from rift.Config import Staff, Modules, Config
+from rift.Config import Staff, Modules, Config, _DEFAULT_PKG_DIR, \
+                         _DEFAULT_STAFF_FILE, _DEFAULT_MODULES_FILE, \
+                         _DEFAULT_VM_CPU, _DEFAULT_VM_CPUS, _DEFAULT_VM_ADDRESS, \
+                         _DEFAULT_QEMU_CMD
 
 class ConfigTest(RiftTestCase):
 
@@ -15,12 +18,19 @@ class ConfigTest(RiftTestCase):
         """get() default values"""
         config = Config()
 
-        # Default value
-        self.assertEqual(config.get('packages_dir'), 'packages')
+        # Default config value
+        self.assertEqual(config.get('packages_dir'), _DEFAULT_PKG_DIR)
+        self.assertEqual(config.get('staff_file'), _DEFAULT_STAFF_FILE)
+        self.assertEqual(config.get('modules_file'), _DEFAULT_MODULES_FILE)
+        self.assertEqual(config.get('vm_cpu'), _DEFAULT_VM_CPU)
+        self.assertEqual(config.get('vm_cpus'), _DEFAULT_VM_CPUS)
+        self.assertEqual(config.get('vm_address'), _DEFAULT_VM_ADDRESS)
 
         # Default value argument
         self.assertEqual(config.get('doesnotexist', 'default value'),
                          'default value')
+        # Default external tools path
+        self.assertEqual(config.get('qemu'), _DEFAULT_QEMU_CMD)
 
     def test_get_set(self):
         """simple set() and get()"""

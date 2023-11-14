@@ -61,8 +61,13 @@ OrderedLoader.add_constructor(
     _construct_mapping)
 
 
-_DEFAULT_STAFF_FILE = 'packages/staff.yaml'
-_DEFAULT_MODULES_FILE = 'packages/modules.yaml'
+_DEFAULT_PKG_DIR = 'packages'
+_DEFAULT_STAFF_FILE = os.path.join(_DEFAULT_PKG_DIR, 'staff.yaml')
+_DEFAULT_MODULES_FILE = os.path.join(_DEFAULT_PKG_DIR, 'modules.yaml')
+_DEFAULT_VM_CPU = 'host'
+_DEFAULT_VM_CPUS = 4
+_DEFAULT_VM_ADDRESS = '10.0.2.15'
+_DEFAULT_QEMU_CMD = 'qemu-system-x86_64'
 
 class Config():
     """
@@ -84,7 +89,7 @@ class Config():
             'default':   _DEFAULT_MODULES_FILE,
         },
         'packages_dir': {
-            'default':  'packages',
+            'default':   _DEFAULT_PKG_DIR,
         },
         'annex': {
             'required': True,
@@ -101,7 +106,7 @@ class Config():
         'version': {},
         'maintainer':  {},
         'qemu': {
-            'default':  'qemu-system-x86_64',
+            'default':  _DEFAULT_QEMU_CMD,
         },
         'vm_image':    {
             'required': True,
@@ -115,14 +120,14 @@ class Config():
             'check':    'digit',
         },
         'vm_cpu': {
-            'default':  'host',
+            'default':  _DEFAULT_VM_CPU,
         },
         'vm_cpus': {
             'check':    'digit',
-            'default':  4,
+            'default':  _DEFAULT_VM_CPUS,
         },
         'vm_address': {
-            'default':  '10.0.2.15',
+            'default':  _DEFAULT_VM_ADDRESS,
         },
         'gerrit_realm': {},
         'gerrit_server': {},

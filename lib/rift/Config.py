@@ -68,6 +68,7 @@ _DEFAULT_VM_CPU = 'host'
 _DEFAULT_VM_CPUS = 4
 _DEFAULT_VM_ADDRESS = '10.0.2.15'
 _DEFAULT_QEMU_CMD = 'qemu-system-x86_64'
+_DEFAULT_REPO_CMD = 'createrepo_c'
 
 class Config():
     """
@@ -107,6 +108,9 @@ class Config():
         'maintainer':  {},
         'qemu': {
             'default':  _DEFAULT_QEMU_CMD,
+        },
+        'createrepo': {
+            'default':  _DEFAULT_REPO_CMD,
         },
         'vm_image':    {
             'required': True,

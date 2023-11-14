@@ -10,7 +10,7 @@ from rift import DeclError
 from rift.Config import Staff, Modules, Config, _DEFAULT_PKG_DIR, \
                          _DEFAULT_STAFF_FILE, _DEFAULT_MODULES_FILE, \
                          _DEFAULT_VM_CPU, _DEFAULT_VM_CPUS, _DEFAULT_VM_ADDRESS, \
-                         _DEFAULT_QEMU_CMD
+                         _DEFAULT_QEMU_CMD, _DEFAULT_REPO_CMD
 
 class ConfigTest(RiftTestCase):
 
@@ -31,6 +31,7 @@ class ConfigTest(RiftTestCase):
                          'default value')
         # Default external tools path
         self.assertEqual(config.get('qemu'), _DEFAULT_QEMU_CMD)
+        self.assertEqual(config.get('createrepo'), _DEFAULT_REPO_CMD)
 
     def test_get_set(self):
         """simple set() and get()"""

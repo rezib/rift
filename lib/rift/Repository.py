@@ -55,6 +55,7 @@ class RemoteRepository():
         self.module_hotfixes = config.get('module_hotfixes')
         self.excludepkgs = config.get('excludepkgs')
         self.proxy = config.get('proxy')
+        self.createrepo = config.get('createrepo')
 
     def is_file(self):
         """True if repository URL looks like a file URI."""
@@ -106,13 +107,13 @@ class Repository(RemoteRepository):
 
     def update(self):
         """Update the repository metadata."""
-        cmd = ['createrepo', '-q', '--update', self.rpms_dir]
+        cmd = [self.createrepo, '-q', '--update', self.rpms_dir]
         popen = Popen(cmd, stdout=PIPE, stderr=STDOUT, universal_newlines=True)
         stdout = popen.communicate()[0]
         if popen.returncode != 0:
             raise RiftError(stdout)
 
-        cmd = ['createrepo', '-q', '--update', self.srpms_dir]
+        cmd = [self.createrepo, '-q', '--update', self.srpms_dir]
         popen = Popen(cmd, stdout=PIPE, stderr=STDOUT, universal_newlines=True)
         stdout = popen.communicate()[0]
         if popen.returncode != 0:

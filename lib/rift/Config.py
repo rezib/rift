@@ -248,13 +248,17 @@ class Config():
 
         # Check type
         check = self.SYNTAX[key].get('check', 'string')
-        assert check in ('string', 'dict', 'digit')
+        assert check in ('string', 'dict', 'list', 'digit')
         if check == 'string':
             if not isinstance(value, str):
                 raise DeclError("Bad data type %s for '%s'" % (value.__class__.__name__, key))
             self.options[key] = str(value)
         elif check == 'dict':
             if not isinstance(value, dict):
+                raise DeclError("Bad data type %s for '%s'" % (value.__class__.__name__, key))
+            self.options[key] = value
+        elif check == 'list':
+            if not isinstance(value, list):
                 raise DeclError("Bad data type %s for '%s'" % (value.__class__.__name__, key))
             self.options[key] = value
         elif check == 'digit':

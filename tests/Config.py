@@ -44,6 +44,12 @@ class ConfigTest(RiftTestCase):
         config.set('repos', {'os': 'http://myserver/pub'})
         self.assertEqual(config.get('repos'), {'os': 'http://myserver/pub'})
 
+        # set a 'list' (with fictive param)
+        Config.SYNTAX.update({'param_list': { 'check': 'list'}})
+        config.set('param_list', ['value1', 'value2'])
+        self.assertEqual(config.get('param_list'), ['value1', 'value2'])
+
+
     def test_set_bad_type(self):
         """set() using wrong type raises an error"""
         self.assert_except(DeclError, "Bad data type str for 'vm_cpus'",
@@ -53,6 +59,11 @@ class ConfigTest(RiftTestCase):
         # Default check is 'string'
         self.assert_except(DeclError, "Bad data type int for 'arch'",
                            Config().set, 'arch', 42)
+        # Check bad list type (with fictive param)
+        Config.SYNTAX.update({'param_list': { 'check': 'list'}})
+        self.assert_except(DeclError,
+                           "Bad data type str for 'param_list'",
+                           Config().set, 'param_list', 'a string')
 
     def test_set_bad_key(self):
         """set() an undefined key raises an error"""

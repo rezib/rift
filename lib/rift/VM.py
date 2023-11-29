@@ -107,7 +107,7 @@ class VM():
             cmd += ['of=%s' % self._tmpimg.name]
         else:
             # Create qcow image for VM, based on temp file
-            cmd = ['qemu-img', 'create', '-f', 'qcow2']
+            cmd = ['qemu-img', 'create', '-f', 'qcow2', '-F', 'qcow2']
             cmd += ['-o', 'backing_file=%s' % os.path.realpath(self._image)]
             cmd += [self._tmpimg.name]
 
@@ -149,7 +149,7 @@ class VM():
                 % imgfile]
 
         # Console
-        cmd += ['-chardev', 'socket,id=charserial0,path=%s,server,nowait'
+        cmd += ['-chardev', 'socket,id=charserial0,path=%s,server=on,wait=off'
                 % (self.consolesock)]
         if self.arch == 'aarch64':
             cmd += ['-device', 'virtio-serial,id=ser0,max_ports=8']

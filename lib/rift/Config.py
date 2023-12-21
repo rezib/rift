@@ -64,7 +64,6 @@ OrderedLoader.add_constructor(
 _DEFAULT_PKG_DIR = 'packages'
 _DEFAULT_STAFF_FILE = os.path.join(_DEFAULT_PKG_DIR, 'staff.yaml')
 _DEFAULT_MODULES_FILE = os.path.join(_DEFAULT_PKG_DIR, 'modules.yaml')
-_DEFAULT_VM_CPU = 'host'
 _DEFAULT_VM_CPUS = 4
 _DEFAULT_VM_ADDRESS = '10.0.2.15'
 _DEFAULT_QEMU_CMD = 'qemu-system-x86_64'
@@ -123,9 +122,7 @@ class Config():
         'vm_port': {
             'check':    'digit',
         },
-        'vm_cpu': {
-            'default':  _DEFAULT_VM_CPU,
-        },
+        'vm_cpu': {},
         'vm_cpus': {
             'check':    'digit',
             'default':  _DEFAULT_VM_CPUS,

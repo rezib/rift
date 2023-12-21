@@ -77,10 +77,10 @@ class VM():
         self.arch = config.get('arch')
 
         # default emulated cpu architecture
-        if self.arch == 'x86_64':
-            self.cpu_type = config.get('vm_cpu', 'host')
-        else:
+        if self.arch == 'aarch64':
             self.cpu_type = config.get('vm_cpu', 'cortex-a72')
+        else:
+            self.cpu_type = config.get('vm_cpu', 'host')
 
         # Specific aarch64 options
         self.arch_efi_bios = config.get('arch_efi_bios', ARCH_EFI_BIOS)

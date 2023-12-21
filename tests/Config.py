@@ -9,7 +9,7 @@ from TestUtils import make_temp_file, make_temp_dir, RiftTestCase
 from rift import DeclError
 from rift.Config import Staff, Modules, Config, _DEFAULT_PKG_DIR, \
                          _DEFAULT_STAFF_FILE, _DEFAULT_MODULES_FILE, \
-                         _DEFAULT_VM_CPU, _DEFAULT_VM_CPUS, _DEFAULT_VM_ADDRESS, \
+                         _DEFAULT_VM_CPUS, _DEFAULT_VM_ADDRESS, \
                          _DEFAULT_QEMU_CMD, _DEFAULT_REPO_CMD
 
 class ConfigTest(RiftTestCase):
@@ -22,7 +22,6 @@ class ConfigTest(RiftTestCase):
         self.assertEqual(config.get('packages_dir'), _DEFAULT_PKG_DIR)
         self.assertEqual(config.get('staff_file'), _DEFAULT_STAFF_FILE)
         self.assertEqual(config.get('modules_file'), _DEFAULT_MODULES_FILE)
-        self.assertEqual(config.get('vm_cpu'), _DEFAULT_VM_CPU)
         self.assertEqual(config.get('vm_cpus'), _DEFAULT_VM_CPUS)
         self.assertEqual(config.get('vm_address'), _DEFAULT_VM_ADDRESS)
 

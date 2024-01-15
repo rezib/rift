@@ -734,6 +734,7 @@ def action(config, args):
             try:
                 action_build(config, args, pkg, repo, suppl_repos)
             except RiftError as ex:
+                logging.info("Build failure: %s", str(ex))
                 results.add_failure('build', pkg.name, time.time() - now, str(ex))
             else:
                 results.add_success('build', pkg.name, time.time() - now)

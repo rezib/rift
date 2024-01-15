@@ -123,6 +123,18 @@ class Config():
         'createrepo': {
             'default':  _DEFAULT_REPO_CMD,
         },
+        'gpg': {
+            'check':    'dict',
+            'syntax': {
+                'keyring': {
+                    'required': True,
+                },
+                'passphrase': {},
+                'key': {
+                    'required': True,
+                }
+            }
+        },
         'vm_image':    {
             'required': True,
             # XXX?: default value?

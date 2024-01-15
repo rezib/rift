@@ -46,6 +46,9 @@ class ConfigTest(RiftTestCase):
         self.assertEqual(config.get('qemu'), _DEFAULT_QEMU_CMD)
         self.assertEqual(config.get('createrepo'), _DEFAULT_REPO_CMD)
 
+        # Default gpg settings
+        self.assertEqual(config.get('gpg'), None)
+
     def test_get_set(self):
         """simple set() and get()"""
         config = Config()
@@ -64,7 +67,6 @@ class ConfigTest(RiftTestCase):
         # set a 'enum'
         config.set('shared_fs_type', 'virtiofs')
         self.assertEqual(config.get('shared_fs_type'), 'virtiofs')
-
 
     def test_set_bad_type(self):
         """set() using wrong type raises an error"""
@@ -433,6 +435,84 @@ class ConfigTest(RiftTestCase):
             _DEFAULT_VM_PORT_RANGE_MIN
         )
         self.assertEqual(config.get('vm_port_range').get('max'), 30000)
+
+    def test_load_gpg(self):
+        """Load gpg parameters"""
+        # Check without passphrase
+        cfgfile = make_temp_file(
+            textwrap.dedent(
+                """
+                annex: /a/dir
+                vm_image: /a/image.img
+                gpg:
+                  keyring: /path/to/keyring
+                  key: rift
+                """
+            )
+        )
+        config = Config()
+        config.load(cfgfile.name)
+        self.assertEqual(config.get('gpg').get('keyring'), '/path/to/keyring')
+        self.assertEqual(config.get('gpg').get('key'), 'rift')
+        self.assertEqual(config.get('gpg').get('passphrase'), None)
+
+        # Check with passphrase
+        cfgfile = make_temp_file(
+            textwrap.dedent(
+                """
+                annex: /a/dir
+                vm_image: /a/image.img
+                gpg:
+                  keyring: /path/to/keyring
+                  key: rift
+                  passphrase: secr3t
+                """
+            )
+        )
+        config = Config()
+        config.load(cfgfile.name)
+        self.assertEqual(config.get('gpg').get('keyring'), '/path/to/keyring')
+        self.assertEqual(config.get('gpg').get('key'), 'rift')
+        self.assertEqual(config.get('gpg').get('passphrase'), 'secr3t')
+
+    def test_load_gpg_missing_keyring_or_key(self):
+        """Skip gpg parameters load if missing keyring or key"""
+        # Check missing both key and keyring or one of them
+        for gpg_config in ['{}', '{keyring: /path/to/keyring}', '{key: rift}']:
+            cfgfile = make_temp_file(
+                textwrap.dedent(
+                    f"""
+                    annex: /a/dir
+                    vm_image: /a/image.img
+                    gpg: {gpg_config}
+                    """
+                )
+            )
+            config = Config()
+            with self.assertRaisesRegex(
+                    DeclError,
+                    '^Key (key|keyring) is required in dict parameter gpg$'
+                ):
+                config.load(cfgfile.name)
+            self.assertEqual(config.get('gpg'), None)
+
+    def test_load_gpg_unknown_key(self):
+        """Load gpg parameters raise DeclError if unknown key"""
+        cfgfile = make_temp_file(
+            textwrap.dedent(
+                """
+                annex: /a/dir
+                vm_image: /a/image.img
+                gpg:
+                  epic: fail
+                  keyring: /path/to/keyring
+                  key: rift
+                """
+            )
+        )
+        config = Config()
+        with self.assertRaisesRegex(DeclError, '^Unknown gpg keys: epic$'):
+            config.load(cfgfile.name)
 
 
 class ConfigTestSyntax(RiftTestCase):

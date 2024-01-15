@@ -166,7 +166,7 @@ class Mock():
         """
         pathname = os.path.join(self.MOCK_RESULT % self._mockname, pattern)
         for filepath in glob.glob(pathname):
-            rpm = RPM(filepath)
+            rpm = RPM(filepath, config=self._config)
             if sources or not rpm.is_source:
                 yield rpm
 
@@ -181,7 +181,7 @@ class Mock():
         self._init_tmp_conf()
         self._exec(['--scrub=all'])
 
-    def build_srpm(self, specpath, sourcedir):
+    def build_srpm(self, specpath, sourcedir, sign):
         """
         Build a source RPM using the provided spec file and source directory.
         """
@@ -191,17 +191,27 @@ class Mock():
         cmd += ['--no-clean', '--no-cleanup-after']
         cmd += ['--spec', specpath, '--source', sourcedir]
         self._exec(cmd)
-        # XXX: Could be better if we do not use glob() here
-        return list(self.resultrpms('*.src.rpm'))[0]
+        package = list(self.resultrpms('*.src.rpm'))[0]
+        # Sign source package
+        if sign:
+            package.sign()
 
-    def build_rpms(self, srpm):
+        return package
+
+    def build_rpms(self, srpm, sign):
         """Build binary RPMS using the provided Source RPM pointed by `srpm'"""
         cmd = ['--no-clean', '--no-cleanup-after']
         cmd += [srpm.filepath]
         self._exec(cmd)
 
+        packages = list(self.resultrpms('*.rpm', sources=False))
+        # Sign all built binary packages
+        if sign:
+            for package in packages:
+                package.sign()
+
         # Return the list of built RPMs here.
-        return list(self.resultrpms('*.rpm', sources=False))
+        return packages
 
     def publish(self, repo):
         """

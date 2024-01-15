@@ -136,10 +136,18 @@ def make_parser():
                         help='package name to build')
     subprs.add_argument('-p', '--publish', action='store_true',
                         help='publish build RPMS to repository')
+    subprs.add_argument('-s', '--sign', action='store_true',
+                        help='sign built packages with GPG key '
+                             '(implies -p, --publish)')
     subprs.add_argument('--junit', metavar='FILENAME',
                         help='write junit result file')
     subprs.add_argument('--dont-update-repo', dest='updaterepo', action='store_false',
                         help='do not update repository metadata when publishing a package')
+
+    # Sign options
+    subprs = subparsers.add_parser('sign', help='Sign RPM package with GPG key.')
+    subprs.add_argument('packages', metavar='PACKAGE', nargs='*',
+                        help='package to sign.')
 
     # Test options
     subprs = subparsers.add_parser('test', help='execute package tests')
@@ -156,6 +164,9 @@ def make_parser():
     subprs = subparsers.add_parser('validate', help='Fully validate package')
     subprs.add_argument('packages', metavar='PACKAGE', nargs='*',
                         help='package name to validate')
+    subprs.add_argument('-s', '--sign', action='store_true',
+                        help='sign built packages with GPG key '
+                             '(implies -p, --publish)')
     subprs.add_argument('--noquit', action='store_true',
                         help='do not stop VM at the end')
     subprs.add_argument('--noauto', action='store_true',
@@ -168,6 +179,9 @@ def make_parser():
     # Validate diff
     subprs = subparsers.add_parser('validdiff')
     subprs.add_argument('patch', metavar='PATCH', type=argparse.FileType('r'))
+    subprs.add_argument('-s', '--sign', action='store_true',
+                        help='sign built packages with GPG key '
+                             '(implies -p, --publish)')
     subprs.add_argument('--noquit', action='store_true',
                         help='do not stop VM at the end')
     subprs.add_argument('--noauto', action='store_true',
@@ -435,11 +449,11 @@ def build_pkg(config, args, pkg, arch):
     mock.init(repos.all)
 
     message("Building SRPM...")
-    srpm = pkg.build_srpm(mock)
+    srpm = pkg.build_srpm(mock, args.sign)
     logging.info("Built: %s", srpm.filepath)
 
     message("Building RPMS...")
-    for rpm in pkg.build_rpms(mock, srpm):
+    for rpm in pkg.build_rpms(mock, srpm, args.sign):
         logging.info('Built: %s', rpm.filepath)
     message("RPMS successfully built")
 
@@ -575,12 +589,12 @@ def validate_pkgs(config, args, results, pkgs, arch):
             now = time.time()
             # Check build SRPM
             message('Validate source RPM build...')
-            srpm = pkg.build_srpm(mock)
+            srpm = pkg.build_srpm(mock, args.sign)
 
             # Check build RPMS
             message('Validate RPMS build...')
             case = TestCase('build', pkg.name, arch)
-            pkg.build_rpms(mock, srpm)
+            pkg.build_rpms(mock, srpm, args.sign)
         except RiftError as ex:
             logging.info("Build failure: %s", str(ex))
             results.add_failure(case, time.time() - now, str(ex))
@@ -699,6 +713,10 @@ def action_vm(args, config):
 def action_build(args, config):
     """Action for 'build' command."""
 
+    # Option --sign implies --publish.
+    if args.sign:
+        args.publish = True
+
     # Check working repo is properly defined if publish arg is used or raise
     # RiftError
     if args.publish and config.get('working_repo') is None:
@@ -749,6 +767,14 @@ def action_build(args, config):
         return 2
     return 0
 
+def action_sign(args, config):
+    """Action for 'sign' command."""
+    for package in args.packages:
+        banner(f"Signing package {package} with GPG key")
+        rpm = RPM(package, config)
+        rpm.sign()
+    return 0
+
 def action_test(args, config):
     """Action for 'test' command."""
     staff, modules = staff_modules(config)
@@ -777,6 +803,11 @@ def action_test(args, config):
 
 def action_validate(args, config):
     """Action for 'validate' command."""
+
+    # Option --sign implies --publish.
+    if args.sign:
+        args.publish = True
+
     staff, modules = staff_modules(config)
     results = TestResults('validate')
     # Validate packages on all project supported architectures
@@ -805,6 +836,11 @@ def action_validate(args, config):
 
 def action_validdiff(args, config):
     """Action for 'validdiff' command."""
+
+    # Option --sign implies --publish.
+    if args.sign:
+        args.publish = True
+
     staff, modules = staff_modules(config)
     # Get updated and removed packages from patch
     (updated, removed) = get_packages_from_patch(
@@ -989,6 +1025,10 @@ def action(config, args):
     # BUILD
     elif args.command == 'build':
         return action_build(args, config)
+
+    # SIGN
+    elif args.command == 'sign':
+        return action_sign(args, config)
 
     # TEST
     elif args.command == 'test':

@@ -4,10 +4,17 @@
 import os
 import time
 import rpm
+import shutil
+import subprocess
 
-from TestUtils import make_temp_dir, gen_rpm_spec, RiftTestCase
+from TestUtils import (
+    make_temp_dir,
+    gen_rpm_spec,
+    RiftTestCase,
+    RiftProjectTestCase,
+)
 from rift import RiftError
-from rift.RPM import Spec, Variable, RPMLINT_CONFIG
+from rift.RPM import Spec, Variable, RPMLINT_CONFIG, RPM
 
 class SpecTest(RiftTestCase):
     """
@@ -179,3 +186,213 @@ class VariableTest(RiftTestCase):
         buff = ['']
         var.spec_output(buff)
         self.assertTrue(buff[0] == '%define foo bar\n')
+
+
+class RPMTest(RiftProjectTestCase):
+    """ Test RPM class """
+    def setUp(self):
+        super().setUp()
+        tests_dir = os.path.dirname(os.path.abspath(__file__))
+        self.bin_rpm = os.path.join(
+            tests_dir, 'materials', 'pkg-1.0-1.noarch.rpm'
+        )
+        self.src_rpm = os.path.join(
+            tests_dir, 'materials', 'pkg-1.0-1.src.rpm'
+        )
+
+    def test_load(self):
+        """RPM initializer works with bin/src RPM with/without conf."""
+        # test load bin RPM without config
+        rpm = RPM(self.bin_rpm)
+        self.assertEquals(rpm.name, 'pkg')
+        self.assertEquals(rpm.arch, 'noarch')
+        self.assertEquals(rpm.is_source, False)
+
+        # test load src RPM with config
+        rpm = RPM(self.src_rpm, self.config)
+        self.assertEquals(rpm.name, 'pkg')
+        self.assertEquals(rpm.arch, 'noarch')
+        self.assertEquals(rpm.is_source, True)
+
+    def test_extract_srpm(self):
+        """RPM.extract_srpm() extracts files from source RPM."""
+        rpm = RPM(self.src_rpm, self.config)
+        specdir = make_temp_dir()
+        srcdir = make_temp_dir()
+
+        # Extract source RPM
+        rpm.extract_srpm(specdir, srcdir)
+
+        # Verify files have been properly extracted
+        for spec in ['pkg.spec', 'pkg.spec.orig']:
+            self.assertTrue(os.path.exists(os.path.join(specdir, spec)))
+        self.assertTrue(os.path.exists(os.path.join(srcdir, 'pkg-1.0.tar.gz')))
+
+        # Clean up everything
+        shutil.rmtree(specdir)
+        shutil.rmtree(srcdir)
+
+    def test_extract_srpm_on_bin(self):
+        """RPM.extract_srpm() raises assertion error with binary RPM."""
+        rpm = RPM(self.bin_rpm, self.config)
+        with self.assertRaises(AssertionError):
+            rpm.extract_srpm(None, None)
+
+    def test_sign_no_conf(self):
+        """RPM.sign() fail with nonexistent keyring."""
+        rpm = RPM(self.src_rpm, self.config)
+        with self.assertRaisesRegex(
+            RiftError,
+            "^Unable to retrieve GPG configuration, unable to sign package "
+            ".*\.rpm$"
+        ):
+            rpm.sign()
+
+    def test_sign_no_keyring(self):
+        """RPM.sign() fail with nonexistent keyring."""
+        self.config.options.update(
+            {
+                'gpg': {
+                  'keyring': '/path/to/nonexistent/keyring',
+                  'key': 'rift',
+                }
+            }
+        )
+        self.config._check()
+        rpm = RPM(self.src_rpm, self.config)
+        with self.assertRaisesRegex(
+            RiftError,
+            "^GPG keyring path /path/to/nonexistent/keyring does not exist, "
+            "unable to sign package .*\.rpm$"
+        ):
+            rpm.sign()
+
+    def sign_copy(self, gpg_passphrase, rpm_pkg, conf_passphrase=None, preset_passphrase=None):
+        """
+        Generate keyring with provided gpg passphrase, update configuration with
+        generated keyring, copy unsigned rpm_pkg, sign it, verify signature and
+        cleanup everything.
+        """
+        gpg_home = os.path.join(self.projdir, '.gnupg')
+
+        # Launch the agent with --allow-preset-passphrase to accept passphrase
+        # provided non-interactively by gpg-preset-passphrase.
+        cmd = [
+          'gpg-agent',
+          '--homedir',
+          gpg_home,
+          '--allow-preset-passphrase',
+          '--daemon',
+        ]
+        subprocess.run(cmd)
+
+        # Generate keyring
+        gpg_key = 'rift'
+        cmd = [
+            'gpg',
+            '--homedir',
+            gpg_home,
+            '--batch',
+            '--passphrase',
+            gpg_passphrase or '',
+            '--quick-generate-key',
+            gpg_key,
+        ]
+        subprocess.run(cmd)
+
+        # If preset passphrase is provided, add it to the agent
+        # non-interactively with gpg-preset-passphrase.
+        if preset_passphrase:
+            # First find keygrip
+            keygrip = None
+            cmd = [
+                'gpg',
+                '--homedir',
+                gpg_home,
+                '--fingerprint',
+                '--with-keygrip',
+                '--with-colons',
+                gpg_key
+            ]
+            proc = subprocess.run(cmd, stdout=subprocess.PIPE)
+            for line in proc.stdout.decode().split('\n'):
+                if line.startswith('grp'):
+                    keygrip = line.split(':')[9]
+                    break
+            # Run gpg-preset-passphrase to add passphrase in agent
+            cmd = ['/usr/libexec/gpg-preset-passphrase', '--preset', keygrip]
+            subprocess.run(
+                cmd,
+                env={'GNUPGHOME': gpg_home},
+                input=preset_passphrase.encode()
+            )
+
+        # Update project configuration with generated key
+        self.config.options.update(
+            {
+                'gpg': {
+                    'keyring': gpg_home,
+                    'key': gpg_key,
+                }
+            }
+        )
+
+        if conf_passphrase is not None:
+            self.config.options['gpg']['passphrase'] = conf_passphrase
+        self.config._check()
+
+        # Copy provided rpm_pkg in temporary project directory
+        rpm_copy = os.path.join(self.projdir, os.path.basename(rpm_pkg))
+        shutil.copy(rpm_pkg, rpm_copy)
+
+        # Load RPM package, verify it is not signed and sign it
+        rpm = RPM(rpm_copy, self.config)
+        self.assertFalse(rpm.is_signed)
+        try:
+            os.environ['GNUPGHOME'] = gpg_home
+            rpm.sign()
+            del os.environ['GNUPGHOME']
+            # Reload RPM package and check signature
+            rpm._load()
+            self.assertTrue(rpm.is_signed)
+        finally:
+            # Remove signed copy of RPM package and keyring
+            os.remove(rpm_copy)
+
+            # Kill GPG agent launched for the test
+            cmd = ['gpgconf', '--homedir', gpg_home, '--kill', 'gpg-agent']
+            subprocess.run(cmd)
+
+            # Remove temporary GPG home with generated key
+            shutil.rmtree(gpg_home)
+
+    def test_sign_src_rpm(self):
+        """Source RPM package signature."""
+        self.sign_copy('TOPSECRET', self.src_rpm, 'TOPSECRET')
+
+    def test_sign_bin_rpm(self):
+        """Binary RPM package signature."""
+        self.sign_copy('TOPSECRET', self.bin_rpm, 'TOPSECRET')
+
+    def test_sign_wrong_passphrase(self):
+        """Package signature raises RiftError with wrong passphrase."""
+        with self.assertRaisesRegex(
+            RiftError,
+            "^Error with signing package.*"
+        ):
+            self.sign_copy('TOPSECRET', self.src_rpm, 'WRONG_PASSPHRASE')
+
+    def test_sign_passphrase_agent_not_interactive(self):
+        """Package signature with passphrase in agent not interactive."""
+        # When the key is encrypted with passphrase, the passphrase is not set
+        # in Rift configuration but loaded in GPG agent, Rift must sign the
+        # package without making the agent launch pinentry to ask for the
+        # passphrase interactively.
+        self.sign_copy('TOPSECRET', self.src_rpm, preset_passphrase='TOPSECRET')
+
+    def test_sign_empty_passphrase_not_interactive(self):
+        """Package signature with empty passphrase no interactive passphrase."""
+        # When the key is NOT encrypted with passphrase, Rift must sign the
+        # package without making the agent launch pinentry to ask for the
+        # passphrase interactively.
+        self.sign_copy(None, self.src_rpm)

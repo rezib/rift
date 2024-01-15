@@ -176,7 +176,7 @@ class Package():
         for testpath in glob.glob(testspattern):
             yield Test(testpath)
 
-    def build_srpm(self, mock):
+    def build_srpm(self, mock, sign):
         """
         Build package source RPM
         """
@@ -187,16 +187,16 @@ class Package():
         tmpspec = os.path.join(tmpdir.path, os.path.basename(self.specfile))
         shutil.copyfile(self.specfile, tmpspec)
 
-        srpm = mock.build_srpm(tmpspec, tmpdir.path or self.sourcesdir)
+        srpm = mock.build_srpm(tmpspec, tmpdir.path or self.sourcesdir, sign)
         tmpdir.delete()
         return srpm
 
-    def build_rpms(self, mock, srpm):
+    def build_rpms(self, mock, srpm, sign):
         """
         Build package RPMS using provided `srpm' and repository list for build
         requires.
         """
-        return mock.build_rpms(srpm)
+        return mock.build_rpms(srpm, sign)
 
     def supports_arch(self, arch):
         """

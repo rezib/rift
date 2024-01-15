@@ -6,6 +6,7 @@ import os.path
 import shutil
 import atexit
 from unittest.mock import patch, Mock
+import subprocess
 
 from unidiff import parse_unidiff
 from TestUtils import (
@@ -690,6 +691,86 @@ rename to packages/pkgnew/sources/pkgnew-1.0.tar.gz
         # Remove mock build environments
         self.clean_mock_environments()
 
+    def test_action_sign(self):
+        """ Test sign package """
+        gpg_home = os.path.join(self.projdir, '.gnupg')
+
+        # Launch GPG agent for this test
+        cmd = [
+          'gpg-agent',
+          '--homedir',
+          gpg_home,
+          '--daemon',
+        ]
+        subprocess.run(cmd)
+
+        # Generate keyring
+        gpg_key = 'rift'
+        cmd = [
+            'gpg',
+            '--homedir',
+            gpg_home,
+            '--batch',
+            '--passphrase',
+            '',
+            '--quick-generate-key',
+            gpg_key,
+        ]
+        subprocess.run(cmd)
+
+        # Update project configuration with generated key
+        self.config.options.update(
+            {
+                'gpg': {
+                    'keyring': gpg_home,
+                    'key': gpg_key,
+                }
+            }
+        )
+        self.update_project_conf()
+
+        # Path of RPM packages assets
+        tests_dir = os.path.dirname(os.path.abspath(__file__))
+        original_bin_rpm = os.path.join(
+            tests_dir, 'materials', 'pkg-1.0-1.noarch.rpm'
+        )
+        original_src_rpm = os.path.join(
+            tests_dir, 'materials', 'pkg-1.0-1.src.rpm'
+        )
+
+        # Copy RPM packages assets in temporary project directory
+        copy_bin_rpm = os.path.join(self.projdir, os.path.basename(original_bin_rpm))
+        shutil.copy(original_bin_rpm, copy_bin_rpm)
+        copy_src_rpm = os.path.join(self.projdir, os.path.basename(original_src_rpm))
+        shutil.copy(original_src_rpm, copy_src_rpm)
+
+        # Load packages and check they are not signed
+        bin_rpm = RPM(copy_bin_rpm, self.config)
+        src_rpm = RPM(copy_src_rpm, self.config)
+        self.assertFalse(bin_rpm.is_signed)
+        self.assertFalse(src_rpm.is_signed)
+
+        # Launch rift sign
+        os.environ['GNUPGHOME'] = gpg_home
+        self.assertEqual(main(['sign', copy_bin_rpm, copy_src_rpm]), 0)
+        del os.environ['GNUPGHOME']
+
+        # Reload packages and check they are signed now
+        bin_rpm._load()
+        src_rpm._load()
+        self.assertTrue(bin_rpm.is_signed)
+        self.assertTrue(src_rpm.is_signed)
+
+        # Kill GPG agent launched for the test
+        cmd = ['gpgconf', '--homedir', gpg_home, '--kill', 'gpg-agent']
+        subprocess.run(cmd)
+
+        # Remove copy of packages assets
+        os.unlink(copy_bin_rpm)
+        os.unlink(copy_src_rpm)
+
+        # Remove temporary GPG home with generated key
+        shutil.rmtree(gpg_home)
 
 class ControllerArgumentsTest(RiftTestCase):
     """ Arguments parsing tests for Controller module"""

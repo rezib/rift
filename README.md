@@ -16,7 +16,7 @@ To run the unit tests and static analysis, some dependencies are required:
 
 ```sh
 sudo -n dnf -y install rpmlint rpm-python3 python3-pylint python3-jinja2 \
-    python3-nose platform-python-coverage python3-PyYAML python3-rpm \
+    python3-nose platform-python-coverage python3-PyYAML python3-rpm rpm-sign \
     openssh-clients genisoimage qemu qemu-img
 ```
 

@@ -38,7 +38,7 @@ import logging
 import os
 import re
 import shutil
-from subprocess import Popen, PIPE, STDOUT
+from subprocess import Popen, PIPE, STDOUT, run, CalledProcessError
 import time
 
 import rpm
@@ -85,6 +85,7 @@ class RPM():
         self.name = _header_values(hdr[rpm.RPMTAG_NAME])
         self.arch = _header_values(hdr[rpm.RPMTAG_ARCH])
         self.source_rpm = _header_values(hdr[rpm.RPMTAG_SOURCERPM])
+        self.is_signed = hdr[rpm.RPMTAG_SIGPGP] is not None
         self.is_source = hdr.isSource()
         self._srcfiles.extend(_header_values(hdr[rpm.RPMTAG_SOURCE]))
         self._srcfiles.extend(_header_values(hdr[rpm.RPMTAG_PATCH]))
@@ -120,6 +121,61 @@ class RPM():
             filepath = os.path.join(srcdir, filename)
             if is_binary(filepath):
                 annex.push(filepath)
+
+    def sign(self):
+        """
+        Cryptographically sign RPM package with GPG key. Raise RiftError if GPG
+        parameters are missing in project configuration or GPG key is not found.
+        """
+        # GPG parameters not defined in project config, raise RiftError.
+        if self._config is None or self._config.get('gpg') is None:
+            raise RiftError(
+                "Unable to retrieve GPG configuration, unable to sign package "
+                f"{self.filepath}",
+            )
+
+        gpg = self._config.get('gpg')
+        keyring = os.path.expanduser(gpg.get('keyring'))
+
+        # Check gpg_keyring path exists or raise error
+        if not os.path.exists(keyring):
+            raise RiftError(
+                f"GPG keyring path {keyring} does not exist, unable to sign "
+                f"package {self.filepath}"
+            )
+
+        # If passphrase is defined, add the passphrase to gpg sign command
+        # parameters and make it non-interactive.
+        gpg_sign_cmd_passphrase = ""
+        if gpg.get('passphrase') is not None:
+            gpg_sign_cmd_passphrase = (
+                f"--batch --passphrase '{gpg.get('passphrase')}' "
+                "--pinentry-mode loopback"
+            )
+        cmd = [
+            'rpmsign',
+            '--define',
+            f"%_gpg_name {gpg.get('key')}",
+            '--define',
+            f"%_gpg_path {keyring}",
+            '--define',
+            (
+                "%__gpg_sign_cmd %{__gpg} gpg --force-v3-sigs --verbose "
+                f"--no-armor {gpg_sign_cmd_passphrase} --no-secmem-warning "
+                "-u \"%{_gpg_name}\" -sbo %{__signature_filename} "
+                "--digest-algo sha256 %{__plaintext_filename}"
+            ),
+            '--addsign',
+            self.filepath
+        ]
+        # Run rpmsign command and raise error in case of failure.
+        try:
+            run(cmd, check=True)
+        except CalledProcessError as err:
+            raise RiftError(
+                f"Error with signing package {self.filepath} command: "
+                f"{str(err)}"
+            ) from err
 
 
 class Spec():

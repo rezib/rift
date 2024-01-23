@@ -40,22 +40,25 @@ import shutil
 from subprocess import Popen, PIPE, STDOUT
 
 from rift import RiftError
+from rift.Config import _DEFAULT_REPO_CMD
 
 class RemoteRepository():
     """
     Simple container for dealing with read-only remote repository using http or
     ftp.
     """
-    def __init__(self, url, name=None, priority=None, config=None):
+    def __init__(self, url, name=None, priority=None, options=None, config=None):
         self.url = url
         self.name = name
         self.priority = priority
         if config is None:
             config = {}
-        self.module_hotfixes = config.get('module_hotfixes')
-        self.excludepkgs = config.get('excludepkgs')
-        self.proxy = config.get('proxy')
-        self.createrepo = config.get('createrepo')
+        if options is None:
+            options = {}
+        self.module_hotfixes = options.get('module_hotfixes')
+        self.excludepkgs = options.get('excludepkgs')
+        self.proxy = options.get('proxy', config.get('proxy'))
+        self.createrepo = config.get('createrepo', _DEFAULT_REPO_CMD)
 
     def is_file(self):
         """True if repository URL looks like a file URI."""
@@ -86,14 +89,18 @@ class Repository(RemoteRepository):
     Metadata are created using 'createrepo' tool.
     """
 
-    def __init__(self, path, arch, name=None, config=None):
+    def __init__(self, path, arch, name=None, options=None, config=None):
         self.path = os.path.realpath(path)
         self.srpms_dir = os.path.join(self.path, 'SRPMS')
         rpms_dir = os.path.join(self.path, arch)
 
         name = name or os.path.basename(self.path)
         url = 'file://%s' % os.path.realpath(rpms_dir)
-        RemoteRepository.__init__(self, url, name=name, config=config)
+        RemoteRepository.__init__(self,
+                                  url,
+                                  name=name,
+                                  options=options,
+                                  config=config)
 
     def create(self):
         """Create repository directory structure and metadata."""

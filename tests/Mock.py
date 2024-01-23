@@ -29,7 +29,11 @@ class MockTest(RiftTestCase):
                         'proxy': 'myproxy',
                     }
         mock = Mock(_config)
-        repolist.append(Repository('/tmp', arch, name='tmp', config=_repo_config))
+        repolist.append(Repository('/tmp',
+                                    arch,
+                                    name='tmp',
+                                    options=_repo_config,
+                                    config=_config))
         context = mock._build_template_ctx(repolist)
         self.assertEqual(context['name'], 'rift-{}'.format(getpass.getuser()))
         self.assertEqual(context['arch'], arch)

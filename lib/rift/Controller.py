@@ -523,10 +523,12 @@ def action_validate(config, args, pkgs, wkrepo, suppl_repos):
         logging.info('Creating temporary repository')
         stagedir = TempDir('stagedir')
         stagedir.create()
+        staging_repo_options = {'module_hotfixes': "true"}
         staging = Repository(path=stagedir.path,
                              arch=config.get('arch'),
                              name='staging',
-                             config={"module_hotfixes": "true"})
+                             options=staging_repo_options,
+                             config=config)
         staging.create()
 
         message('Preparing Mock environment...')
@@ -645,10 +647,12 @@ def action(config, args):
 
     # Repo objects
     if config.get('working_repo'):
+        working_repo_options = {'module_hotfixes': "true"}
         repo = Repository(path=config.get('working_repo'),
                           arch=config.get('arch'),
                           name='working',
-                          config={"module_hotfixes": "true"})
+                          options=working_repo_options,
+                          config=config)
         repos = [repo]
     else:
         repo = None
@@ -656,12 +660,13 @@ def action(config, args):
     suppl_repos = []
     for name, data in config.get('repos').items():
         if isinstance(data, str):
-            suppl_repos.append(RemoteRepository(data, name))
+            suppl_repos.append(RemoteRepository(data, name, config=config))
         else:
             remote = RemoteRepository(data['url'],
                                       name=name,
                                       priority=data.get('priority'),
-                                      config=data)
+                                      options=data,
+                                      config=config)
             suppl_repos.append(remote)
 
     # VM

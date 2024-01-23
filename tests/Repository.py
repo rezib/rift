@@ -4,6 +4,7 @@
 
 from TestUtils import make_temp_dir, RiftTestCase
 from rift.Repository import Repository, RemoteRepository
+from rift.Config import _DEFAULT_REPO_CMD
 
 class RepositoryTest(RiftTestCase):
     """
@@ -24,18 +25,23 @@ class RepositoryTest(RiftTestCase):
         self.assertEqual(repo.module_hotfixes, None)
         self.assertEqual(repo.excludepkgs, None)
         self.assertEqual(repo.proxy, None)
+        self.assertEqual(repo.createrepo, _DEFAULT_REPO_CMD)
 
 
     def test_init_with_config(self):
         """ Test Repository instanciation with a specific configuration """
-        _config={
-                'module_hotfixes': True,
-                'excludepkgs': 'somepkg',
-                'proxy': 'myproxy',
-                }
+        _config = { 'createrepo': 'mycustom_create_repo' }
+        _options = {
+                    'module_hotfixes': True,
+                    'excludepkgs': 'somepkg',
+                    'proxy': 'myproxy',
+                   }
         arch = 'x86_64'
-        repo_name='nowhere'
-        repo = Repository('/{}'.format(repo_name), arch, config=_config)
+        repo_name = 'nowhere'
+        repo = Repository('/{}'.format(repo_name),
+                          arch,
+                          options=_options,
+                          config=_config)
 
         self.assertEqual(repo.name, repo_name)
         self.assertEqual(repo.path, '/{}'.format(repo_name))
@@ -45,6 +51,7 @@ class RepositoryTest(RiftTestCase):
         self.assertEqual(repo.module_hotfixes, True)
         self.assertEqual(repo.excludepkgs, 'somepkg')
         self.assertEqual(repo.proxy, 'myproxy')
+        self.assertEqual(repo.createrepo, _config['createrepo'])
 
 
 class RemoteRepositoryTest(RiftTestCase):

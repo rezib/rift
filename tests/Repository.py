@@ -151,18 +151,12 @@ class LocalRepositoryTest(RiftTestCase):
             repo.update()
         shutil.rmtree(local_repo_path)
 
-    def test_add(self):
-        """ Test LocalRepository add """
-        archs = ['x86_64', 'aarch64']
-        _config = { 'arch': archs }
-        repo_name = 'nowhere'
-        local_repo_path = make_temp_dir()
-        repo = LocalRepository(local_repo_path, _config)
-
-        # Create repository
-        repo.create()
+    @staticmethod
+    def _add_packages(repo):
+        """
+        Add packages from tests materials to repository and return RPM objects.
+        """
         tests_dir = os.path.dirname(os.path.abspath(__file__))
-
         # Add source and binary packages from tests materials
         src_rpm = RPM(
             os.path.join(tests_dir, 'materials', 'pkg-1.0-1.src.rpm')
@@ -175,6 +169,20 @@ class LocalRepositoryTest(RiftTestCase):
 
         # Update repository
         repo.update()
+
+        return src_rpm, bin_rpm
+
+    def test_add(self):
+        """ Test LocalRepository add """
+        archs = ['x86_64', 'aarch64']
+        _config = { 'arch': archs }
+        repo_name = 'nowhere'
+        local_repo_path = make_temp_dir()
+        repo = LocalRepository(local_repo_path, _config)
+
+        # Create repository and add packages
+        repo.create()
+        (src_rpm, bin_rpm) = self._add_packages(repo)
 
         # Verify packages are present
         for arch in archs:
@@ -195,6 +203,47 @@ class LocalRepositoryTest(RiftTestCase):
             )
         )
 
+        shutil.rmtree(local_repo_path)
+
+    def test_search(self):
+        """Test search packages on a repository"""
+        archs = ['x86_64', 'aarch64']
+        _config = { 'arch': archs }
+        local_repo_path = make_temp_dir()
+        repo = LocalRepository(local_repo_path, _config)
+
+        # Create repository and add packages
+        repo.create()
+        (src_rpm, bin_rpm) = self._add_packages(repo)
+
+        # Test multiple search in repository
+
+        # With a package name that does not exist in this repos, it must return
+        # 0 result.
+        pkgs = repo.search('fail')
+        self.assertEqual(len(pkgs), 0)
+
+        # With the name of the package in testing materials, it must return 3
+        # results: the source package, the binary package in x86_64 architecture
+        # and the same binary package in aarch64 architecture.
+        pkgs = repo.search('pkg')
+        self.assertEqual(len(pkgs), 3)
+
+        # Verify search results match source and binary packages from tests
+        # materials.
+        for pkg in pkgs:
+            if pkg.is_source:
+                self.assertEqual(
+                    os.path.basename(pkg.filepath),
+                    os.path.basename(src_rpm.filepath)
+                )
+            else:
+                self.assertEqual(
+                    os.path.basename(pkg.filepath),
+                    os.path.basename(bin_rpm.filepath)
+                )
+
+        # Cleanup temporary repository
         shutil.rmtree(local_repo_path)
 
 class ConsumableRepositoryTest(RiftTestCase):

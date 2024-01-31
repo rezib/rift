@@ -67,6 +67,7 @@ class RPM():
         self.name = None
         self.is_source = False
         self.arch = None
+        self.source_rpm = None
         self._srcfiles = []
 
         self._load()
@@ -83,6 +84,7 @@ class RPM():
         # Extract data
         self.name = _header_values(hdr[rpm.RPMTAG_NAME])
         self.arch = _header_values(hdr[rpm.RPMTAG_ARCH])
+        self.source_rpm = _header_values(hdr[rpm.RPMTAG_SOURCERPM])
         self.is_source = hdr.isSource()
         self._srcfiles.extend(_header_values(hdr[rpm.RPMTAG_SOURCE]))
         self._srcfiles.extend(_header_values(hdr[rpm.RPMTAG_PATCH]))

@@ -37,9 +37,12 @@ Helper class for YUM repository structure management.
 import os
 import logging
 import shutil
-from subprocess import Popen, PIPE, STDOUT
+import glob
+from subprocess import Popen, PIPE, STDOUT, run, CalledProcessError
 
 from rift import RiftError
+from rift.RPM import RPM, Spec
+from rift.TempDir import TempDir
 from rift.Config import _DEFAULT_REPO_CMD
 
 class ConsumableRepository():
@@ -154,6 +157,71 @@ class LocalRepository:
         for arch in self.config.get('arch'):
             run_update(self.rpms_dir(arch))
 
+    def search(self, name):
+        """
+        Return a list of RPM packages containing the source RPM packages found
+        in the repository whose name match provided name and all the binary RPM
+        packages reported as built by the spec files of these sources RPM
+        packages and found in the repository.
+        """
+        src_rpms = []
+        logging.debug(
+            'Searching for package %s in repository %s', name, self.path
+        )
+        for srcrpm_p in glob.glob(os.path.join(self.srpms_dir, '*.src.rpm')):
+            src_rpm = RPM(srcrpm_p)
+            if src_rpm.name == name:
+                logging.debug('Source package %s found: %s', name, srcrpm_p)
+                src_rpms.append(src_rpm)
+
+        bin_rpm_names = set()
+
+        # Extract binary packages names from spec files of matching source RPMs
+        for src_rpm in src_rpms:
+            # Extract spec file in tmp directory
+            tmp_dir = TempDir()
+            tmp_dir.create()
+            cmd = [
+                'rpm',
+                '-iv',
+                '--define',
+                f"_topdir {tmp_dir.path}",
+                src_rpm.filepath
+            ]
+            try:
+                run(cmd, check=True)
+            except CalledProcessError as err:
+                raise RiftError(err) from err
+            # Parse spec file
+            spec = Spec(os.path.join(tmp_dir.path,
+                                     'SPECS',
+                                     f"{src_rpm.name}.spec"))
+            # Remove tmp directory
+            tmp_dir.delete()
+            # Merge list of bin package names into bin_rpm_names (and avoid
+            # duplicates)
+            bin_rpm_names |= set(spec.pkgnames)
+
+        logging.debug(
+            'Binary built by source package %s: %s', name, bin_rpm_names
+        )
+
+        # Search all binary RPMs whose name match packages names extracted from
+        # specs.
+        bin_pkgs = []
+
+        for arch in self.config.get('arch'):
+            for bin_rpm_p in glob.glob(
+                    os.path.join(self.rpms_dir(arch), '*.rpm')
+                ):
+                bin_rpm = RPM(bin_rpm_p)
+                if bin_rpm.name in bin_rpm_names:
+                    logging.debug(
+                        'Binary package %s found: %s', name, bin_rpm_p
+                    )
+                    bin_pkgs.append(bin_rpm)
+
+        return src_rpms + bin_pkgs
 
     def add(self, rpm):
         """

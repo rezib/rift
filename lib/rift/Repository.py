@@ -245,6 +245,11 @@ class LocalRepository:
             else:
                 add_bin_arch(rpm.arch)
 
+    def delete(self, rpm):
+        """Delete provided RPM package from repository."""
+        logging.info("Deleting %s from repository %s", rpm.filepath, self.path)
+        os.remove(rpm.filepath)
+
 
 class ProjectArchRepositories:
     """

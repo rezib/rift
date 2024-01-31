@@ -246,6 +246,55 @@ class LocalRepositoryTest(RiftTestCase):
         # Cleanup temporary repository
         shutil.rmtree(local_repo_path)
 
+    def test_delete(self):
+        """Test delete packages on a repository"""
+        archs = ['x86_64', 'aarch64']
+        _config = { 'arch': archs }
+        local_repo_path = make_temp_dir()
+        repo = LocalRepository(local_repo_path, _config)
+
+        # Create repository and add packages
+        repo.create()
+        (src_rpm, bin_rpm) = self._add_packages(repo)
+
+        # Search and retrieve packages from repo
+        pkgs = repo.search('pkg')
+
+        # Search must return 3 results: the source package, the binary package
+        # in x86_64 architecture and the same binary package in aarch64
+        # architecture.
+        self.assertEqual(len(repo.search('pkg')), 3)
+
+        # Delete packages from repository
+        for pkg in pkgs:
+            repo.delete(pkg)
+        repo.update()
+
+        # Verify packages are absent
+        for arch in archs:
+            self.assertFalse(
+                os.path.exists(
+                    os.path.join(
+                        local_repo_path,
+                        arch,
+                        os.path.basename(bin_rpm.filepath)
+                    )
+                )
+            )
+        self.assertFalse(
+            os.path.exists(
+                os.path.join(
+                    local_repo_path, 'SRPMS', os.path.basename(src_rpm.filepath)
+                )
+            )
+        )
+
+        # Verify search does not return any result
+        self.assertEqual(len(repo.search('pkg')), 0)
+
+        # Cleanup temporary repository
+        shutil.rmtree(local_repo_path)
+
 class ConsumableRepositoryTest(RiftTestCase):
     """
     Tests class for ConsumableRepository

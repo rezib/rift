@@ -639,6 +639,24 @@ def vm_build(vm, args, config):
     banner(f"New vm image {output} is ready")
     return 0
 
+def remove_packages(config, args, pkgs_to_remove, arch):
+    """
+    If publish arg is enabled and working_repo is defined, remove packages
+    deleted by patch that are present in this working_repo.
+    """
+    repos = ProjectArchRepositories(config, arch)
+
+    if not args.publish or not repos.can_publish():
+        return
+
+    for pkg in pkgs_to_remove:
+        found_pkgs = repos.working.search(pkg.name)
+        for found_pkg in found_pkgs:
+            repos.working.delete(found_pkg)
+
+    # Update repository metadata
+    repos.working.update()
+
 def action_vm(args, config):
     """Action for 'vm' sub-commands."""
 
@@ -788,12 +806,16 @@ def action_validate(args, config):
 def action_validdiff(args, config):
     """Action for 'validdiff' command."""
     staff, modules = staff_modules(config)
-    pkglist = get_packages_from_patch(args.patch, config=config,
-                                      modules=modules, staff=staff)
+    # Get updated and removed packages from patch
+    (updated, removed) = get_packages_from_patch(
+        args.patch, config=config, modules=modules, staff=staff
+    )
     results = TestResults('validate')
-    # Re-validate each package on all project supported architectures
+    # Re-validate all updated packages for all architectures supported by the
+    # project.
     for arch in config.get('arch'):
-        validate_pkgs(config, args, results, pkglist.values(), arch)
+        validate_pkgs(config, args, results, updated.values(), arch)
+
 
     if getattr(args, 'junit', False):
         logging.info('Writing test results in %s', args.junit)
@@ -803,10 +825,18 @@ def action_validdiff(args, config):
         print(results.summary())
 
     if results.global_result:
+        rc = 0
         banner("Test suite SUCCEEDED")
-        return 0
-    banner("Test suite FAILED!")
-    return 2
+    else:
+        rc = 1
+        banner("Test suite FAILED!")
+
+    # Remove from working repository packages detected as removed in patch for
+    # all architectures supported by the project.
+    for arch in config.get('arch'):
+        remove_packages(config, args, removed.values(), arch)
+
+    return rc
 
 def action_gerrit(args, config, staff, modules):
     """Review a patchset for Gerrit (specfiles)"""
@@ -828,21 +858,44 @@ def action_gerrit(args, config, staff, modules):
 
 def get_packages_from_patch(patch, config, modules, staff):
     """
-    Extract packages from given patch
+    Return 2-tuple of dicts of updated and removed packages extracted from given
+    patch.
     """
-    pkglist = {}
+    updated = {}
+    removed = {}
     patchedfiles = parse_unidiff(patch)
     if not patchedfiles:
         raise RiftError("Invalid patch detected (empty commit ?)")
 
     for patchedfile in patchedfiles:
-        pkg = _validate_patch(
-            patchedfile, config=config, modules=modules, staff=staff
+        modifies_packages = _validate_patched_file(
+            patchedfile,
+            config=config,
+            modules=modules,
+            staff=staff
         )
-        if pkg is not None and pkg not in pkglist:
-            pkglist[pkg.name] = pkg
+        if not modifies_packages:
+            continue
+        pkg = _patched_file_updated_package(
+            patchedfile,
+            config=config,
+            modules=modules,
+            staff=staff
+        )
+        if pkg is not None and pkg not in updated:
+            logging.info('Patch updates package %s', pkg.name)
+            updated[pkg.name] = pkg
+        pkg = _patched_file_removed_package(
+            patchedfile,
+            config=config,
+            modules=modules,
+            staff=staff
+        )
+        if pkg is not None and pkg not in removed:
+            logging.info('Patch deletes package %s', pkg.name)
+            removed[pkg.name] = pkg
 
-    return pkglist
+    return updated, removed
 
 def create_staging_repo(config):
     """
@@ -1037,99 +1090,130 @@ def action(config, args):
 
     return 0
 
-def _validate_patch(patch, config, modules, staff):
+def _validate_patched_file(patched_file, config, modules, staff):
     """
-    Check if patch is fine regarding rift restrictions
-        - patch: patch for a patched file
-        - config: rift configuration
-      Return a validated Package
-      Return None:
-      * if patch removes file for this package and the whole package is
-        no more there.
-      * if patch only modify file that doesn't need a build (like spec.orig)
+    Raise RiftError if patched_file is a binary file or does not match any known
+    file path in Rift project tree.
+
+    Return True if the patched_file modifies a package or False otherwise.
     """
-    filepath = patch.path
+    filepath = patched_file.path
     names = filepath.split(os.path.sep)
-    fullpath = config.project_path(filepath)
-    pkg = None
 
     if filepath == config.get('staff_file'):
         staff = Staff(config)
         staff.load(filepath)
         logging.info('Staff file is OK.')
-        return None
+        return False
 
     if filepath == config.get('modules_file'):
         modules = Modules(config, staff)
         modules.load(filepath)
         logging.info('Modules file is OK.')
-        return None
+        return False
 
     if filepath == 'mock.tpl':
         logging.debug('Ignoring mock template file: %s', filepath)
-        return None
+        return False
 
     if filepath == '.gitignore':
         logging.debug('Ignoring git file: %s', filepath)
-        return None
+        return False
 
     if filepath == 'project.conf':
         logging.debug('Ignoring project config file: %s', filepath)
-        return None
+        return False
 
-    if patch.is_deleted_file:
+    if patched_file.binary:
+        raise RiftError("Binary file detected: %s" % filepath)
+
+    if names[0] != config.get('packages_dir'):
+        raise RiftError("Unknown file pattern: %s" % filepath)
+
+    return True
+
+def _patched_file_updated_package(patched_file, config, modules, staff):
+    """
+    Return Package updated by patched_file, or None if either:
+
+    - The patched_file modifies a package file that does not impact package
+      build result.
+    - The pached_file is removed.
+
+    Raise RiftError if patched_file path does not match any known
+    packaging code file path.
+    """
+    filepath = patched_file.path
+    names = filepath.split(os.path.sep)
+    fullpath = config.project_path(filepath)
+    pkg = None
+
+    if patched_file.is_deleted_file:
         logging.debug('Ignoring removed file: %s', filepath)
         return None
 
-    if patch.binary:
-        raise RiftError("Binary file detected: %s" % filepath)
+    # Drop config.get('packages_dir') from list
+    names.pop(0)
 
-    if names[0] == config.get('packages_dir'):
+    pkg = Package(names.pop(0), config, staff, modules)
 
-        # Drop config.get('packages_dir') from list
-        names.pop(0)
+    # info.yaml
+    if fullpath == pkg.metafile:
+        logging.info('Ignoring meta file')
+        return None
 
-        pkg = Package(names.pop(0), config, staff, modules)
+    # README file
+    if fullpath in pkg.docfiles:
+        logging.debug('Ignoring documentation file: %s', fullpath)
+        return None
 
-        # info.yaml
-        if fullpath == pkg.metafile:
-            logging.info('Ignoring meta file')
-            return None
+    # backup specfile
+    if fullpath == '%s.orig' % pkg.specfile:
+        logging.debug('Ignoring backup specfile')
+        return None
 
-        # README file
-        if fullpath in pkg.docfiles:
-            logging.debug('Ignoring documentation file: %s', fullpath)
-            return None
+    # specfile
+    if fullpath == pkg.specfile:
+        logging.info('Detected spec file')
 
-        # backup specfile
-        if fullpath == '%s.orig' % pkg.specfile:
-            logging.debug('Ignoring backup specfile')
-            return None
+    # rpmlint config file
+    elif names == [RPMLINT_CONFIG]:
+        logging.debug('Detecting rpmlint config file')
 
-        # specfile
-        if fullpath == pkg.specfile:
-            logging.info('Detected spec file')
+    # sources/
+    elif fullpath.startswith(pkg.sourcesdir) and len(names) == 2:
+        logging.debug('Detecting source file: %s', names[1])
 
-        # rpmlint config file
-        elif names == [RPMLINT_CONFIG]:
-            logging.debug('Detecting rpmlint config file')
-
-        # sources/
-        elif fullpath.startswith(pkg.sourcesdir) and len(names) == 2:
-            logging.debug('Detecting source file: %s', names[1])
-
-        # tests/
-        elif fullpath.startswith(pkg.testsdir):
-            logging.debug('Detecting test script: %s', filepath)
-
-        else:
-            raise RiftError("Unknown file pattern in '%s' directory: %s" % (pkg.name, filepath))
+    # tests/
+    elif fullpath.startswith(pkg.testsdir):
+        logging.debug('Detecting test script: %s', filepath)
 
     else:
-        raise RiftError("Unknown file pattern: %s" % filepath)
+        raise RiftError(
+            "Unknown file pattern in '%s' directory: %s" % (pkg.name, filepath)
+        )
 
     return pkg
 
+def _patched_file_removed_package(patched_file, config, modules, staff):
+    """
+    Return Package removed by the patched_file or None if patched_file does not
+    remove any package.
+    """
+    filepath = patched_file.path
+    names = filepath.split(os.path.sep)
+    fullpath = config.project_path(filepath)
+
+    if not patched_file.is_deleted_file:
+        logging.debug('Ignoring not removed file: %s', filepath)
+        return None
+
+    pkg = Package(names[1], config, staff, modules)
+
+    if fullpath == pkg.metafile:
+        return pkg
+
+    return None
 
 def main(args=None):
     """Main code of 'rift'"""

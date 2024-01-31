@@ -5,7 +5,7 @@
 import os.path
 import shutil
 import atexit
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 from unidiff import parse_unidiff
 from TestUtils import (
@@ -14,8 +14,13 @@ from TestUtils import (
 
 from VM import GLOBAL_CACHE, VALID_IMAGE_URL, PROXY
 from rift.Controller import (
-    main, _validate_patch, get_packages_from_patch, make_parser
+    main,
+    get_packages_from_patch,
+    remove_packages,
+    make_parser,
 )
+from rift.Package import Package
+from rift.RPM import RPM
 from rift import RiftError
 
 VALID_REPOS = {
@@ -144,8 +149,8 @@ LcmZQ%;Sc}}-05kv|
         self.assert_except(RiftError, "Binary file detected: {0}".format(pkgsrc),
                            main, ['validdiff', patch.name])
 
-    def test_remove_package(self):
-        """ Test if removing a package doesn't trigger a build """
+    def test_validdiff_package_removed(self):
+        """ Test detect removed package in patch"""
         pkgname = 'pkg'
         pkgvers = 1.0
         self.make_pkg(name=pkgname, version=pkgvers)
@@ -204,7 +209,13 @@ index 43bf48d..0000000
 \ No newline at end of file
 """.format(pkgsrc))
 
-        self.assertEqual(main(['validdiff', patch.name]), 0)
+        with open(patch.name) as p:
+            (updated, removed) = get_packages_from_patch(
+                p, self.config, self.modules, self.staff
+            )
+            self.assertEqual(len(updated), 0)
+            self.assertEqual(len(removed), 1)
+            self.assertTrue('pkg' in removed.keys())
 
     def test_validdiff_on_tests_directory(self):
         """ Test if package tests directory structure is fine """
@@ -224,15 +235,35 @@ index 0000000..68344bf
         # Ensure package exists
         self.make_pkg('pkg')
         with open(patch.name, 'r') as f:
-            patchedfiles = parse_unidiff(f)
-        self.assertNotEqual(len(patchedfiles), 0)
-        for patchedfile in patchedfiles:
-            pkg = _validate_patch(patchedfile, self.config,
-                                  modules=self.modules,
-                                  staff=self.staff)
-            self.assertIsNotNone(pkg)
+            (updated, removed) = get_packages_from_patch(
+                f, self.config, self.modules, self.staff
+            )
+            self.assertEqual(len(updated), 1)
+            self.assertEqual(len(removed), 0)
+            self.assertTrue('pkg' in updated.keys())
 
     def test_validdiff_on_invalid_file(self):
+        """Test invalid project file is detected in patch"""
+        patch = make_temp_file("""
+commit 0ac8155e2655321ceb28bbf716ff66d1a9e30f29 (HEAD -> master)
+Author: Myself <buddy@somewhere.org>
+Date:   Thu Apr 25 14:30:41 2019 +0200
+
+    project wrong file
+
+diff --git a/wrong b/wrong
+new file mode 100644
+index 0000000..68344bf
+--- a/wrong
++++ b/wrong
+@@ -0,0 +1 @@
++README
+""")
+        self.assert_except(RiftError, "Unknown file pattern: wrong",
+                           main, ['validdiff', patch.name])
+
+    def test_validdiff_on_invalid_pkg_file(self):
+        """Test invalid package file is detected in patch"""
         patch = make_temp_file("""
 commit 0ac8155e2655321ceb28bbf716ff66d1a9e30f29 (HEAD -> master)
 Author: Myself <buddy@somewhere.org>
@@ -274,6 +305,14 @@ index 0000000..68344bf
 """)
         self.make_pkg()
         self.assertEqual(main(['validdiff', patch.name]), 0)
+        # For this patch, get_packages_from_patch() must not return updated nor
+        # removed packages.
+        with open(patch.name, 'r') as p:
+            (updated, removed) = get_packages_from_patch(
+                p, config=self.config, modules=self.modules, staff=self.staff
+            )
+        self.assertEqual(len(updated), 0)
+        self.assertEqual(len(removed), 0)
 
     def test_validdiff_on_modules(self):
         patch = make_temp_file("""
@@ -294,7 +333,14 @@ index 0000000..68344bf
 +    manager: John Doe
 """)
         self.assertEqual(main(['validdiff', patch.name]), 0)
-
+        # For this patch, get_packages_from_patch() must not return updated nor
+        # removed packages.
+        with open(patch.name, 'r') as p:
+            (updated, removed) = get_packages_from_patch(
+                p, config=self.config, modules=self.modules, staff=self.staff
+            )
+        self.assertEqual(len(updated), 0)
+        self.assertEqual(len(removed), 0)
 
     def test_rename_package(self):
         """ Test if renaming a package trigger a build """
@@ -315,13 +361,15 @@ similarity index 100%
 rename from packages/pkg/sources/pkg-1.0.tar.gz
 rename to packages/pkgnew/sources/pkgnew-1.0.tar.gz
 """)
-
+        # For this patch, get_packages_from_patch() must return an updated
+        # package named pkgnew.
         with open(patch.name, 'r') as p:
-            pkgs = get_packages_from_patch(p, config=self.config,
-                                           modules=self.modules, staff=self.staff)
-        print("pkg: %s" % pkgs.keys())
-        self.assertEqual(len(pkgs), 1)
-        self.assertTrue('pkgnew' in pkgs.keys())
+            (updated, removed) = get_packages_from_patch(
+                p, config=self.config, modules=self.modules, staff=self.staff
+            )
+        self.assertEqual(len(updated), 1)
+        self.assertEqual(len(removed), 0)
+        self.assertTrue('pkgnew' in updated.keys())
 
     def test_rename_and_update_package(self):
         """ Test if renaming and updating a package trigger a build """
@@ -360,13 +408,77 @@ similarity index 100%
 rename from packages/pkg/sources/pkg-1.0.tar.gz
 rename to packages/pkgnew/sources/pkgnew-1.0.tar.gz
 """)
-
+        # For this patch, get_packages_from_patch() must return an updated
+        # package named pkgnew.
         with open(patch.name, 'r') as p:
-            pkgs = get_packages_from_patch(p, config=self.config,
-                                           modules=self.modules, staff=self.staff)
-        print("pkg: %s" % pkgs.keys())
-        self.assertEqual(len(pkgs), 1)
-        self.assertTrue('pkgnew' in pkgs.keys())
+            (updated, removed) = get_packages_from_patch(
+                p, config=self.config, modules=self.modules, staff=self.staff
+            )
+        self.assertEqual(len(updated), 1)
+        self.assertEqual(len(removed), 0)
+        self.assertTrue('pkgnew' in updated.keys())
+
+    @patch('rift.Controller.ProjectArchRepositories')
+    def test_remove_packages(self, mock_parepository_class):
+        """remove_packages() search, delete and update repository."""
+        mock_parepository_objects = mock_parepository_class.return_value
+
+        # Preparer Repository.search() return value
+        rpm = RPM(
+            os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                'materials',
+                'pkg-1.0-1.src.rpm',
+            )
+        )
+        mock_parepository_objects.working.search.return_value = [ rpm ]
+
+        # Enable publish arg
+        args = Mock()
+        args.publish = True
+
+        # Define a list of packages to remove
+        pkgs_to_remove = [
+            Package('pkg', self.config, self.staff, self.modules)
+        ]
+
+        # Define working_repo in configuration
+        self.config.options['working_repo'] = '/path/to/working/repo'
+
+        # Call remove_packages()
+        remove_packages(self.config, args, pkgs_to_remove, 'x86_64')
+
+        # Check Repository object has been instanciated
+        mock_parepository_class.assert_called()
+        # Check Repository.search() has been called
+        mock_parepository_objects.working.search.assert_called_once_with(
+            pkgs_to_remove[0].name
+        )
+        # Check Repository.delete() has been called
+        mock_parepository_objects.working.delete.assert_called_once_with(rpm)
+        # Check Repository.update() has been called
+        mock_parepository_objects.working.update.assert_called_once()
+
+    @patch('rift.Controller.ProjectArchRepositories')
+    def test_remove_packages_noop(self, mock_parepository_class):
+        """remove_packages() is noop if no publish arg or no working_repo"""
+        pkgs_to_remove = []
+        args = Mock()
+
+        # publish is False, remove_packages() must be noop
+        args.publish = False
+        self.config.options['working_repo'] = '/path/to/working/repo'
+        remove_packages(self.config, args, pkgs_to_remove, 'x86_64')
+        mock_parepository_class.assert_called_once()
+        mock_parepository_class.working.assert_not_called()
+
+        # working_repo is not defined, remove_packages() must be noop
+        args.publish = True
+        del self.config.options['working_repo']
+        mock_parepository_class.reset_mock()
+        remove_packages(self.config, args, pkgs_to_remove, 'x86_64')
+        mock_parepository_class.assert_called_once()
+        mock_parepository_class.working.assert_not_called()
 
     @patch('rift.Controller.VM')
     def test_action_build_test(self, mock_vm_class):

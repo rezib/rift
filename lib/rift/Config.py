@@ -69,6 +69,8 @@ _DEFAULT_VM_MEMORY = 8192
 _DEFAULT_VM_ADDRESS = '10.0.2.15'
 _DEFAULT_QEMU_CMD = 'qemu-system-x86_64'
 _DEFAULT_REPO_CMD = 'createrepo_c'
+_DEFAULT_SHARED_FS_TYPE = '9p'
+_DEFAULT_VIRTIOFSD = '/usr/libexec/virtiofsd'
 
 class Config():
     """
@@ -143,6 +145,14 @@ class Config():
         'rpm_macros': {
             'check':    'dict',
         },
+        'virtiofsd': {
+            'default': _DEFAULT_VIRTIOFSD,
+        },
+        'shared_fs_type': {
+            'default': _DEFAULT_SHARED_FS_TYPE,
+            'check': 'enum',
+            'values': ['9p', 'virtiofs'],
+        }
         # XXX?: 'mock.name' ?
         # XXX?: 'mock.template' ?
     }
@@ -250,7 +260,7 @@ class Config():
 
         # Check type
         check = self.SYNTAX[key].get('check', 'string')
-        assert check in ('string', 'dict', 'list', 'digit')
+        assert check in ('string', 'dict', 'list', 'digit', 'enum')
         if check == 'string':
             if not isinstance(value, str):
                 raise DeclError("Bad data type %s for '%s'" % (value.__class__.__name__, key))
@@ -267,6 +277,13 @@ class Config():
             if not isinstance(value, int):
                 raise DeclError("Bad data type %s for '%s'" % (value.__class__.__name__, key))
             self.options[key] = int(value)
+        elif check == 'enum':
+            enum_values = self.SYNTAX[key].get('values', [])
+            if not value in enum_values:
+                raise DeclError("Bad value %s for '%s' (correct values : %s)" % (
+                    value.__class__.__name__, key, ", ".join(enum_values)))
+            self.options[key] = value
+
 
     def update(self, data):
         """

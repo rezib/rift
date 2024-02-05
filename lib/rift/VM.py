@@ -49,20 +49,63 @@ import termios
 import select
 import struct
 import socket
-#import subprocess
-from subprocess import Popen, PIPE, STDOUT
+from subprocess import Popen, PIPE, STDOUT, check_output, CalledProcessError
 
 from rift import RiftError
+from rift.Config import _DEFAULT_VIRTIOFSD
 
 __all__ = ['VM']
 
 ARCH_EFI_BIOS = "./usr/share/edk2/aarch64/QEMU_EFI.silent.fd"
+
+def is_virtiofs_qemu(virtiofsd=_DEFAULT_VIRTIOFSD):
+    """
+    This function checks if vitiofsd is from qemu package or a standalone rust
+    version
+    """
+    output = ""
+    try:
+        output = check_output(f"{virtiofsd} --version",
+                              stderr=STDOUT,
+                              shell=True)
+    except CalledProcessError:
+        try:
+            # virtiofsd from qemu need to be lauched as 'root'...
+            output = check_output(f"sudo {virtiofsd} --version",
+                                  stderr=STDOUT,
+                                  shell=True)
+        except CalledProcessError:
+            logging.error("Cannot get %s version", virtiofsd)
+
+    if 'qemu' in output.decode() or 'FUSE' in output.decode():
+        logging.debug("%s: Qemu version detectect", virtiofsd)
+        return True
+    logging.debug("%s: Qemu version not detectect", virtiofsd)
+    return False
+
+
+def gen_virtiofs_args(socket_path, directory, qemu=False, virtiofsd=_DEFAULT_VIRTIOFSD):
+    """
+    Handle virtiofsd args.
+    Both version don't have the same argument handling, this function provide
+    the correct arguments for the two versions.
+    """
+    if qemu:
+        return ['sudo', '%s' % virtiofsd,
+                '--socket-path=%s' % socket_path,
+                '-o', 'source=%s' % directory,
+                '-o', 'cache=auto', '--syslog', '--daemonize']
+    return ['%s' % virtiofsd,
+            '--socket-path', '%s' % socket_path,
+            '--sandbox=none', '--shared-dir', '%s' % directory,
+            '--cache', 'auto']
 
 class VM():
     """Manipulate VM process and related temporary files."""
 
     _PROJ_MOUNTPOINT = '/rift.project'
     NAME = 'rift1.domain'
+    SUPPORTED_FS = ('9p', 'virtiofs')
 
     def __init__(self, config, repos, tmpmode=True):
         uniq_id = os.getuid() + 2000
@@ -87,9 +130,19 @@ class VM():
         self.arch_efi_bios = config.get('arch_efi_bios', ARCH_EFI_BIOS)
         ##
 
+        # Get guest shared fstype
+        self.virtiofsd = config.get('virtiofsd', _DEFAULT_VIRTIOFSD)
+        self.shared_fs_type = config.get('shared_fs_type', '9p')
+        if self.shared_fs_type not in self.SUPPORTED_FS:
+            raise RiftError('{} not supported to share filesystems'.format(
+                self.shared_fs_type))
+        ##
+
+
         self.tmpmode = tmpmode
         self.copymode = config.get('vm_image_copy')
         self._vm = None
+        self._helpers = []
         self._tmpimg = None
         self.consolesock = '/tmp/rift-vm-console-{0}.sock'.format(uniq_id)
 
@@ -118,6 +171,65 @@ class VM():
         if popen.returncode != 0:
             raise RiftError(stdout)
 
+    def _make_drive_cmd(self):
+        cmd = []
+        helper_cmd = []
+        if self.shared_fs_type == '9p':
+            cmd += ['-virtfs', 'local,id=project,path=/%s,mount_tag=project,'
+                    'security_model=none' % self._project_dir]
+            for repo in self._repos:
+                if repo.is_file():
+                    repo.create()
+                    cmd += ['-virtfs',
+                            'local,id=%s,path=%s,mount_tag=%s,security_model=none' %
+                            (repo.name, repo.rpms_dir, repo.name)]
+        elif self.shared_fs_type == 'virtiofs':
+            # Add a shared memory object to allow virtiofsd shares
+            cmd += ['-object',
+                    f'memory-backend-file,id=mem,size={str(self.memory)}M,mem-path=/tmp,share=on',
+                    '-machine',
+                    'memory-backend=mem,accel=kvm']
+            cmd += ['-chardev', 'socket,id=project,path=/tmp/.virtio_fs_project',
+                    '-device', 'vhost-user-fs-pci,queue-size=1024,chardev=project,tag=project']
+
+            qemu_version = is_virtiofs_qemu(self.virtiofsd)
+            helper_cmd.append(
+                gen_virtiofs_args(
+                    socket_path='/tmp/.virtio_fs_project',
+                    directory=self._project_dir,
+                    qemu=qemu_version,
+                    virtiofsd=self.virtiofsd
+                )
+            )
+            for repo in self._repos:
+                if repo.is_file():
+                    repo.create()
+                    cmd += ['-chardev', 'socket,id=%s,path=/tmp/.virtio_fs_%s' % ((repo.name,) * 2),
+                            '-device', 'vhost-user-fs-pci,queue-size=1024,chardev=%s,tag=%s'
+                            % ((repo.name,) * 2)]
+                    helper_cmd.append(
+                        gen_virtiofs_args(
+                            socket_path='/tmp/.virtio_fs_%s' % repo.name,
+                            directory=repo.rpms_dir,
+                            qemu=qemu_version,
+                            virtiofsd=self.virtiofsd
+                        )
+                    )
+        return cmd, helper_cmd
+
+    def _fix_socket_rights(self):
+        """
+        Ugly hack to have root accessible sockets for virtiofsd...
+        """
+        sockets = []
+        if self.shared_fs_type == 'virtiofs':
+            sockets = ['/tmp/.virtio_fs_project']
+            for repo in self._repos:
+                if repo.is_file():
+                    sockets.append('/tmp/.virtio_fs_%s' % (repo.name))
+            Popen(['sudo', '/bin/chmod', '777'] + sockets).wait()
+
+
     def spawn(self):
         """Start VM process in background"""
 
@@ -139,6 +251,7 @@ class VM():
 
         cmd += ['-name', 'rift', '-display', 'none']
         cmd += ['-m', str(self.memory), '-smp', str(self.cpus)]
+
 
         # UEFI for aarch64
         if self.arch == 'aarch64':
@@ -168,14 +281,19 @@ class VM():
             cmd += ['-device', 'virtio-net-pci,netdev=hostnet0,bus=pci.0,addr=0x3']
 
 
-        cmd += ['-virtfs', 'local,id=project,path=/%s,mount_tag=project,'
-                           'security_model=none' % self._project_dir]
-        for repo in self._repos:
-            if repo.is_file():
-                repo.create()
-                cmd += ['-virtfs',
-                        'local,id=%s,path=%s,mount_tag=%s,security_model=none' %
-                        (repo.name, repo.rpms_dir, repo.name)]
+        fs_cmds, helper_cmds = self._make_drive_cmd()
+        cmd += fs_cmds
+
+
+        logging.info("Qemu shared fs type: %s", self.shared_fs_type)
+        for helper_cmd in helper_cmds:
+            logging.info("Starting helper process (%s)", helper_cmd)
+            self._helpers.append(Popen(helper_cmd, stderr=PIPE))
+
+        logging.info("Waiting 5s for helper processes VM")
+        time.sleep(5)
+        logging.debug("Fix sockets right...")
+        self._fix_socket_rights()
 
         logging.info("Starting VM process")
         logging.debug("Running VM command: %s", ' '.join(cmd))
@@ -192,17 +310,22 @@ class VM():
         (g_name, g_passwd, g_gid, g_mem) = grp.getgrgid(os.getgid())
         groupline = '%s:%s:%s:%s' % (g_name, g_passwd, g_gid, ','.join(g_mem))
 
-        options = 'trans=virtio,version=9p2000.L,msize=131096'
-        # Build 9p mount point info.
+        if self.shared_fs_type == '9p':
+            options = 'trans=virtio,version=9p2000.L,msize=131096'
+        else:
+            options = 'defaults'
+            # For guest kernel > 5.6
+            #options = 'defaults'
+        # Build shared mount point info.
         mkdirs = [self._PROJ_MOUNTPOINT]
-        fstab = ['project /%s 9p %s,ro 0 0' % (self._PROJ_MOUNTPOINT, options)]
+        fstab = ['project /%s %s %s,ro 0 0' % (self._PROJ_MOUNTPOINT, self.shared_fs_type, options)]
         repos = []
         prio = 1000
         for repo in self._repos:
             if repo.is_file():
                 mkdirs.append('/rift.%s' % repo.name)
-                fstab.append('%s /rift.%s 9p %s 0 0' %
-                             (repo.name, repo.name, options))
+                fstab.append('%s /rift.%s %s %s 0 0' %
+                             (repo.name, repo.name, self.shared_fs_type, options))
                 url = 'file:///rift.%s/' % repo.name
             else:
                 url = repo.url
@@ -233,7 +356,7 @@ class VM():
             cat <<__EOF__ >>/etc/fstab
             %s
             __EOF__
-            mount -t 9p -a
+            mount -t %s -a
 
             /bin/rm -f /etc/yum.repos.d/*.repo
 
@@ -248,8 +371,8 @@ class VM():
             fi
 
             """) % (self.address, self.NAME, userline, groupline,
-                    ' '.join(mkdirs), "\n".join(fstab), "\n".join(repos))
-
+                    ' '.join(mkdirs), "\n".join(fstab),
+                    self.shared_fs_type, "\n".join(repos))
         self.cmd(cmd)
 
     def cmd(self, command=None, options=('-T',), stderr=None):
@@ -419,6 +542,14 @@ class VM():
             pid = self._vm.pid
             logging.debug("Sending KILL signal to VM process (%d)", pid)
             self._vm.kill()
+
+        # Stop helper processes
+        for helper in self._helpers:
+            if helper.poll() is None:
+                pid = helper.pid
+                logging.debug("Sending TERM signal to helper process (%d)", pid)
+                helper.terminate()
+
 
         # Unlink temp VM image
         if self._tmpimg and not self._tmpimg.closed:

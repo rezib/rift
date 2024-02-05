@@ -2,8 +2,9 @@
 # Copyright (C) 2024 CEA
 #
 
-from rift.Config import Config, _DEFAULT_VM_ADDRESS, _DEFAULT_QEMU_CMD, _DEFAULT_VM_MEMORY
-from rift.VM import VM, ARCH_EFI_BIOS
+from rift.Config import Config, _DEFAULT_VM_ADDRESS, _DEFAULT_QEMU_CMD, \
+                        _DEFAULT_VM_MEMORY, _DEFAULT_VIRTIOFSD
+from rift.VM import VM, ARCH_EFI_BIOS, gen_virtiofs_args
 from TestUtils import RiftTestCase
 
 class VMTest(RiftTestCase):
@@ -65,3 +66,24 @@ class VMTest(RiftTestCase):
         self.assertTrue(vm.copymode)
         self.assertIsNone(vm._vm)
         self.assertIsNone(vm._tmpimg)
+
+    def test_genvirtiofs_args(self):
+        """
+        Check virtiofsd args generator
+        """
+        # test default values non qemu mode
+        args = gen_virtiofs_args('/socket', '/source', False)
+        self.assertEqual(args, [_DEFAULT_VIRTIOFSD, '--socket-path', '/socket',
+                                '--sandbox=none', '--shared-dir', '/source',
+                                '--cache', 'auto'])
+        # test default values qemu mode
+        args = gen_virtiofs_args('/socket', '/source', True)
+        self.assertEqual(args, ['sudo', _DEFAULT_VIRTIOFSD,
+                                '--socket-path=/socket',
+                                '-o', 'source=/source',
+                                '-o', 'cache=auto', '--syslog', '--daemonize'])
+        # test custom values
+        args = gen_virtiofs_args('/socket', '/source', False, '/virtiofsd')
+        self.assertEqual(args, ['/virtiofsd', '--socket-path', '/socket',
+                               '--sandbox=none', '--shared-dir', '/source',
+                               '--cache', 'auto'])

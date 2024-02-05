@@ -10,7 +10,8 @@ from rift import DeclError
 from rift.Config import Staff, Modules, Config, _DEFAULT_PKG_DIR, \
                          _DEFAULT_STAFF_FILE, _DEFAULT_MODULES_FILE, \
                          _DEFAULT_VM_CPUS, _DEFAULT_VM_ADDRESS, \
-                         _DEFAULT_QEMU_CMD, _DEFAULT_REPO_CMD
+                         _DEFAULT_QEMU_CMD, _DEFAULT_REPO_CMD, \
+                         _DEFAULT_SHARED_FS_TYPE, _DEFAULT_VIRTIOFSD
 
 class ConfigTest(RiftTestCase):
 
@@ -24,6 +25,8 @@ class ConfigTest(RiftTestCase):
         self.assertEqual(config.get('modules_file'), _DEFAULT_MODULES_FILE)
         self.assertEqual(config.get('vm_cpus'), _DEFAULT_VM_CPUS)
         self.assertEqual(config.get('vm_address'), _DEFAULT_VM_ADDRESS)
+        self.assertEqual(config.get('shared_fs_type'), _DEFAULT_SHARED_FS_TYPE)
+        self.assertEqual(config.get('virtiofsd'), _DEFAULT_VIRTIOFSD)
 
         # Default value argument
         self.assertEqual(config.get('doesnotexist', 'default value'),
@@ -48,6 +51,10 @@ class ConfigTest(RiftTestCase):
         config.set('param_list', ['value1', 'value2'])
         self.assertEqual(config.get('param_list'), ['value1', 'value2'])
 
+        # set a 'enum'
+        config.set('shared_fs_type', 'virtiofs')
+        self.assertEqual(config.get('shared_fs_type'), 'virtiofs')
+
 
     def test_set_bad_type(self):
         """set() using wrong type raises an error"""
@@ -63,6 +70,8 @@ class ConfigTest(RiftTestCase):
         self.assert_except(DeclError,
                            "Bad data type str for 'param_list'",
                            Config().set, 'param_list', 'a string')
+        # Check bad enum
+        self.assertRaises(DeclError, Config().set, 'shared_fs_type', 'badtype')
 
     def test_set_bad_key(self):
         """set() an undefined key raises an error"""

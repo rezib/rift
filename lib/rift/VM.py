@@ -73,6 +73,7 @@ class VM():
         self.address = config.get('vm_address')
         self.port = config.get('vm_port', uniq_id)
         self.cpus = config.get('vm_cpus', 1)
+        self.memory = config.get('vm_memory')
         self.qemu = config.get('qemu')
         self.arch = config.get('arch')
 
@@ -137,7 +138,7 @@ class VM():
         cmd += ['-cpu', self.cpu_type]
 
         cmd += ['-name', 'rift', '-display', 'none']
-        cmd += ['-m', '8192', '-smp', str(self.cpus)]
+        cmd += ['-m', str(self.memory), '-smp', str(self.cpus)]
 
         # UEFI for aarch64
         if self.arch == 'aarch64':

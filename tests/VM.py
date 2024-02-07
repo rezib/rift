@@ -2,7 +2,7 @@
 # Copyright (C) 2024 CEA
 #
 
-from rift.Config import Config, _DEFAULT_VM_ADDRESS, _DEFAULT_QEMU_CMD
+from rift.Config import Config, _DEFAULT_VM_ADDRESS, _DEFAULT_QEMU_CMD, _DEFAULT_VM_MEMORY
 from rift.VM import VM, ARCH_EFI_BIOS
 from TestUtils import RiftTestCase
 
@@ -21,6 +21,7 @@ class VMTest(RiftTestCase):
         self.assertEqual(vm.arch, 'x86_64')
         self.assertEqual(vm.cpu_type, 'host')
         self.assertEqual(vm.cpus, 4)
+        self.assertEqual(vm.memory, _DEFAULT_VM_MEMORY)
         self.assertEqual(vm.arch_efi_bios, ARCH_EFI_BIOS)
         self.assertEqual(vm.address, _DEFAULT_VM_ADDRESS)
         self.assertEqual(vm._image, None)
@@ -37,11 +38,13 @@ class VMTest(RiftTestCase):
         self.assertEqual(vm.arch, 'aarch64')
         self.assertEqual(vm.cpu_type, 'cortex-a72')
 
+        vm_custom_memory = 4096
 
         # custom
         self.config.set('arch', 'aarch64')
         self.config.set('vm_cpu', 'custom')
         self.config.set('vm_cpus', 32)
+        self.config.set('vm_memory', vm_custom_memory)
         self.config.set('arch_efi_bios', '/my_bios')
         self.config.set('vm_port', 12345)
         self.config.set('vm_image_copy', 1)
@@ -53,6 +56,7 @@ class VMTest(RiftTestCase):
         self.assertEqual(vm.arch, 'aarch64')
         self.assertEqual(vm.cpu_type, 'custom')
         self.assertEqual(vm.cpus, 32)
+        self.assertEqual(vm.memory, vm_custom_memory)
         self.assertEqual(vm.arch_efi_bios, '/my_bios')
         self.assertEqual(vm.port, 12345)
         self.assertEqual(vm.address, '192.168.0.5')

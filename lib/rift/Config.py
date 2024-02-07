@@ -65,6 +65,7 @@ _DEFAULT_PKG_DIR = 'packages'
 _DEFAULT_STAFF_FILE = os.path.join(_DEFAULT_PKG_DIR, 'staff.yaml')
 _DEFAULT_MODULES_FILE = os.path.join(_DEFAULT_PKG_DIR, 'modules.yaml')
 _DEFAULT_VM_CPUS = 4
+_DEFAULT_VM_MEMORY = 8192
 _DEFAULT_VM_ADDRESS = '10.0.2.15'
 _DEFAULT_QEMU_CMD = 'qemu-system-x86_64'
 _DEFAULT_REPO_CMD = 'createrepo_c'
@@ -126,6 +127,10 @@ class Config():
         'vm_cpus': {
             'check':    'digit',
             'default':  _DEFAULT_VM_CPUS,
+        },
+        'vm_memory': {
+            'check':    'digit',
+            'default':   _DEFAULT_VM_MEMORY,
         },
         'vm_address': {
             'default':  _DEFAULT_VM_ADDRESS,

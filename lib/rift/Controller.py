@@ -565,7 +565,12 @@ def action_validate(config, args, pkgs, wkrepo, suppl_repos):
             mock.clean()
             stagedir.delete()
 
-    banner('All packages checked')
+    if rc == 0:
+        banner('All packages checked')
+
+    else:
+        banner('Failed to check all packages')
+
     return rc
 
 def action_vm(config, args, repos):

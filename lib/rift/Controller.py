@@ -390,14 +390,16 @@ class BasicTest(Test):
         Test.__init__(self, cmd, "basic_install")
         self.local = False
 
-def action_build(config, args, pkg, repos):
+def build_pkg(config, args, pkg):
     """
     Build a package
       - config: rift configuration
       - args: command arguments
       - pkg: package to build
-      - repos: ProjectArchRepositories object
     """
+    repos = ProjectArchRepositories(config, config.get('arch'))
+    if args.publish and not repos.can_publish():
+        raise RiftError("Cannot publish if 'working_repo' is undefined")
 
     message('Preparing Mock environment...')
     mock = Mock(config, config.get('version'))
@@ -425,9 +427,9 @@ def action_build(config, args, pkg, repos):
 
     mock.clean()
 
-def action_test_one(args, pkg, vm, results, repos, config=None):
+def test_one_pkg(config, args, pkg, vm, repos, results):
     """
-    Launch tests on given packages
+    Launch tests on a given package on a specific vm and a set of repositories.
     """
     message("Preparing test environment")
     _vm_start(vm)
@@ -438,6 +440,8 @@ def action_test_one(args, pkg, vm, results, repos, config=None):
     vm.cmd('yum -y -d0 %s update' % disablestr)
 
     banner("Starting tests")
+
+    rc = 0
 
     tests = list(pkg.tests())
     if not args.noauto:
@@ -450,6 +454,7 @@ def action_test_one(args, pkg, vm, results, repos, config=None):
             results.add_success(test.name, pkg.name, time.time() - now)
             message("Test '%s': OK" % testname)
         else:
+            rc = 1
             results.add_failure(test.name, pkg.name, time.time() - now)
             message("Test '%s': ERROR" % testname)
 
@@ -459,42 +464,32 @@ def action_test_one(args, pkg, vm, results, repos, config=None):
         time.sleep(5)
         vm.stop()
 
+    return rc
 
-def action_test(config, args, pkgs, extra_repos=None):
-    """Process 'test' command."""
+def test_pkgs(config, args, results, pkgs, extra_repos=None):
+    """Test a list of packages."""
 
     if extra_repos is None:
         extra_repos = []
 
-    results = TestResults('test')
     vm = VM(config, extra_repos=extra_repos)
     repos = ProjectArchRepositories(config, config.get('arch'))
 
     if vm.running():
-        message('VM is already running')
-        return 1
+        raise RiftError('VM is already running')
+
+    rc = 0
 
     for pkg in pkgs:
         pkg.load()
-        action_test_one(args, pkg, vm, results, repos, config=config)
+        rc += test_one_pkg(config, args, pkg, vm, repos, results)
 
     if getattr(args, 'noquit', False):
         message("Not stopping the VM. Use: rift vm connect")
 
-    if getattr(args, 'junit', False):
-        logging.info('Writing test results in %s', args.junit)
-        results.junit(args.junit)
+    return rc
 
-    if len(results) > 1:
-        print(results.summary())
-
-    if results.global_result:
-        banner("Test suite SUCCEEDED")
-        return 0
-    banner("Test suite FAILED!")
-    return 2
-
-def action_validate(config, args, pkgs):
+def validate_pkgs(config, args, results, pkgs):
     """
     Validate a package:
         - rpmlint on specfile
@@ -508,7 +503,6 @@ def action_validate(config, args, pkgs):
     if args.publish and not repos.can_publish():
         raise RiftError("Cannot publish if 'working_repo' is undefined")
 
-    rc = 0
     for pkg in pkgs:
 
         banner("Checking package '%s'" % pkg.name)
@@ -538,19 +532,28 @@ def action_validate(config, args, pkgs):
         mock = Mock(config, config.get('version'))
         mock.init(repos.all)
 
-        # Check build SRPM
-        message('Validate source RPM build...')
-        srpm = pkg.build_srpm(mock)
+        try:
+            now = time.time()
+            # Check build SRPM
+            message('Validate source RPM build...')
+            srpm = pkg.build_srpm(mock)
 
-        # Check build RPMS
-        message('Validate RPMS build...')
-        pkg.build_rpms(mock, srpm)
+            # Check build RPMS
+            message('Validate RPMS build...')
+            pkg.build_rpms(mock, srpm)
+        except RiftError as ex:
+            logging.info("Build failure: %s", str(ex))
+            results.add_failure('build', pkg.name, time.time() - now, str(ex))
+            continue  # skip current package
+        else:
+            results.add_success('build', pkg.name, time.time() - now)
 
         # Check tests
         mock.publish(staging)
         staging.update()
+        rc = 0
         if args.test:
-            rc = action_test(config, args, [pkg], extra_repos=[staging]) or rc
+            rc = test_pkgs(config, args, results, [pkg], extra_repos=[staging])
 
         # Also publish on working repo if requested
         # XXX: All RPMs should be published when all of them have been validated
@@ -567,15 +570,9 @@ def action_validate(config, args, pkgs):
             mock.clean()
             stagedir.delete()
 
-    if rc == 0:
-        banner('All packages checked')
+    banner('All packages checked')
 
-    else:
-        banner('Failed to check all packages')
-
-    return rc
-
-def action_vm(config, args):
+def action_vm(args, config):
     """Action for 'vm' sub-commands."""
 
     vm = VM(config)
@@ -598,6 +595,122 @@ def action_vm(config, args):
     elif args.vm_cmd == 'stop':
         ret = vm.cmd('poweroff')
     return ret
+
+def action_build(args, config):
+    """Action for 'build' command."""
+
+    # Check working repo is properly defined if publish arg is used or raise
+    # RiftError
+    if args.publish and config.get('working_repo') is None:
+        raise RiftError("Cannot publish if 'working_repo' is undefined")
+
+    results = TestResults('build')
+
+    staff, modules = staff_modules(config)
+
+    # Build all packages
+    for pkg in Package.list(config, staff, modules, args.packages):
+        banner(f"Building package '{pkg.name}'")
+
+        pkg.load()
+        now = time.time()
+        try:
+            build_pkg(config, args, pkg)
+        except RiftError as ex:
+            logging.info("Build failure: %s", str(ex))
+            results.add_failure(
+                'build',
+                pkg.name,
+                time.time() - now,
+                str(ex)
+            )
+        else:
+            results.add_success('build', pkg.name, time.time() - now)
+
+    if getattr(args, 'junit', False):
+        logging.info('Writing test results in %s', args.junit)
+        results.junit(args.junit)
+
+    banner(f"All packages processed")
+
+    if len(results) > 1:
+        print(results.summary())
+
+    if not results.global_result:
+        return 2
+    return 0
+
+def action_test(args, config):
+    """Action for 'test' command."""
+    staff, modules = staff_modules(config)
+    results = TestResults('test')
+    # Test packages
+    test_pkgs(
+        config,
+        args,
+        results,
+        Package.list(config, staff, modules, args.packages),
+    )
+    if getattr(args, 'junit', False):
+        logging.info('Writing test results in %s', args.junit)
+        results.junit(args.junit)
+
+    if len(results) > 1:
+        print(results.summary())
+
+    if results.global_result:
+        banner("Test suite SUCCEEDED")
+        return 0
+    banner("Test suite FAILED!")
+    return 2
+
+def action_validate(args, config):
+    """Action for 'validate' command."""
+    staff, modules = staff_modules(config)
+    results = TestResults('validate')
+    # Validate packages
+    validate_pkgs(
+        config,
+        args,
+        results,
+        Package.list(config, staff, modules, args.packages),
+    )
+    banner('All packages checked')
+
+    if getattr(args, 'junit', False):
+        logging.info('Writing test results in %s', args.junit)
+        results.junit(args.junit)
+
+    if len(results) > 1:
+        print(results.summary())
+
+    if results.global_result:
+        banner("Test suite SUCCEEDED")
+        return 0
+    banner("Test suite FAILED!")
+    return 2
+
+def action_validdiff(args, config):
+    """Action for 'validdiff' command."""
+    staff, modules = staff_modules(config)
+    pkglist = get_packages_from_patch(args.patch, config=config,
+                                      modules=modules, staff=staff)
+    results = TestResults('validate')
+    # Re-validate all packages
+    validate_pkgs(config, args, results, pkglist.values())
+
+    if getattr(args, 'junit', False):
+        logging.info('Writing test results in %s', args.junit)
+        results.junit(args.junit)
+
+    if len(results) > 1:
+        print(results.summary())
+
+    if results.global_result:
+        banner("Test suite SUCCEEDED")
+        return 0
+    banner("Test suite FAILED!")
+    return 2
 
 def action_gerrit(args, config, staff, modules):
     """Review a patchset for Gerrit (specfiles)"""
@@ -633,6 +746,17 @@ def get_packages_from_patch(patch, config, modules, staff):
 
     return pkglist
 
+def staff_modules(config):
+    """
+    Return tuple with staff and modules objects.
+    """
+    staff = Staff(config)
+    staff.load(config.get('staff_file'))
+
+    modules = Modules(config, staff)
+    modules.load(config.get('modules_file'))
+
+    return staff, modules
 
 def action(config, args):
     """
@@ -654,19 +778,12 @@ def action(config, args):
 
     # VM
     if args.command == 'vm':
-        return action_vm(config, args)
-
-    # Now, package related commands..
-
-    staff = Staff(config)
-    staff.load(config.get('staff_file'))
-
-    modules = Modules(config, staff)
-    modules.load(config.get('modules_file'))
+        return action_vm(args, config)
 
     # CREATE/IMPORT/REIMPORT
     if args.command in ['create', 'import', 'reimport']:
 
+        staff, modules = staff_modules(config)
         if args.command == 'create':
             pkgname = args.name
         elif args.command in ('import', 'reimport'):
@@ -703,61 +820,23 @@ def action(config, args):
 
     # BUILD
     elif args.command == 'build':
-
-        repos = ProjectArchRepositories(config, config.get('arch'))
-        if args.publish and not repos.can_publish():
-            raise RiftError("Cannot publish if 'working_repo' is undefined")
-
-        results = TestResults('build')
-
-        for pkg in Package.list(config, staff, modules, args.packages):
-            banner("Building package '%s'" % pkg.name)
-
-            pkg.load()
-            now = time.time()
-            try:
-                action_build(config, args, pkg, repos)
-            except RiftError as ex:
-                logging.info("Build failure: %s", str(ex))
-                results.add_failure('build', pkg.name, time.time() - now, str(ex))
-            else:
-                results.add_success('build', pkg.name, time.time() - now)
-
-        if getattr(args, 'junit', False):
-            logging.info('Writing test results in %s', args.junit)
-            results.junit(args.junit)
-
-        banner('All packages processed')
-
-        if len(results) > 1:
-            print(results.summary())
-
-        if results.global_result:
-            return 0
-        return 2
+        return action_build(args, config)
 
     # TEST
     elif args.command == 'test':
-
-        pkgs = Package.list(config, staff, modules, args.packages)
-        return action_test(config, args, pkgs)
+        return action_test(args, config)
 
     # VALIDATE
     elif args.command == 'validate':
+        return action_validate(args, config)
 
-        pkgs = Package.list(config, staff, modules, args.packages)
-        return action_validate(config, args, pkgs)
-
+    # VALIDDIFF
     elif args.command == 'validdiff':
-
-        pkglist = get_packages_from_patch(args.patch, config=config,
-                                          modules=modules, staff=staff)
-        # Re-validate each package
-        return action_validate(config, args, pkglist.values())
+        return action_validdiff(args, config)
 
     elif args.command == 'query':
 
-
+        staff, modules = staff_modules(config)
         pkglist = sorted(Package.list(config, staff, modules, args.packages),
                          key=attrgetter('name'))
 
@@ -786,7 +865,7 @@ def action(config, args):
                     spec.filepath = pkg.specfile
                     spec.load()
             except RiftError as exp:
-                logging.error("{}: {}".format(pkg.name, str(exp)))
+                logging.error("%s: %s", pkg.name, str(exp))
                 continue
 
             date = str(time.strftime("%Y-%m-%d", time.localtime(spec.changelog_time)))

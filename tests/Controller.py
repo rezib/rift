@@ -3,6 +3,9 @@
 #
 
 import os.path
+import shutil
+import atexit
+from unittest.mock import patch
 
 from unidiff import parse_unidiff
 from TestUtils import (
@@ -13,6 +16,19 @@ from rift.Controller import (
     main, _validate_patch, get_packages_from_patch, parse_options
 )
 from rift import RiftError
+
+VALID_REPOS = {
+    'os': {
+        'url': 'https://repo.almalinux.org/almalinux/8/BaseOS/x86_64/os/',
+    },
+    'appstream': {
+        'url': 'https://repo.almalinux.org/almalinux/8/AppStream/x86_64/os/',
+    },
+    'powertools': {
+        'url': 'https://repo.almalinux.org/almalinux/8/PowerTools/x86_64/os/',
+    },
+}
+
 
 class ControllerTest(RiftTestCase):
 
@@ -93,7 +109,6 @@ class ControllerProjectTest(RiftProjectTestCase):
                                          "{0}-{1}.tar.gz".format(name, version))
         with open(self.pkgsrc[name], "w") as src:
             src.write("ACACACACACACACAC")
-
 
     def test_action_query(self):
         """simple 'rift query' is ok """
@@ -408,6 +423,65 @@ rename to packages/pkgnew/sources/pkgnew-1.0.tar.gz
         print("pkg: %s" % pkgs.keys())
         self.assertEqual(len(pkgs), 1)
         self.assertTrue('pkgnew' in pkgs.keys())
+
+    @patch('rift.Controller.VM')
+    def test_action_build_test(self, mock_vm_class):
+
+        # Create temporary working repo and register its deletion at exit
+        working_repo = make_temp_dir()
+        atexit.register(shutil.rmtree, working_repo)
+
+        self.config.set('working_repo', working_repo)
+        self.config.options['repos'] = VALID_REPOS
+        self.update_project_conf()
+
+        # Create fake package without build requirement
+        self.make_pkg(build_requires=[])
+
+        main(['build', 'pkg', '--publish'])
+        self.assertTrue(
+            os.path.exists(
+                f"{working_repo}/{self.config.get('arch')}/pkg-1.0-1.noarch.rpm"
+            )
+        )
+
+        # Fake stopped VM and successful tests
+        mock_vm_objects = mock_vm_class.return_value
+        mock_vm_objects.running.return_value = False
+        mock_vm_objects.run_test.return_value = 0
+
+        # Run test on package
+        main(['test', 'pkg'])
+
+        # Check one VM object have been initialized
+        self.assertEqual(mock_vm_class.call_count, 1)
+        # Check vm.run_test() has been called once for basic tests
+        self.assertEqual(mock_vm_objects.run_test.call_count, 1)
+
+        # Remove temporary working repo and unregister its deletion at exit
+        shutil.rmtree(working_repo)
+        atexit.unregister(shutil.rmtree)
+
+    @patch('rift.Controller.VM')
+    def test_action_validate(self, mock_vm_class):
+        self.config.options['repos'] = VALID_REPOS
+        self.update_project_conf()
+
+        # Create fake package without build requirement
+        self.make_pkg(build_requires=[])
+
+        # Fake stopped VM and successful tests
+        mock_vm_objects = mock_vm_class.return_value
+        mock_vm_objects.running.return_value = False
+        mock_vm_objects.run_test.return_value = 0
+
+        # Run validate on pkg
+        main(['validate', 'pkg'])
+
+        # Check VM object have been initialized
+        self.assertEqual(mock_vm_class.call_count, 1)
+        # Check vm.run_test() has been called once for basic tests
+        self.assertEqual(mock_vm_objects.run_test.call_count, 1)
 
 
 class ControllerSimpleTest(RiftTestCase):

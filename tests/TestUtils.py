@@ -10,6 +10,7 @@ It contains several helper methods or classes like temporary file management.
 import tempfile
 import unittest
 import os
+import yaml
 
 from rift.Config import Config, Staff, Modules
 from rift.Mock import Mock
@@ -146,6 +147,11 @@ class RiftProjectTestCase(RiftTestCase):
             os.rmdir(pkgdir)
         os.rmdir(self.packagesdir)
         os.rmdir(self.projdir)
+
+    def update_project_conf(self):
+        """Update project YAML configuration file with new Config options."""
+        with open(self.projectconf, 'w') as fh:
+            fh.write(yaml.dump(self.config.options))
 
 
 #

@@ -3,8 +3,8 @@
 #
 
 from TestUtils import make_temp_dir, RiftTestCase
-from rift.Repository import Repository, RemoteRepository
-from rift.Config import _DEFAULT_REPO_CMD
+from rift.Repository import Repository, RemoteRepository, ProjectArchRepositories
+from rift.Config import _DEFAULT_REPO_CMD, Config
 
 class RepositoryTest(RiftTestCase):
     """
@@ -80,3 +80,68 @@ class RemoteRepositoryTest(RiftTestCase):
     def test_create(self):
         """ test empty method create """
         self.assertIsNone(RemoteRepository('/nowhere').create())
+
+
+class ProjectArchRepositoriesTest(RiftTestCase):
+    """
+    Tests class for ProjectArchRepositories
+    """
+    def setUp(self):
+        self.config = Config()
+
+    def test_basic(self):
+        """Test one simple supplementary repository"""
+        self.config.options['repos'] = {
+            'os': {
+                'url': 'file:///rift/packages/x86_64/os',
+                'priority': 90,
+            }
+        }
+        repos = ProjectArchRepositories(self.config, 'x86_64')
+        self.assertEqual(repos.working, None)
+        self.assertEqual(len(repos.supplementaries), 1)
+        self.assertEqual(len(repos.all), 1)
+        self.assertEqual(repos.supplementaries[0].name, 'os')
+        self.assertEqual(repos.all[0], repos.supplementaries[0])
+
+    def test_working(self):
+        """Test working repository without supplementary repository"""
+        self.config.options['working_repo'] = '/tmp/repo'
+        self.config.options['repos'] = {}
+        repos = ProjectArchRepositories(self.config, 'x86_64')
+        self.assertIsInstance(repos.working, Repository)
+        self.assertEqual(len(repos.supplementaries), 0)
+        self.assertEqual(len(repos.all), 1)
+        self.assertEqual(repos.working.name, 'working')
+        self.assertEqual(repos.working.path, '/tmp/repo')
+        self.assertEqual(repos.all[0], repos.working)
+
+    def test_working_and_supplementaries(self):
+        """Test working repository and two supplementary repositories"""
+        self.config.options['working_repo'] = '/tmp/repo'
+        self.config.options['repos'] = {
+            'os': {
+                'url': 'file:///rift/packages/x86_64/os',
+                'priority': 90,
+            },
+            'extra': {
+                'url': 'file:///rift/packages/x86_64/extra',
+                'priority': 90,
+            },
+        }
+        repos = ProjectArchRepositories(self.config, 'x86_64')
+        self.assertIsInstance(repos.working, Repository)
+        self.assertEqual(len(repos.supplementaries), 2)
+        self.assertEqual(len(repos.all), 3)
+        self.assertEqual(repos.working.name, 'working')
+        self.assertEqual(repos.supplementaries[0].name, 'os')
+        self.assertEqual(repos.all[0], repos.working)
+        self.assertEqual(repos.all[1], repos.supplementaries[0])
+
+    def test_can_publish(self):
+        """Test ProjectArchRepositories.can_publish() method"""
+        repos = ProjectArchRepositories(self.config, 'x86_64')
+        self.assertFalse(repos.can_publish(), False)
+        self.config.options['working_repo'] = '/tmp/repo'
+        repos = ProjectArchRepositories(self.config, 'x86_64')
+        self.assertTrue(repos.can_publish(), False)

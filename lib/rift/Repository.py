@@ -138,3 +138,56 @@ class Repository(RemoteRepository):
             logging.debug("Adding %s to repo %s", rpm.filepath, self.rpms_dir)
             # rpms_dir already points to architecture directory
             shutil.copy(rpm.filepath, self.rpms_dir)
+
+class ProjectArchRepositories:
+    """
+    Manipulate repositories defined in a project for a particular architecture.
+    """
+    def __init__(self, config, arch):
+
+        self.working = None
+        if config.get('working_repo'):
+            self.working = Repository(
+                path=config.get('working_repo'),
+                arch=arch,
+                name='working',
+                options={"module_hotfixes": "true"},
+                config=config
+            )
+        self.supplementaries = []
+        repos = config.get('repos')
+        if repos:
+            for name, data in repos.items():
+                if isinstance(data, str):
+                    self.supplementaries.append(
+                        RemoteRepository(data, name, config=config)
+                    )
+                else:
+                    self.supplementaries.append(
+                        RemoteRepository(
+                            data['url'],
+                            name=name,
+                            priority=data.get('priority'),
+                            options=data,
+                            config=config,
+                        )
+                    )
+
+    @property
+    def all(self):
+        """
+        The list of all repositories defined in the project for an architecture
+        including the supplementary repositories and the working repository (if
+        defined).
+        """
+        return (
+            ([self.working] if self.working is not None else []) +
+            self.supplementaries
+        )
+
+    def can_publish(self):
+        """
+        Return True if it is possible to publish packages in project
+        repositories, ie. if working repository is defined.
+        """
+        return self.working is not None

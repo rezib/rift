@@ -20,7 +20,7 @@ class VMTest(RiftTestCase):
     def test_init(self):
         """ Test VM initialisation """
         # default
-        vm = VM(self.config, None)
+        vm = VM(self.config)
         self.assertEqual(vm.arch, 'x86_64')
         self.assertEqual(vm.cpu_type, 'host')
         self.assertEqual(vm.cpus, 4)
@@ -37,7 +37,7 @@ class VMTest(RiftTestCase):
 
         # arch specific
         self.config.set('arch', 'aarch64')
-        vm = VM(self.config, None)
+        vm = VM(self.config)
         self.assertEqual(vm.arch, 'aarch64')
         self.assertEqual(vm.cpu_type, 'cortex-a72')
 
@@ -55,7 +55,7 @@ class VMTest(RiftTestCase):
         self.config.set('vm_image', '/my_image')
         self.config.set('qemu', '/my_custom_qemu')
 
-        vm = VM(self.config, None)
+        vm = VM(self.config)
         self.assertEqual(vm.arch, 'aarch64')
         self.assertEqual(vm.cpu_type, 'custom')
         self.assertEqual(vm.cpus, 32)

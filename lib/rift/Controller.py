@@ -51,7 +51,7 @@ from rift.Config import Config, Staff, Modules
 from rift.Gerrit import Review
 from rift.Mock import Mock
 from rift.Package import Package, Test
-from rift.Repository import RemoteRepository, Repository
+from rift.Repository import Repository, ProjectArchRepositories
 from rift.RPM import RPM, Spec, RPMLINT_CONFIG
 from rift.TempDir import TempDir
 from rift.TestResults import TestResults
@@ -390,20 +390,18 @@ class BasicTest(Test):
         Test.__init__(self, cmd, "basic_install")
         self.local = False
 
-def action_build(config, args, pkg, repo, suppl_repos):
+def action_build(config, args, pkg, repos):
     """
     Build a package
       - config: rift configuration
+      - args: command arguments
       - pkg: package to build
-      - repo: rpm repositories to use
-      - suppl_repos: optional additional repositories
+      - repos: ProjectArchRepositories object
     """
 
     message('Preparing Mock environment...')
     mock = Mock(config, config.get('version'))
-    if repo:
-        suppl_repos = suppl_repos + [repo]
-    mock.init(suppl_repos)
+    mock.init(repos.all)
 
     message("Building SRPM...")
     srpm = pkg.build_srpm(mock)
@@ -417,23 +415,23 @@ def action_build(config, args, pkg, repo, suppl_repos):
     # Publish
     if args.publish:
         message("Publishing RPMS...")
-        mock.publish(repo)
+        mock.publish(repos.working)
 
         if args.updaterepo:
             message("Updating repository...")
-            repo.update()
+            repos.working.update()
     else:
         logging.info("Skipping publication")
 
     mock.clean()
 
-def action_test_one(args, pkg, vm, results, disable, config=None):
+def action_test_one(args, pkg, vm, results, repos, config=None):
     """
     Launch tests on given packages
     """
     message("Preparing test environment")
     _vm_start(vm)
-    if disable:
+    if repos.working is None:
         disablestr = '--disablerepo=working'
     else:
         disablestr = ''
@@ -462,18 +460,23 @@ def action_test_one(args, pkg, vm, results, disable, config=None):
         vm.stop()
 
 
-def action_test(config, args, pkgs, repos, disable=False):
+def action_test(config, args, pkgs, extra_repos=None):
     """Process 'test' command."""
 
+    if extra_repos is None:
+        extra_repos = []
+
     results = TestResults('test')
-    vm = VM(config, repos)
+    vm = VM(config, extra_repos=extra_repos)
+    repos = ProjectArchRepositories(config, config.get('arch'))
+
     if vm.running():
         message('VM is already running')
         return 1
 
     for pkg in pkgs:
         pkg.load()
-        action_test_one(args, pkg, vm, results, disable, config=config)
+        action_test_one(args, pkg, vm, results, repos, config=config)
 
     if getattr(args, 'noquit', False):
         message("Not stopping the VM. Use: rift vm connect")
@@ -491,7 +494,7 @@ def action_test(config, args, pkgs, repos, disable=False):
     banner("Test suite FAILED!")
     return 2
 
-def action_validate(config, args, pkgs, wkrepo, suppl_repos):
+def action_validate(config, args, pkgs):
     """
     Validate a package:
         - rpmlint on specfile
@@ -499,11 +502,11 @@ def action_validate(config, args, pkgs, wkrepo, suppl_repos):
         - build it
         - lauch tests
     """
-    if args.publish and not wkrepo:
-        raise RiftError("Cannot publish if 'working_repo' is undefined")
 
-    if wkrepo:
-        suppl_repos.append(wkrepo)
+    repos = ProjectArchRepositories(config, config.get('arch'))
+
+    if args.publish and not repos.can_publish():
+        raise RiftError("Cannot publish if 'working_repo' is undefined")
 
     rc = 0
     for pkg in pkgs:
@@ -533,7 +536,7 @@ def action_validate(config, args, pkgs, wkrepo, suppl_repos):
 
         message('Preparing Mock environment...')
         mock = Mock(config, config.get('version'))
-        mock.init(suppl_repos)
+        mock.init(repos.all)
 
         # Check build SRPM
         message('Validate source RPM build...')
@@ -547,17 +550,16 @@ def action_validate(config, args, pkgs, wkrepo, suppl_repos):
         mock.publish(staging)
         staging.update()
         if args.test:
-            rc = action_test(config, args, [pkg], suppl_repos + [staging],
-                             wkrepo is not None) or rc
+            rc = action_test(config, args, [pkg], extra_repos=[staging]) or rc
 
         # Also publish on working repo if requested
         # XXX: All RPMs should be published when all of them have been validated
         if rc == 0 and args.publish:
             message("Publishing RPMS...")
-            mock.publish(wkrepo)
+            mock.publish(repos.working)
 
             message("Updating repository...")
-            wkrepo.update()
+            repos.working.update()
 
         if getattr(args, 'noquit', False):
             message("Keep environment, VM is running. Use: rift vm connect")
@@ -573,10 +575,10 @@ def action_validate(config, args, pkgs, wkrepo, suppl_repos):
 
     return rc
 
-def action_vm(config, args, repos):
+def action_vm(config, args):
     """Action for 'vm' sub-commands."""
 
-    vm = VM(config, repos)
+    vm = VM(config)
     ret = 1
 
     assert args.vm_cmd in ('connect', 'console', 'start', 'stop', 'cmd', 'copy')
@@ -650,33 +652,9 @@ def action(config, args):
         action_annex(args, config)
         return
 
-    # Repo objects
-    if config.get('working_repo'):
-        working_repo_options = {'module_hotfixes': "true"}
-        repo = Repository(path=config.get('working_repo'),
-                          arch=config.get('arch'),
-                          name='working',
-                          options=working_repo_options,
-                          config=config)
-        repos = [repo]
-    else:
-        repo = None
-        repos = []
-    suppl_repos = []
-    for name, data in config.get('repos').items():
-        if isinstance(data, str):
-            suppl_repos.append(RemoteRepository(data, name, config=config))
-        else:
-            remote = RemoteRepository(data['url'],
-                                      name=name,
-                                      priority=data.get('priority'),
-                                      options=data,
-                                      config=config)
-            suppl_repos.append(remote)
-
     # VM
     if args.command == 'vm':
-        return action_vm(config, args, suppl_repos + repos)
+        return action_vm(config, args)
 
     # Now, package related commands..
 
@@ -726,7 +704,8 @@ def action(config, args):
     # BUILD
     elif args.command == 'build':
 
-        if args.publish and not repo:
+        repos = ProjectArchRepositories(config, config.get('arch'))
+        if args.publish and not repos.can_publish():
             raise RiftError("Cannot publish if 'working_repo' is undefined")
 
         results = TestResults('build')
@@ -737,7 +716,7 @@ def action(config, args):
             pkg.load()
             now = time.time()
             try:
-                action_build(config, args, pkg, repo, suppl_repos)
+                action_build(config, args, pkg, repos)
             except RiftError as ex:
                 logging.info("Build failure: %s", str(ex))
                 results.add_failure('build', pkg.name, time.time() - now, str(ex))
@@ -761,21 +740,20 @@ def action(config, args):
     elif args.command == 'test':
 
         pkgs = Package.list(config, staff, modules, args.packages)
-        return action_test(config, args, pkgs, suppl_repos + repos,
-                           repo is not None)
+        return action_test(config, args, pkgs)
 
     # VALIDATE
     elif args.command == 'validate':
 
         pkgs = Package.list(config, staff, modules, args.packages)
-        return action_validate(config, args, pkgs, repo, suppl_repos)
+        return action_validate(config, args, pkgs)
 
     elif args.command == 'validdiff':
 
         pkglist = get_packages_from_patch(args.patch, config=config,
                                           modules=modules, staff=staff)
         # Re-validate each package
-        return action_validate(config, args, pkglist.values(), repo, suppl_repos)
+        return action_validate(config, args, pkglist.values())
 
     elif args.command == 'query':
 

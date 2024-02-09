@@ -54,6 +54,7 @@ from subprocess import Popen, PIPE, STDOUT, check_output, CalledProcessError
 
 from rift import RiftError
 from rift.Config import _DEFAULT_VIRTIOFSD
+from rift.Repository import ProjectArchRepositories
 
 __all__ = ['VM']
 
@@ -108,11 +109,17 @@ class VM():
     NAME = 'rift1.domain'
     SUPPORTED_FS = ('9p', 'virtiofs')
 
-    def __init__(self, config, repos, tmpmode=True):
+    def __init__(self, config, tmpmode=True, extra_repos=None):
         uniq_id = os.getuid() + 2000
         self._image = config.get('vm_image')
         self._project_dir = config.project_dir
-        self._repos = repos or []
+
+        if extra_repos is None:
+            extra_repos = []
+
+        self._repos = ProjectArchRepositories(
+            config, config.get('arch')
+        ).all + extra_repos
 
         self.address = config.get('vm_address')
         self.port = config.get('vm_port', uniq_id)

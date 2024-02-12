@@ -3,6 +3,8 @@
 #
 
 import os.path
+import os
+import textwrap
 
 from TestUtils import make_temp_file, make_temp_dir, RiftTestCase
 
@@ -80,6 +82,80 @@ class ConfigTest(RiftTestCase):
         self.assert_except(DeclError, "Unknown 'myval' key",
                            Config().set, 'myval', 'value')
 
+    def test_get_arch_placeholder(self):
+        """get() with $arch placeholder"""
+        config = Config()
+
+        # $arch placeholder replacement with string
+        config.set('vm_image', '/path/to/image-$arch.qcow2')
+        self.assertEqual(
+            config.get('vm_image', arch='x86_64'),
+            '/path/to/image-x86_64.qcow2'
+        )
+        # $arch placeholder replacement with dict
+        config.set(
+            'repos',
+            {
+                'os': {
+                    'url': 'file:///rift/packages/$arch/os',
+                    'priority': 90,
+                },
+                'extra': {
+                    'url': 'file:///rift/packages/$arch/extra',
+                    'priority': 90,
+                },
+            }
+        )
+        self.assertEqual(
+            config.get('repos', arch='x86_64'),
+            {
+                'os': {
+                    'url': 'file:///rift/packages/x86_64/os',
+                    'priority': 90,
+                },
+                'extra': {
+                    'url': 'file:///rift/packages/x86_64/extra',
+                    'priority': 90,
+                },
+            }
+        )
+
+    def test_get_arch_specific_override(self):
+        """get() with specific arch override"""
+        config = Config()
+
+        # Override with arch specific value
+        config.set('vm_image', '/path/to/image-$arch.qcow2')
+        config.set('vm_image', '/path/to/other-image.qcow2', arch='x86_64')
+        self.assertEqual(
+            config.get('vm_image', arch='x86_64'),
+            '/path/to/other-image.qcow2'
+        )
+
+    def test_get_unsupported_arch(self):
+        """get() with unsupported arch"""
+        config = Config()
+
+        # Get with unsupported arch must fail
+        with self.assertRaisesRegex(
+            DeclError,
+            "^Unable to get configuration option for unsupported architecture "
+            "'fail'$"
+        ):
+            config.get('vm_image', arch='fail')
+
+    def test_set_unsupported_arch(self):
+        """set() with unsupported arch"""
+        config = Config()
+
+        with self.assertRaisesRegex(
+            DeclError,
+            "^Unable to set configuration option for unsupported architecture "
+            "'fail'$"
+        ):
+            config.set('vm_image', '/path/to/image.qcow2', arch='fail')
+
+
     def test_load(self):
         """load() checks mandatory options are present"""
         emptyfile = make_temp_file("")
@@ -98,6 +174,60 @@ class ConfigTest(RiftTestCase):
         # Default config files
         self.assert_except(DeclError, "'annex' is not defined",
                            Config().load)
+
+    def test_load_arch_specific(self):
+        """load() properly loads architecture specific options"""
+        cfgfile = make_temp_file(
+            textwrap.dedent(
+                """
+                annex: /a/dir
+                vm_image: /a/image.img
+                x86_64:
+                    vm_image: /b/image.img
+                """
+            )
+        )
+        config = Config()
+        config.load(cfgfile.name)
+        self.assertEqual(config.get('vm_image'), '/a/image.img')
+        self.assertEqual(config.get('vm_image', arch='x86_64'), '/b/image.img')
+
+    def test_load_arch_specific_invalid_mapping(self):
+        """load() fail with not mapping architecture specific options"""
+        cfgfile = make_temp_file(
+            textwrap.dedent(
+                """
+                annex: /a/dir
+                vm_image: /a/image.img
+                x86_64: fail
+                """
+            )
+        )
+        config = Config()
+        with self.assertRaisesRegex(
+            DeclError,
+            '^Architecture specific override for x86_64 must be a mapping$',
+        ):
+            config.load(cfgfile.name)
+
+    def test_load_arch_specific_invalid_key(self):
+        """load() fail with architecture specific invalid key"""
+        cfgfile = make_temp_file(
+            textwrap.dedent(
+                """
+                annex: /a/dir
+                vm_image: /a/image.img
+                x86_64:
+                    fail: value
+                """
+            )
+        )
+        config = Config()
+        with self.assertRaisesRegex(
+            DeclError,
+            "^Unknown 'fail' key$",
+        ):
+            config.load(cfgfile.name)
 
     def test_load_missing_file(self):
         """load() an non-existent file raises a nice error"""

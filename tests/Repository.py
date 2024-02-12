@@ -145,3 +145,68 @@ class ProjectArchRepositoriesTest(RiftTestCase):
         self.config.options['working_repo'] = '/tmp/repo'
         repos = ProjectArchRepositories(self.config, 'x86_64')
         self.assertTrue(repos.can_publish(), False)
+
+    def test_working_with_arch(self):
+        """Test working repo with $arch placeholder and arch specific value"""
+        self.config.options['working_repo'] = '/tmp/repo/$arch'
+        self.config.options['repos'] = {}
+        repos = ProjectArchRepositories(self.config, 'x86_64')
+        self.assertIsInstance(repos.working, Repository)
+        self.assertEqual(repos.working.name, 'working')
+        self.assertEqual(repos.working.path, '/tmp/repo/x86_64')
+
+        # If an arch specific working_repo parameter is defined in
+        # configuration, it should override generic working_repo parameter for
+        # this arch.
+
+        self.config.options['x86_64'] = { 'working_repo': '/tmp/other/repo'}
+        repos = ProjectArchRepositories(self.config, 'x86_64')
+        self.assertEqual(repos.working.path, '/tmp/other/repo')
+
+    def test_supplementaries_with_arch(self):
+        """Test supplementary with $arch placeholder and arch specific value"""
+        self.config.options['repos'] = {
+            'os': {
+                'url': 'file:///rift/packages/$arch/os',
+                'priority': 90,
+            },
+            'extra': {
+                'url': 'file:///rift/packages/$arch/extra',
+                'priority': 90,
+            },
+        }
+        repos = ProjectArchRepositories(self.config, 'x86_64')
+        self.assertEqual(repos.supplementaries[0].name, 'os')
+        self.assertEqual(
+            repos.supplementaries[0].url,
+            'file:///rift/packages/x86_64/os'
+        )
+        self.assertEqual(repos.supplementaries[1].name, 'extra')
+        self.assertEqual(
+            repos.supplementaries[1].url,
+            'file:///rift/packages/x86_64/extra'
+        )
+
+        # Add architecture specific repos
+        self.config.options['x86_64'] = {}
+        self.config.options['x86_64']['repos'] = {
+            'other-os': {
+                'url': 'file:///rift/other/packages/os',
+                'priority': 90,
+            },
+            'other-extra': {
+                'url': 'file:///rift/other/packages/extra',
+                'priority': 90,
+            },
+        }
+        repos = ProjectArchRepositories(self.config, 'x86_64')
+        self.assertEqual(repos.supplementaries[0].name, 'other-os')
+        self.assertEqual(
+            repos.supplementaries[0].url,
+            'file:///rift/other/packages/os'
+        )
+        self.assertEqual(repos.supplementaries[1].name, 'other-extra')
+        self.assertEqual(
+            repos.supplementaries[1].url,
+            'file:///rift/other/packages/extra'
+        )

@@ -67,7 +67,7 @@ _DEFAULT_MODULES_FILE = os.path.join(_DEFAULT_PKG_DIR, 'modules.yaml')
 _DEFAULT_VM_CPUS = 4
 _DEFAULT_VM_MEMORY = 8192
 _DEFAULT_VM_ADDRESS = '10.0.2.15'
-_DEFAULT_QEMU_CMD = 'qemu-system-x86_64'
+_DEFAULT_QEMU_CMD = 'qemu-system-$arch'
 _DEFAULT_REPO_CMD = 'createrepo_c'
 _DEFAULT_SHARED_FS_TYPE = '9p'
 _DEFAULT_VIRTIOFSD = '/usr/libexec/virtiofsd'
@@ -205,15 +205,69 @@ class Config():
 
         return filepath
 
-    def get(self, option, default=None):
+    def get(self, option, default=None, arch=None):
         """
-        Config getter (manage default values)
+        Config getter (manage default values).
+
+        If arch optional argument is provided, 2 additional steps are performed:
+
+        1/ An architecture specific option value is first searched by suffixing
+           the arch to the option name. If not found, it fallbacks to the option
+           without suffix.
+        2/ $arch placeholder is replaced recursively in the value by the
+           provided argument.
+
+        The additional logic is skipped for the special arch option.
         """
-        if option in self.options:
-            return self.options[option]
-        if option in self.SYNTAX:
-            return self.SYNTAX[option].get('default', default)
-        return default
+        # If arch argument is provided, check it is one of the project
+        # supported architectures.
+        if arch is not None and arch != self.get('arch'):
+            raise DeclError(
+                "Unable to get configuration option for unsupported "
+                f"architecture '{arch}'"
+            )
+        # Except for arch option, if arch argument is provided, select the
+        # architecture specific option (suffixed by the arch) in priority.
+        if (
+                option != 'arch' and
+                arch is not None and
+                arch in self.options and
+                option in self.options[arch]
+            ):
+            value = self.options[arch][option]
+        elif option in self.options:
+            value = self.options[option]
+        elif option in self.SYNTAX:
+            value = self.SYNTAX[option].get('default', default)
+        else:
+            value = default
+
+        # Except for arch option, if arch argument is provided, replace $arch
+        # placeholder by this value.
+        if option == 'arch' or arch is None:
+            return value
+        return self._replace_arch(value, arch)
+
+    def _replace_arch(self, value, arch):
+        """
+        Replace $arch placeholder in all strings found in value recursively.
+        """
+        if isinstance(value, str):
+            return value.replace('$arch', arch)
+        if isinstance(value, list):
+            return [
+                item.replace('$arch', arch)
+                if isinstance(item, str)
+                else item
+                for item in value
+            ]
+        if isinstance(value, dict):
+            return {
+                key: self._replace_arch(item, arch)
+                for key, item
+                in value.items()
+            }
+        return value
 
     def load(self, filenames=None):
         """
@@ -250,55 +304,100 @@ class Config():
 
         self._check()
 
-    def set(self, key, value):
+    def _arch_options(self, arch):
+        """
+        Return the options dictionnary for the given architecture. If arch is
+        None, return the global options dict.
+        """
+        if arch is None:
+            return self.options
+        if arch != self.get('arch'):
+            raise DeclError(
+                "Unable to set configuration option for unsupported "
+                f"architecture '{arch}'"
+            )
+        if arch not in self.options:
+            self.options[arch] = {}
+        return self.options[arch]
+
+    def set(self, key, value, arch=None):
         """
         Config setter (check value type)
         """
-        # Key is known
+
+        # Check key is known.
         if key not in self.SYNTAX:
             raise DeclError("Unknown '%s' key" % key)
 
-        # Check type
+        # Check type against the reference key
         check = self.SYNTAX[key].get('check', 'string')
         assert check in ('string', 'dict', 'list', 'digit', 'enum')
+
+        options = self._arch_options(arch)
         if check == 'string':
             if not isinstance(value, str):
                 raise DeclError("Bad data type %s for '%s'" % (value.__class__.__name__, key))
-            self.options[key] = str(value)
+            options[key] = str(value)
         elif check == 'dict':
             if not isinstance(value, dict):
                 raise DeclError("Bad data type %s for '%s'" % (value.__class__.__name__, key))
-            self.options[key] = value
+            options[key] = value
         elif check == 'list':
             if not isinstance(value, list):
                 raise DeclError("Bad data type %s for '%s'" % (value.__class__.__name__, key))
-            self.options[key] = value
+            options[key] = value
         elif check == 'digit':
             if not isinstance(value, int):
                 raise DeclError("Bad data type %s for '%s'" % (value.__class__.__name__, key))
-            self.options[key] = int(value)
+            options[key] = int(value)
         elif check == 'enum':
             enum_values = self.SYNTAX[key].get('values', [])
             if not value in enum_values:
                 raise DeclError("Bad value %s for '%s' (correct values : %s)" % (
                     value.__class__.__name__, key, ", ".join(enum_values)))
-            self.options[key] = value
-
+            options[key] = value
 
     def update(self, data):
         """
         Update config content with data dict, checking data content respect
         SYNTAX spec.
         """
+        # Set arch first
+        if 'arch' in data:
+            self.set('arch', data['arch'])
+            del data['arch']
+
+        # Load generic options (ie. not architecture specific)
         for key, value in data.items():
+            # Skip architecture specific options
+            if key == self.get('arch'):
+                continue
             self.set(key, value)
+
+        # Load architecture specific options
+        if self.get('arch') in data:
+            if not isinstance(data[self.get('arch')], dict):
+                raise DeclError(
+                    f"Architecture specific override for {self.get('arch')} "
+                    "must be a mapping"
+                )
+            for key, value in data[self.get('arch')].items():
+                self.set(key, value, arch=self.get('arch'))
 
     def _check(self):
         """Checks for mandatory options."""
         for key in self.SYNTAX:
-            if self.SYNTAX[key].get('required', False) and \
-               not 'default' in self.SYNTAX[key]:
-                if key not in self.options:
+            if (
+                    self.SYNTAX[key].get('required', False) and
+                    not 'default' in self.SYNTAX[key]
+                ):
+                # Check key is in options or in arch specific options
+                if (
+                        key not in self.options and (
+                            self.get('arch') not in self.options or
+                            key not in self.options['arch']
+                        )
+                    ):
                     raise DeclError("'%s' is not defined" % key)
 
 

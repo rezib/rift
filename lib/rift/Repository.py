@@ -148,14 +148,14 @@ class ProjectArchRepositories:
         self.working = None
         if config.get('working_repo'):
             self.working = Repository(
-                path=config.get('working_repo'),
+                path=config.get('working_repo', arch=arch),
                 arch=arch,
                 name='working',
                 options={"module_hotfixes": "true"},
                 config=config
             )
         self.supplementaries = []
-        repos = config.get('repos')
+        repos = config.get('repos', arch=arch)
         if repos:
             for name, data in repos.items():
                 if isinstance(data, str):

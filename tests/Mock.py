@@ -14,8 +14,8 @@ class MockTest(RiftTestCase):
 
     def test_init(self):
         """ Test Mock instanciation """
-        mock = Mock(config=[], proj_vers=1.0)
-        self.assertEqual(mock._mockname, "rift-{}-1.0".format(getpass.getuser()))
+        mock = Mock(config=[], arch='x86_64', proj_vers=1.0)
+        self.assertEqual(mock._mockname, "rift-x86_64-{}-1.0".format(getpass.getuser()))
         self.assertEqual(mock._config, [])
 
     def test_build_context(self):
@@ -28,14 +28,14 @@ class MockTest(RiftTestCase):
                         'excludepkgs': 'somepkg',
                         'proxy': 'myproxy',
                     }
-        mock = Mock(_config)
+        mock = Mock(_config, arch)
         repolist.append(Repository('/tmp',
                                     arch,
                                     name='tmp',
                                     options=_repo_config,
                                     config=_config))
         context = mock._build_template_ctx(repolist)
-        self.assertEqual(context['name'], 'rift-{}'.format(getpass.getuser()))
+        self.assertEqual(context['name'], 'rift-{}-{}'.format(arch, getpass.getuser()))
         self.assertEqual(context['arch'], arch)
         repos_ctx = context['repos'][0]
         self.assertEqual(repos_ctx['name'], 'tmp')

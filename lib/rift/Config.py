@@ -64,6 +64,7 @@ OrderedLoader.add_constructor(
 _DEFAULT_PKG_DIR = 'packages'
 _DEFAULT_STAFF_FILE = os.path.join(_DEFAULT_PKG_DIR, 'staff.yaml')
 _DEFAULT_MODULES_FILE = os.path.join(_DEFAULT_PKG_DIR, 'modules.yaml')
+_DEFAULT_ARCH = ['x86_64']
 _DEFAULT_VM_CPUS = 4
 _DEFAULT_VM_MEMORY = 8192
 _DEFAULT_VM_ADDRESS = '10.0.2.15'
@@ -103,7 +104,8 @@ class Config():
             'check':    'dict',
         },
         'arch': {
-            'default':  'x86_64',
+            'check': 'list',
+            'default':  _DEFAULT_ARCH,
         },
         'arch_efi_bios': {},
         'version': {},
@@ -221,7 +223,7 @@ class Config():
         """
         # If arch argument is provided, check it is one of the project
         # supported architectures.
-        if arch is not None and arch != self.get('arch'):
+        if arch is not None and arch not in self.get('arch'):
             raise DeclError(
                 "Unable to get configuration option for unsupported "
                 f"architecture '{arch}'"
@@ -311,7 +313,7 @@ class Config():
         """
         if arch is None:
             return self.options
-        if arch != self.get('arch'):
+        if arch not in self.get('arch'):
             raise DeclError(
                 "Unable to set configuration option for unsupported "
                 f"architecture '{arch}'"
@@ -370,19 +372,20 @@ class Config():
         # Load generic options (ie. not architecture specific)
         for key, value in data.items():
             # Skip architecture specific options
-            if key == self.get('arch'):
+            if key in self.get('arch'):
                 continue
             self.set(key, value)
 
         # Load architecture specific options
-        if self.get('arch') in data:
-            if not isinstance(data[self.get('arch')], dict):
-                raise DeclError(
-                    f"Architecture specific override for {self.get('arch')} "
-                    "must be a mapping"
-                )
-            for key, value in data[self.get('arch')].items():
-                self.set(key, value, arch=self.get('arch'))
+        for arch in self.get('arch'):
+            if arch in data:
+                if not isinstance(data[arch], dict):
+                    raise DeclError(
+                        f"Architecture specific override for {arch} must be a "
+                        "mapping"
+                    )
+                for key, value in data[arch].items():
+                    self.set(key, value, arch=arch)
 
     def _check(self):
         """Checks for mandatory options."""
@@ -391,12 +394,14 @@ class Config():
                     self.SYNTAX[key].get('required', False) and
                     not 'default' in self.SYNTAX[key]
                 ):
-                # Check key is in options or in arch specific options
+                # Check key is in options or defined in all supported arch
+                # specific options.
                 if (
-                        key not in self.options and (
-                            self.get('arch') not in self.options or
-                            key not in self.options['arch']
-                        )
+                        key not in self.options and
+                        not all([
+                            arch in self.options and key in self.options[arch]
+                            for arch in self.get('arch')
+                        ])
                     ):
                     raise DeclError("'%s' is not defined" % key)
 

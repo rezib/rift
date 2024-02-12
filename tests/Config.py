@@ -48,10 +48,9 @@ class ConfigTest(RiftTestCase):
         config.set('repos', {'os': 'http://myserver/pub'})
         self.assertEqual(config.get('repos'), {'os': 'http://myserver/pub'})
 
-        # set a 'list' (with fictive param)
-        Config.SYNTAX.update({'param_list': { 'check': 'list'}})
-        config.set('param_list', ['value1', 'value2'])
-        self.assertEqual(config.get('param_list'), ['value1', 'value2'])
+        # set a 'list'
+        config.set('arch', ['x86_64', 'aarch64'])
+        self.assertEqual(config.get('arch'), ['x86_64', 'aarch64'])
 
         # set a 'enum'
         config.set('shared_fs_type', 'virtiofs')
@@ -65,13 +64,11 @@ class ConfigTest(RiftTestCase):
         self.assert_except(DeclError, "Bad data type str for 'repos'",
                            Config().set, 'repos', 'a string')
         # Default check is 'string'
-        self.assert_except(DeclError, "Bad data type int for 'arch'",
-                           Config().set, 'arch', 42)
-        # Check bad list type (with fictive param)
-        Config.SYNTAX.update({'param_list': { 'check': 'list'}})
+        self.assert_except(DeclError, "Bad data type int for 'vm_image'",
+                           Config().set, 'vm_image', 42)
         self.assert_except(DeclError,
-                           "Bad data type str for 'param_list'",
-                           Config().set, 'param_list', 'a string')
+                           "Bad data type str for 'arch'",
+                           Config().set, 'arch', 'x86_64')
         # Check bad enum
         self.assertRaises(DeclError, Config().set, 'shared_fs_type', 'badtype')
 
@@ -86,11 +83,17 @@ class ConfigTest(RiftTestCase):
         """get() with $arch placeholder"""
         config = Config()
 
+        # Declare supported architectures
+        config.set('arch', ['x86_64', 'aarch64'])
         # $arch placeholder replacement with string
         config.set('vm_image', '/path/to/image-$arch.qcow2')
         self.assertEqual(
             config.get('vm_image', arch='x86_64'),
             '/path/to/image-x86_64.qcow2'
+        )
+        self.assertEqual(
+            config.get('vm_image', arch='aarch64'),
+            '/path/to/image-aarch64.qcow2'
         )
         # $arch placeholder replacement with dict
         config.set(
@@ -119,14 +122,33 @@ class ConfigTest(RiftTestCase):
                 },
             }
         )
+        self.assertEqual(
+            config.get('repos', arch='aarch64'),
+            {
+                'os': {
+                    'url': 'file:///rift/packages/aarch64/os',
+                    'priority': 90,
+                },
+                'extra': {
+                    'url': 'file:///rift/packages/aarch64/extra',
+                    'priority': 90,
+                },
+            }
+        )
 
     def test_get_arch_specific_override(self):
         """get() with specific arch override"""
         config = Config()
 
+        # Declare supported architectures
+        config.set('arch', ['x86_64', 'aarch64'])
         # Override with arch specific value
         config.set('vm_image', '/path/to/image-$arch.qcow2')
         config.set('vm_image', '/path/to/other-image.qcow2', arch='x86_64')
+        self.assertEqual(
+            config.get('vm_image', arch='aarch64'),
+            '/path/to/image-aarch64.qcow2'
+        )
         self.assertEqual(
             config.get('vm_image', arch='x86_64'),
             '/path/to/other-image.qcow2'
@@ -182,8 +204,13 @@ class ConfigTest(RiftTestCase):
                 """
                 annex: /a/dir
                 vm_image: /a/image.img
+                arch:
+                - x86_64
+                - aarch64
                 x86_64:
                     vm_image: /b/image.img
+                aarch64:
+                    vm_image: /c/image.img
                 """
             )
         )
@@ -191,6 +218,7 @@ class ConfigTest(RiftTestCase):
         config.load(cfgfile.name)
         self.assertEqual(config.get('vm_image'), '/a/image.img')
         self.assertEqual(config.get('vm_image', arch='x86_64'), '/b/image.img')
+        self.assertEqual(config.get('vm_image', arch='aarch64'), '/c/image.img')
 
     def test_load_arch_specific_invalid_mapping(self):
         """load() fail with not mapping architecture specific options"""
@@ -228,6 +256,51 @@ class ConfigTest(RiftTestCase):
             "^Unknown 'fail' key$",
         ):
             config.load(cfgfile.name)
+
+    def test_load_missing_required_key(self):
+        """load() fail when required key is missing"""
+        contents = {
+            # vm_image is not defined at all
+            """
+            annex: /a/dir
+            """,
+            # vm_image is not defined for aarch64
+            """
+            annex: /a/dir
+            arch:
+            - x86_64
+            - aarch64
+            x86_64:
+              vm_image: /a/image.img
+            """
+        }
+        for content in contents:
+            cfgfile = make_temp_file(textwrap.dedent(content))
+            config = Config()
+            with self.assertRaisesRegex(
+                DeclError,
+                "^'vm_image' is not defined$",
+            ):
+                config.load(cfgfile.name)
+
+    def test_load_required_key_in_archs_ok(self):
+        """load() succeeds when required key is declared for all architectures."""
+        cfgfile = make_temp_file(
+            textwrap.dedent(
+                """
+                annex: /a/dir
+                arch:
+                - x86_64
+                - aarch64
+                x86_64:
+                    vm_image: /b/image.img
+                aarch64:
+                    vm_image: /c/image.img
+                """
+            )
+        )
+        config = Config()
+        config.load(cfgfile.name)
 
     def test_load_missing_file(self):
         """load() an non-existent file raises a nice error"""

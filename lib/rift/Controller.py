@@ -209,6 +209,7 @@ def parse_options(args=None):
 
     # VM options
     subprs = subparsers.add_parser('vm', help='Manipulate VM process')
+    subprs.add_argument('-a', '--arch', help='CPU architecture of the VM')
     subprs_vm = subprs.add_subparsers(dest='vm_cmd', title='possible commands')
     subprs_vm.add_parser('connect', help='connect to running VM')
     subsubprs = subprs_vm.add_parser('start', help='launch a new VM')
@@ -407,19 +408,20 @@ class BasicTest(Test):
         Test.__init__(self, cmd, "basic_install")
         self.local = False
 
-def build_pkg(config, args, pkg):
+def build_pkg(config, args, pkg, arch):
     """
-    Build a package
+    Build a package for a specific architecture
       - config: rift configuration
-      - args: command arguments
       - pkg: package to build
+      - repo: rpm repositories to use
+      - suppl_repos: optional additional repositories
     """
-    repos = ProjectArchRepositories(config, config.get('arch'))
+    repos = ProjectArchRepositories(config, arch)
     if args.publish and not repos.can_publish():
         raise RiftError("Cannot publish if 'working_repo' is undefined")
 
     message('Preparing Mock environment...')
-    mock = Mock(config, config.get('version'))
+    mock = Mock(config, arch, config.get('version'))
     mock.init(repos.all)
 
     message("Building SRPM...")
@@ -444,11 +446,11 @@ def build_pkg(config, args, pkg):
 
     mock.clean()
 
-def test_one_pkg(config, args, pkg, vm, repos, results):
+def test_one_pkg(config, args, pkg, vm, arch, repos, results):
     """
-    Launch tests on a given package on a specific vm and a set of repositories.
+    Launch tests on a given package on a specific VM and a set of repositories.
     """
-    message("Preparing test environment")
+    message(f"Preparing {arch} test environment")
     _vm_start(vm)
     if repos.working is None:
         disablestr = '--disablerepo=working'
@@ -456,7 +458,7 @@ def test_one_pkg(config, args, pkg, vm, repos, results):
         disablestr = ''
     vm.cmd('yum -y -d0 %s update' % disablestr)
 
-    banner("Starting tests")
+    banner(f"Starting tests of package {pkg.name} on architecture {arch}")
 
     rc = 0
 
@@ -464,33 +466,33 @@ def test_one_pkg(config, args, pkg, vm, repos, results):
     if not args.noauto:
         tests.insert(0, BasicTest(pkg, config=config))
     for test in tests:
-        case = TestCase(test.name, pkg.name)
+        case = TestCase(test.name, pkg.name, arch)
         now = time.time()
-        message("Running test '%s'" % case.fullname)
+        message("Running test '%s' on architecture '%s'" % (case.fullname, arch))
         if vm.run_test(test) == 0:
             results.add_success(case, time.time() - now)
-            message("Test '%s': OK" % case.fullname)
+            message("Test '%s' on architecture %s: OK" % (case.fullname, arch))
         else:
             rc = 1
             results.add_failure(case, time.time() - now)
-            message("Test '%s': ERROR" % case.fullname)
+            message("Test '%s' on architecture %s: ERROR" % (case.fullname, arch))
 
     if not getattr(args, 'noquit', False):
-        message("Cleaning test environment")
+        message(f"Cleaning {arch} test environment")
         vm.cmd("poweroff")
         time.sleep(5)
         vm.stop()
 
     return rc
 
-def test_pkgs(config, args, results, pkgs, extra_repos=None):
-    """Test a list of packages."""
+def test_pkgs(config, args, results, pkgs, arch, extra_repos=None):
+    """Test a list of packages on a specific architecture."""
 
     if extra_repos is None:
         extra_repos = []
 
-    vm = VM(config, extra_repos=extra_repos)
-    repos = ProjectArchRepositories(config, config.get('arch'))
+    vm = VM(config, arch, extra_repos=extra_repos)
+    repos = ProjectArchRepositories(config, arch)
 
     if vm.running():
         raise RiftError('VM is already running')
@@ -499,30 +501,30 @@ def test_pkgs(config, args, results, pkgs, extra_repos=None):
 
     for pkg in pkgs:
         pkg.load()
-        rc += test_one_pkg(config, args, pkg, vm, repos, results)
+        rc += test_one_pkg(config, args, pkg, vm, arch, repos, results)
 
     if getattr(args, 'noquit', False):
         message("Not stopping the VM. Use: rift vm connect")
 
     return rc
 
-def validate_pkgs(config, args, results, pkgs):
+def validate_pkgs(config, args, results, pkgs, arch):
     """
-    Validate a package:
+    Validate packages on a specific architecture:
         - rpmlint on specfile
         - check file patterns
         - build it
         - lauch tests
     """
 
-    repos = ProjectArchRepositories(config, config.get('arch'))
+    repos = ProjectArchRepositories(config, arch)
 
     if args.publish and not repos.can_publish():
         raise RiftError("Cannot publish if 'working_repo' is undefined")
 
     for pkg in pkgs:
 
-        banner("Checking package '%s'" % pkg.name)
+        banner(f"Checking package '{pkg.name}' on architecture {arch}")
 
         # Check info
         message('Validate package info...')
@@ -539,14 +541,14 @@ def validate_pkgs(config, args, results, pkgs):
         stagedir.create()
         staging_repo_options = {'module_hotfixes': "true"}
         staging = Repository(path=stagedir.path,
-                             arch=config.get('arch'),
+                             arch=arch,
                              name='staging',
                              options=staging_repo_options,
                              config=config)
         staging.create()
 
         message('Preparing Mock environment...')
-        mock = Mock(config, config.get('version'))
+        mock = Mock(config, arch, config.get('version'))
         mock.init(repos.all)
 
         try:
@@ -557,7 +559,7 @@ def validate_pkgs(config, args, results, pkgs):
 
             # Check build RPMS
             message('Validate RPMS build...')
-            case = TestCase('build', pkg.name)
+            case = TestCase('build', pkg.name, arch)
             pkg.build_rpms(mock, srpm)
         except RiftError as ex:
             logging.info("Build failure: %s", str(ex))
@@ -569,9 +571,10 @@ def validate_pkgs(config, args, results, pkgs):
         # Check tests
         mock.publish(staging)
         staging.update()
+
         rc = 0
         if args.test:
-            rc = test_pkgs(config, args, results, [pkg], extra_repos=[staging])
+            rc = test_pkgs(config, args, results, [pkg], arch, [staging])
 
         # Also publish on working repo if requested
         # XXX: All RPMs should be published when all of them have been validated
@@ -588,15 +591,28 @@ def validate_pkgs(config, args, results, pkgs):
             mock.clean()
             stagedir.delete()
 
-    banner('All packages checked')
+    banner(f"All packages checked on architecture {arch}")
 
 def action_vm(args, config):
     """Action for 'vm' sub-commands."""
 
-    vm = VM(config)
     ret = 1
 
     assert args.vm_cmd in ('connect', 'console', 'start', 'stop', 'cmd', 'copy')
+    supported_archs = config.get('arch')
+    if args.arch is None:
+        # If --arch argument is not set and there is more than one supported
+        # architecture, raise error to ask user to set the argument. If only one
+        # architecture is supported, use this architecture by default.
+        if len(supported_archs) > 1:
+            raise RiftError(
+                "VM architecture must be defined with --arch argument "
+                f"(possible values: {', '.join(supported_archs)})"
+            )
+        args.arch = supported_archs[0]
+    if args.arch not in config.get('arch'):
+        raise RiftError(f"Project does not support architecture '{args.arch}'")
+    vm = VM(config, args.arch)
     if args.vm_cmd == 'connect':
         ret = vm.cmd(options=None)
     elif args.vm_cmd == 'console':
@@ -626,26 +642,30 @@ def action_build(args, config):
 
     staff, modules = staff_modules(config)
 
-    # Build all packages
-    for pkg in Package.list(config, staff, modules, args.packages):
-        banner(f"Building package '{pkg.name}'")
+    # Build all packages for all project supported architectures
+    for arch in config.get('arch'):
 
-        pkg.load()
-        now = time.time()
-        try:
-            case = TestCase('build', pkg.name)
-            build_pkg(config, args, pkg)
-        except RiftError as ex:
-            logging.info("Build failure: %s", str(ex))
-            results.add_failure(case, time.time() - now, str(ex))
-        else:
-            results.add_success(case, time.time() - now)
+        for pkg in Package.list(config, staff, modules, args.packages):
+            banner(f"Building package '{pkg.name}' for architecture {arch}")
 
-    if getattr(args, 'junit', False):
-        logging.info('Writing test results in %s', args.junit)
-        results.junit(args.junit)
+            pkg.load()
+            now = time.time()
+            try:
+                case = TestCase('build', pkg.name, arch)
+                build_pkg(config, args, pkg, arch)
+            except RiftError as ex:
+                logging.info("Build failure: %s", str(ex))
+                results.add_failure(case, time.time() - now, str(ex))
+            else:
+                results.add_success(case, time.time() - now)
 
-    banner(f"All packages processed")
+        if getattr(args, 'junit', False):
+            logging.info('Writing test results in %s', args.junit)
+            results.junit(args.junit)
+
+        banner(f"All packages processed for architecture {arch}")
+
+    banner('All architectures processed')
 
     if len(results) > 1:
         print(results.summary())
@@ -658,13 +678,15 @@ def action_test(args, config):
     """Action for 'test' command."""
     staff, modules = staff_modules(config)
     results = TestResults('test')
-    # Test packages
-    test_pkgs(
-        config,
-        args,
-        results,
-        Package.list(config, staff, modules, args.packages),
-    )
+    # Test package on all project supported architectures
+    for arch in config.get('arch'):
+        test_pkgs(
+            config,
+            args,
+            results,
+            Package.list(config, staff, modules, args.packages),
+            arch
+        )
     if getattr(args, 'junit', False):
         logging.info('Writing test results in %s', args.junit)
         results.junit(args.junit)
@@ -682,14 +704,16 @@ def action_validate(args, config):
     """Action for 'validate' command."""
     staff, modules = staff_modules(config)
     results = TestResults('validate')
-    # Validate packages
-    validate_pkgs(
-        config,
-        args,
-        results,
-        Package.list(config, staff, modules, args.packages),
-    )
-    banner('All packages checked')
+    # Validate packages on all project supported architectures
+    for arch in config.get('arch'):
+        validate_pkgs(
+            config,
+            args,
+            results,
+            Package.list(config, staff, modules, args.packages),
+            arch
+        )
+    banner('All packages checked on all architectures')
 
     if getattr(args, 'junit', False):
         logging.info('Writing test results in %s', args.junit)
@@ -710,8 +734,9 @@ def action_validdiff(args, config):
     pkglist = get_packages_from_patch(args.patch, config=config,
                                       modules=modules, staff=staff)
     results = TestResults('validate')
-    # Re-validate all packages
-    validate_pkgs(config, args, results, pkglist.values())
+    # Re-validate each package on all project supported architectures
+    for arch in config.get('arch'):
+        validate_pkgs(config, args, results, pkglist.values(), arch)
 
     if getattr(args, 'junit', False):
         logging.info('Writing test results in %s', args.junit)

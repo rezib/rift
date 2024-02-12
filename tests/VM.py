@@ -20,7 +20,7 @@ class VMTest(RiftTestCase):
     def test_init(self):
         """ Test VM initialisation """
         # default
-        vm = VM(self.config)
+        vm = VM(self.config, 'x86_64')
         self.assertEqual(vm.arch, 'x86_64')
         self.assertEqual(vm.cpu_type, 'host')
         self.assertEqual(vm.cpus, 4)
@@ -28,7 +28,7 @@ class VMTest(RiftTestCase):
         self.assertEqual(vm.arch_efi_bios, ARCH_EFI_BIOS)
         self.assertEqual(vm.address, _DEFAULT_VM_ADDRESS)
         self.assertEqual(vm._image, None)
-        self.assertEqual(vm.qemu, _DEFAULT_QEMU_CMD)
+        self.assertEqual(vm.qemu, 'qemu-system-x86_64')
         self.assertEqual(vm._repos, [])
         self.assertTrue(vm.tmpmode)
         self.assertFalse(vm.copymode)
@@ -36,15 +36,15 @@ class VMTest(RiftTestCase):
         self.assertIsNone(vm._tmpimg)
 
         # arch specific
-        self.config.set('arch', 'aarch64')
-        vm = VM(self.config)
+        self.config.set('arch', ['aarch64'])
+        vm = VM(self.config, 'aarch64')
         self.assertEqual(vm.arch, 'aarch64')
         self.assertEqual(vm.cpu_type, 'cortex-a72')
 
         vm_custom_memory = 4096
 
         # custom
-        self.config.set('arch', 'aarch64')
+        self.config.set('arch', ['aarch64'])
         self.config.set('vm_cpu', 'custom')
         self.config.set('vm_cpus', 32)
         self.config.set('vm_memory', vm_custom_memory)
@@ -55,7 +55,7 @@ class VMTest(RiftTestCase):
         self.config.set('vm_image', '/my_image')
         self.config.set('qemu', '/my_custom_qemu')
 
-        vm = VM(self.config)
+        vm = VM(self.config, 'aarch64')
         self.assertEqual(vm.arch, 'aarch64')
         self.assertEqual(vm.cpu_type, 'custom')
         self.assertEqual(vm.cpus, 32)

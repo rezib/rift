@@ -110,24 +110,22 @@ class VM():
     NAME = 'rift1.domain'
     SUPPORTED_FS = ('9p', 'virtiofs')
 
-    def __init__(self, config, tmpmode=True, extra_repos=None):
+    def __init__(self, config, arch, tmpmode=True, extra_repos=None):
         uniq_id = os.getuid() + 2000
-        self._image = config.get('vm_image')
+        self._image = config.get('vm_image', arch=arch)
         self._project_dir = config.project_dir
 
         if extra_repos is None:
             extra_repos = []
 
-        self._repos = ProjectArchRepositories(
-            config, config.get('arch')
-        ).all + extra_repos
+        self._repos = ProjectArchRepositories(config, arch).all + extra_repos
 
         self.address = config.get('vm_address')
         self.port = config.get('vm_port', uniq_id)
         self.cpus = config.get('vm_cpus', 1)
         self.memory = config.get('vm_memory')
-        self.qemu = config.get('qemu')
-        self.arch = config.get('arch')
+        self.qemu = config.get('qemu', arch=arch)
+        self.arch = arch
 
         # default emulated cpu architecture
         if self.arch == 'aarch64':

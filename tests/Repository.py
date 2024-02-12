@@ -159,9 +159,13 @@ class ProjectArchRepositoriesTest(RiftTestCase):
         # configuration, it should override generic working_repo parameter for
         # this arch.
 
+        # Declare supported architectures.
+        self.config.options['arch'] = ['x86_64', 'aarch64']
         self.config.options['x86_64'] = { 'working_repo': '/tmp/other/repo'}
         repos = ProjectArchRepositories(self.config, 'x86_64')
         self.assertEqual(repos.working.path, '/tmp/other/repo')
+        repos = ProjectArchRepositories(self.config, 'aarch64')
+        self.assertEqual(repos.working.path, '/tmp/repo/aarch64')
 
     def test_supplementaries_with_arch(self):
         """Test supplementary with $arch placeholder and arch specific value"""
@@ -187,7 +191,11 @@ class ProjectArchRepositoriesTest(RiftTestCase):
             'file:///rift/packages/x86_64/extra'
         )
 
-        # Add architecture specific repos
+        # If an arch specific repos parameter is defined in configuration, it
+        # should override generic repos parameter for this arch.
+
+        # Declare supported architectures.
+        self.config.options['arch'] = ['x86_64', 'aarch64']
         self.config.options['x86_64'] = {}
         self.config.options['x86_64']['repos'] = {
             'other-os': {
@@ -209,4 +217,16 @@ class ProjectArchRepositoriesTest(RiftTestCase):
         self.assertEqual(
             repos.supplementaries[1].url,
             'file:///rift/other/packages/extra'
+        )
+
+        repos = ProjectArchRepositories(self.config, 'aarch64')
+        self.assertEqual(repos.supplementaries[0].name, 'os')
+        self.assertEqual(
+            repos.supplementaries[0].url,
+            'file:///rift/packages/aarch64/os'
+        )
+        self.assertEqual(repos.supplementaries[1].name, 'extra')
+        self.assertEqual(
+            repos.supplementaries[1].url,
+            'file:///rift/packages/aarch64/extra'
         )

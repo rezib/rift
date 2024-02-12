@@ -58,17 +58,18 @@ class Mock():
     MOCK_FILES = ['logging.ini', 'site-defaults.cfg']
     MOCK_RESULT = '/var/lib/mock/%s/result'
 
-    def __init__(self, config, proj_vers=None):
+    def __init__(self, config, arch, proj_vers=None):
         self._config = config
+        self._arch = arch
         self._tmpdir = None
-        self._mockname = 'rift-%s' % getpass.getuser()
+        self._mockname = 'rift-%s-%s' % (self._arch, getpass.getuser())
         if proj_vers:
             self._mockname = '%s-%s' % (self._mockname, proj_vers)
         logging.debug(self._mockname)
 
     def _build_template_ctx(self, repolist):
         """ Create a context to build mock template """
-        context = {'name': self._mockname, 'arch': self._config.get('arch'), 'repos': []}
+        context = {'name': self._mockname, 'arch': self._arch, 'repos': []}
         # Populate with repolist
         prio = 1000
         for idx, repo in enumerate(repolist, start=1):

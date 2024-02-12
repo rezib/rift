@@ -19,13 +19,13 @@ from rift import RiftError
 
 VALID_REPOS = {
     'os': {
-        'url': 'https://repo.almalinux.org/almalinux/8/BaseOS/x86_64/os/',
+        'url': 'https://repo.almalinux.org/almalinux/8/BaseOS/$arch/os/',
     },
     'appstream': {
-        'url': 'https://repo.almalinux.org/almalinux/8/AppStream/x86_64/os/',
+        'url': 'https://repo.almalinux.org/almalinux/8/AppStream/$arch/os/',
     },
     'powertools': {
-        'url': 'https://repo.almalinux.org/almalinux/8/PowerTools/x86_64/os/',
+        'url': 'https://repo.almalinux.org/almalinux/8/PowerTools/$arch/os/',
     },
 }
 
@@ -109,6 +109,17 @@ class ControllerProjectTest(RiftProjectTestCase):
                                          "{0}-{1}.tar.gz".format(name, version))
         with open(self.pkgsrc[name], "w") as src:
             src.write("ACACACACACACACAC")
+
+    def _check_qemuuserstatic(self):
+        """Skip the test if none qemu-$arch-static executable is found for all
+        architectures declared in project configuration."""
+        if not any(
+            [
+                os.path.exists(f"/usr/bin/qemu-{arch}-static")
+                for arch in self.config.get('arch')
+            ]
+        ):
+            self.skipTest("qemu-user-static is not available")
 
     def test_action_query(self):
         """simple 'rift query' is ok """
@@ -427,6 +438,11 @@ rename to packages/pkgnew/sources/pkgnew-1.0.tar.gz
     @patch('rift.Controller.VM')
     def test_action_build_test(self, mock_vm_class):
 
+        # Declare supported archs and check qemu-user-static is available for
+        # these architectures or skip the test.
+        self.config.set('arch', ['x86_64', 'aarch64'])
+        self._check_qemuuserstatic()
+
         # Create temporary working repo and register its deletion at exit
         working_repo = make_temp_dir()
         atexit.register(shutil.rmtree, working_repo)
@@ -439,11 +455,10 @@ rename to packages/pkgnew/sources/pkgnew-1.0.tar.gz
         self.make_pkg(build_requires=[])
 
         main(['build', 'pkg', '--publish'])
-        self.assertTrue(
-            os.path.exists(
-                f"{working_repo}/{self.config.get('arch')}/pkg-1.0-1.noarch.rpm"
+        for arch in self.config.get('arch'):
+            self.assertTrue(
+                os.path.exists(f"{working_repo}/{arch}/pkg-1.0-1.noarch.rpm")
             )
-        )
 
         # Fake stopped VM and successful tests
         mock_vm_objects = mock_vm_class.return_value
@@ -453,10 +468,11 @@ rename to packages/pkgnew/sources/pkgnew-1.0.tar.gz
         # Run test on package
         main(['test', 'pkg'])
 
-        # Check one VM object have been initialized
-        self.assertEqual(mock_vm_class.call_count, 1)
-        # Check vm.run_test() has been called once for basic tests
-        self.assertEqual(mock_vm_objects.run_test.call_count, 1)
+        # Check two VM objects have been initialized for the two architectures.
+        self.assertEqual(mock_vm_class.call_count, 2)
+        # Check vm.run_test() has been called twice for basic tests on the two
+        # architectures.
+        self.assertEqual(mock_vm_objects.run_test.call_count, 2)
 
         # Remove temporary working repo and unregister its deletion at exit
         shutil.rmtree(working_repo)
@@ -464,6 +480,10 @@ rename to packages/pkgnew/sources/pkgnew-1.0.tar.gz
 
     @patch('rift.Controller.VM')
     def test_action_validate(self, mock_vm_class):
+        # Declare supported archs and check qemu-user-static is available for
+        # these architectures or skip the test.
+        self.config.set('arch', ['x86_64', 'aarch64'])
+        self._check_qemuuserstatic()
         self.config.options['repos'] = VALID_REPOS
         self.update_project_conf()
 
@@ -478,17 +498,61 @@ rename to packages/pkgnew/sources/pkgnew-1.0.tar.gz
         # Run validate on pkg
         main(['validate', 'pkg'])
 
-        # Check VM object have been initialized
-        self.assertEqual(mock_vm_class.call_count, 1)
-        # Check vm.run_test() has been called once for basic tests
-        self.assertEqual(mock_vm_objects.run_test.call_count, 1)
+        # Check two VM objects have been initialized for the two architectures.
+        self.assertEqual(mock_vm_class.call_count, 2)
+        # Check vm.run_test() has been called twice for basic tests on the two
+        # architectures.
+        self.assertEqual(mock_vm_objects.run_test.call_count, 2)
+
+    @patch('rift.Controller.VM')
+    def test_vm_arch_option(self, mock_vm_class):
+        """Test vm --arch option required with multiple supported archs."""
+        # With only one supported architecture in project, --arch argument must
+        # not be required.
+        main(['vm', 'connect'])
+
+        # Define multiple supported architectures.
+        self.config.set('arch', ['x86_64', 'aarch64'])
+        self.update_project_conf()
+
+        # With multiple supported architectures, --arch argument must be
+        # required.
+        with self.assertRaisesRegex(
+            RiftError,
+            "^VM architecture must be defined with --arch argument.*$"
+        ):
+            main(['vm', 'connect'])
+
+        # It should run without error with --arch.
+        main(['vm', '--arch', 'x86_64', 'connect'])
+
+        # Test invalid value of --arch argument is reported.
+        with self.assertRaisesRegex(
+            RiftError,
+            "^Project does not support architecture 'fail'$"
+        ):
+            main(['vm', '--arch', 'fail', 'connect'])
 
 
-class ControllerSimpleTest(RiftTestCase):
-    """ Simple test for Class Controler """
+class ControllerArgumentsTest(RiftTestCase):
+    """ Arguments parsing tests for Controller module"""
 
     def test_parse_options_updaterepo(self):
         """ Test option parsing """
         args = ["build", "a_package", "--dont-update-repo"]
         parser = parse_options(args)
         self.assertFalse(parser.updaterepo)
+
+    def test_parse_options_vm(self):
+        """ Test vm command options parsing """
+        args = ['vm', '--arch', 'x86_64']
+        parser = parse_options(args)
+        self.assertEquals(parser.command, 'vm')
+
+        args = ['vm', 'connect']
+        parser = parse_options(args)
+        self.assertEquals(parser.vm_cmd, 'connect')
+
+        args = ['vm', '--arch', 'x86_64', 'connect']
+        parser = parse_options(args)
+        self.assertEquals(parser.vm_cmd, 'connect')

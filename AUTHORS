@@ -1,0 +1,13 @@
+# This is the list of Rift's significant contributors.
+#
+# To see the full list of contributors, see the revision history in
+# source control.
+
+Actual author/maintainer:
+Aurelien Cedeyn
+
+Former author:
+Aurelien Degremont
+
+Special thanks to:
+Michael Siry for aarch64 support patch.

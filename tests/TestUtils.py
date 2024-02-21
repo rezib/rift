@@ -13,6 +13,11 @@ import unittest
 class RiftTestCase(unittest.TestCase):
     """unittest.TestCase subclass with additional features"""
 
+    def __init__(self, methodName='runTest'):
+        unittest.TestCase.__init__(self, methodName)
+        # Allow to show the full content of a diff
+        self.maxDiff = None
+
     def assert_except(self, exc_cls, exc_str, callable_obj, *args, **kwargs):
         """
         Same as TestCase.assertRaises() but with an additional argument to

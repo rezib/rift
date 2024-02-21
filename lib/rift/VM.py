@@ -42,6 +42,7 @@ import time
 import datetime
 import shlex
 import pipes
+import platform
 import logging
 import tempfile
 import textwrap
@@ -175,7 +176,7 @@ class VM():
         cmd = []
         helper_cmd = []
         if self.shared_fs_type == '9p':
-            cmd += ['-virtfs', 'local,id=project,path=/%s,mount_tag=project,'
+            cmd += ['-virtfs', 'local,id=project,path=%s,mount_tag=project,'
                     'security_model=none' % self._project_dir]
             for repo in self._repos:
                 if repo.is_file():
@@ -186,9 +187,11 @@ class VM():
         elif self.shared_fs_type == 'virtiofs':
             # Add a shared memory object to allow virtiofsd shares
             cmd += ['-object',
-                    f'memory-backend-file,id=mem,size={str(self.memory)}M,mem-path=/tmp,share=on',
-                    '-machine',
-                    'memory-backend=mem,accel=kvm']
+                    f'memory-backend-file,id=mem,size={str(self.memory)}M,mem-path=/tmp,share=on']
+            if self.arch == platform.processor():
+                cmd += ['-machine', 'memory-backend=mem,accel=kvm']
+            else:
+                cmd += ['-machine', 'memory-backend=mem']
             cmd += ['-chardev', 'socket,id=project,path=/tmp/.virtio_fs_project',
                     '-device', 'vhost-user-fs-pci,queue-size=1024,chardev=project,tag=project']
 
@@ -229,20 +232,11 @@ class VM():
                     sockets.append('/tmp/.virtio_fs_%s' % (repo.name))
             Popen(['sudo', '/bin/chmod', '777'] + sockets).wait()
 
-
-    def spawn(self):
-        """Start VM process in background"""
-
-        # TODO: use -snapshot from qemu cmdline instead of creating temporary VM image
-        if self.tmpmode:
-            self._mk_tmp_img()
-            imgfile = self._tmpimg.name
-        else:
-            imgfile = self._image
-
+    def _gen_qemu_args(self, image_file):
+        """ Generate qemu command line arguments """
         # Start VM process
         cmd = shlex.split(self.qemu)
-        if self.arch == 'x86_64':
+        if self.arch == platform.processor():
             cmd += ['-enable-kvm']
         else:
             cmd += ['-machine', 'virt']
@@ -260,7 +254,7 @@ class VM():
         # Drive
         # TODO: switch to --device syntax
         cmd += ['-drive', 'file=%s,if=virtio,format=qcow2,cache=unsafe'
-                % imgfile]
+                % image_file]
 
         # Console
         cmd += ['-chardev', 'socket,id=charserial0,path=%s,server=on,wait=off'
@@ -280,7 +274,20 @@ class VM():
         else:
             cmd += ['-device', 'virtio-net-pci,netdev=hostnet0,bus=pci.0,addr=0x3']
 
+        return cmd
 
+
+    def spawn(self):
+        """Start VM process in background"""
+
+        # TODO: use -snapshot from qemu cmdline instead of creating temporary VM image
+        if self.tmpmode:
+            self._mk_tmp_img()
+            imgfile = self._tmpimg.name
+        else:
+            imgfile = self._image
+
+        cmd = self._gen_qemu_args(imgfile)
         fs_cmds, helper_cmds = self._make_drive_cmd()
         cmd += fs_cmds
 
@@ -298,6 +305,7 @@ class VM():
         logging.info("Starting VM process")
         logging.debug("Running VM command: %s", ' '.join(cmd))
         self._vm = Popen(cmd, stderr=PIPE)
+
 
     def prepare(self):
         """
@@ -318,7 +326,7 @@ class VM():
             #options = 'defaults'
         # Build shared mount point info.
         mkdirs = [self._PROJ_MOUNTPOINT]
-        fstab = ['project /%s %s %s,ro 0 0' % (self._PROJ_MOUNTPOINT, self.shared_fs_type, options)]
+        fstab = ['project %s %s %s,ro 0 0' % (self._PROJ_MOUNTPOINT, self.shared_fs_type, options)]
         repos = []
         prio = 1000
         for repo in self._repos:

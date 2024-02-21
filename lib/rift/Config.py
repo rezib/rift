@@ -68,6 +68,9 @@ _DEFAULT_ARCH = ['x86_64']
 _DEFAULT_VM_CPUS = 4
 _DEFAULT_VM_MEMORY = 8192
 _DEFAULT_VM_ADDRESS = '10.0.2.15'
+_DEFAULT_VM_ADDITIONAL_RPMS = []
+_DEFAULT_VM_CLOUD_INIT_TPL = 'cloud-init.tpl'
+_DEFAULT_VM_BUILD_POST_SCRIPT = 'build-post.sh'
 _DEFAULT_QEMU_CMD = 'qemu-system-$arch'
 _DEFAULT_REPO_CMD = 'createrepo_c'
 _DEFAULT_SHARED_FS_TYPE = '9p'
@@ -92,6 +95,8 @@ class Config():
         'modules_file': {
             'default':   _DEFAULT_MODULES_FILE,
         },
+        'proxy': {},
+        'no_proxy': {},
         'packages_dir': {
             'default':   _DEFAULT_PKG_DIR,
         },
@@ -138,6 +143,17 @@ class Config():
         },
         'vm_address': {
             'default':  _DEFAULT_VM_ADDRESS,
+        },
+        'vm_images_cache': {},
+        'vm_additional_rpms': {
+            'check':    'list',
+            'default':  _DEFAULT_VM_ADDITIONAL_RPMS,
+        },
+        'vm_cloud_init_tpl': {
+            'default': _DEFAULT_VM_CLOUD_INIT_TPL,
+        },
+        'vm_build_post_script': {
+            'default': _DEFAULT_VM_BUILD_POST_SCRIPT,
         },
         'gerrit_realm': {},
         'gerrit_server': {},

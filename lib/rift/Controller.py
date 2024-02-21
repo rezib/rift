@@ -223,6 +223,16 @@ def parse_options(args=None):
     subsubprs = subprs_vm.add_parser('copy', help='copy files with VM')
     subsubprs.add_argument('source', help='source files')
     subsubprs.add_argument('dest', help='destination files')
+    subsubprs = subprs_vm.add_parser('build', help='build image of test VM')
+    subsubprs.add_argument('url', help='URL of base cloud image')
+    subsubprs.add_argument('--force', action='store_true',
+                           help='ignore cache and force download of cloud image')
+    subsubprs.add_argument('-o', '--output',
+                           help='path of generated virtual machine image')
+    subsubprs.add_argument('--deploy', action='store_true',
+                           help='deploy project image defined in configuration')
+    subsubprs.add_argument('--keep', action='store_true',
+                           help='keep virtual machine alive in case of boot failure')
 
     # query
     subprs = subparsers.add_parser('query', help='Show packages metadata')
@@ -593,12 +603,31 @@ def validate_pkgs(config, args, results, pkgs, arch):
 
     banner(f"All packages checked on architecture {arch}")
 
+def vm_build(vm, args, config):
+    """Build VM image."""
+    if not args.deploy and args.output is None:
+        raise RiftError(
+            "Either --deploy or -o,--output option must be used"
+        )
+    if args.deploy and args.output is not None:
+        raise RiftError(
+            "Both --deploy and -o,--output options cannot be used together"
+        )
+    if args.deploy:
+        output = config.get('vm_image')
+    else:
+        output = args.output
+    message(f"Building new vm image {output}")
+    vm.build(args.url, args.force, args.keep, output)
+    banner(f"New vm image {output} is ready")
+    return 0
+
 def action_vm(args, config):
     """Action for 'vm' sub-commands."""
 
     ret = 1
 
-    assert args.vm_cmd in ('connect', 'console', 'start', 'stop', 'cmd', 'copy')
+    assert args.vm_cmd in ('connect', 'console', 'start', 'stop', 'cmd', 'copy', 'build')
     supported_archs = config.get('arch')
     if args.arch is None:
         # If --arch argument is not set and there is more than one supported
@@ -628,6 +657,8 @@ def action_vm(args, config):
             ret = 0
     elif args.vm_cmd == 'stop':
         ret = vm.cmd('poweroff')
+    elif args.vm_cmd == 'build':
+        ret = vm_build(vm, args, config)
     return ret
 
 def action_build(args, config):

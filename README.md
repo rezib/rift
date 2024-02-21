@@ -16,7 +16,8 @@ To run the unit tests and static analysis, some dependencies are required:
 
 ```sh
 sudo -n dnf -y install rpmlint rpm-python3 python3-pylint python3-jinja2 \
-    python3-nose platform-python-coverage python3-PyYAML python3-rpm
+    python3-nose platform-python-coverage python3-PyYAML python3-rpm \
+    openssh-clients genisoimage qemu qemu-img
 ```
 
 Run this command for static source code linting:
@@ -34,3 +35,10 @@ $ export PYTHONPATH=$PWD/lib
 $ nosetests-3.6 -vs --all-modules --with-xunit --with-coverage \
     --cover-package=rift --cover-xml tests
 ```
+
+> [!IMPORTANT]
+> Unit tests download virtual machine images from the Internet. The unit tests
+> use the value of `https_proxy` environment variable as the Rift proxy
+> configuration parameter, if this variable is defined in your environment. If
+> you do not have direct access to Internet, you must define this environment
+> variable with your network's proxy server to run the tests successfully.

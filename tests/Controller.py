@@ -12,6 +12,7 @@ from TestUtils import (
     make_temp_file, make_temp_dir, RiftTestCase, RiftProjectTestCase
 )
 
+from VM import GLOBAL_CACHE, VALID_IMAGE_URL, PROXY
 from rift.Controller import (
     main, _validate_patch, get_packages_from_patch, parse_options
 )
@@ -471,6 +472,112 @@ rename to packages/pkgnew/sources/pkgnew-1.0.tar.gz
         ):
             main(['vm', '--arch', 'fail', 'connect'])
 
+        # Remove mock build environment
+        self.clean_mock_environments()
+
+    @patch('rift.Controller.VM')
+    def test_action_vm_build(self, mock_vm_class):
+        """simple 'rift vm build' is ok """
+
+        mock_vm_objects = mock_vm_class.return_value
+
+        main(['vm', 'build', 'http://image', '--deploy'])
+        # check VM class has been instanciated
+        mock_vm_class.assert_called()
+
+        mock_vm_objects.build.assert_called_once_with(
+            'http://image', False, False, self.config.get('vm_image')
+        )
+        mock_vm_objects.build.reset_mock()
+        main(['vm', 'build', 'http://image', '--deploy', '--force'])
+        mock_vm_objects.build.assert_called_once_with(
+            'http://image', True, False, self.config.get('vm_image')
+        )
+        mock_vm_objects.build.reset_mock()
+        main(['vm', 'build', 'http://image', '--deploy', '--keep'])
+        mock_vm_objects.build.assert_called_once_with(
+            'http://image', False, True, self.config.get('vm_image')
+        )
+        mock_vm_objects.build.reset_mock()
+        main(
+            ['vm', 'build', 'http://image', '--output', 'OUTPUT.img', '--force']
+        )
+        mock_vm_objects.build.assert_called_once_with(
+            'http://image', True, False, 'OUTPUT.img'
+        )
+        mock_vm_objects.build.reset_mock()
+        with self.assertRaisesRegex(
+            RiftError, "^Either --deploy or -o,--output option must be used$"
+        ):
+            main(['vm', 'build', 'http://image'])
+        with self.assertRaisesRegex(
+            RiftError,
+            "^Both --deploy and -o,--output options cannot be used together$",
+        ):
+            main(
+                [
+                    'vm',
+                    'build',
+                    'http://image',
+                    '--deploy',
+                    '--output',
+                    'OUTPUT.img',
+                ]
+            )
+
+    def test_vm_build_and_validate(self):
+        """Test VM build and validate package"""
+        if not os.path.exists("/usr/bin/qemu-img"):
+            self.skipTest("qemu-img is not available")
+        self.config.options['vm_images_cache'] = GLOBAL_CACHE
+        # Reduce memory size from default 8GB to 2GB because it is sufficient to
+        # run this VM and it largely reduces storage required by virtiofs memory
+        # backend file which is the same size as the VM memory, thus reducing
+        # the risk to fill up small partitions when running the tests.
+        self.config.options['vm_memory'] = 2048
+        self.config.options['proxy'] = PROXY
+        self.config.options['repos'] = {
+            'os': {
+                'url': (
+                    'https://repo.almalinux.org/almalinux/8/BaseOS/x86_64/os/'
+                ),
+                'priority': 90
+            },
+            'updates': {
+                'url': (
+                    'https://repo.almalinux.org/almalinux/8/AppStream/x86_64/'
+                    'os/'
+                ),
+                'priority': 90
+            },
+            'extras':  {
+                'url': (
+                    'https://repo.almalinux.org/almalinux/8/PowerTools/x86_64/'
+                    'os/'
+                ),
+                'priority': 90
+            }
+        }
+        # Enable virtiofs that is natively supported by Alma without requirement
+        # of additional RPM.
+        self.config.options['shared_fs_type'] = 'virtiofs'
+        # Update project YAML configuration with new options defined above
+        self.update_project_conf()
+        # Copy example cloud-init template
+        self.copy_cloud_init_tpl()
+        # Copy example build post script
+        self.copy_build_post_script()
+        # Ensure cache directory exists
+        self.ensure_vm_images_cache_dir()
+        # Build virtual machine image
+        main(['vm', 'build', VALID_IMAGE_URL['x86_64'], '--deploy'])
+        # Create source package and launch validation on fresh VM image
+        pkg = 'pkg'
+        self.make_pkg(name=pkg, build_requires=[], requires=[])
+        main(['validate', pkg])
+        # Remove mock build environments
+        self.clean_mock_environments()
+
 
 class ControllerArgumentsTest(RiftTestCase):
     """ Arguments parsing tests for Controller module"""
@@ -494,3 +601,37 @@ class ControllerArgumentsTest(RiftTestCase):
         args = ['vm', '--arch', 'x86_64', 'connect']
         parser = parse_options(args)
         self.assertEquals(parser.vm_cmd, 'connect')
+
+        args = ['vm', 'build']
+        # This must fail due to missing image URL
+        with self.assertRaises(SystemExit):
+            parse_options(args)
+
+        args = ['vm', 'build', 'http://image']
+        parser = parse_options(args)
+        self.assertEquals(parser.vm_cmd, 'build')
+        self.assertEquals(parser.url, 'http://image')
+        self.assertFalse(parser.force)
+
+        args = ['vm', 'build', 'http://image', '--force']
+        parser = parse_options(args)
+        self.assertTrue(parser.force)
+
+        args = ['vm', 'build', 'http://image', '--deploy']
+        parser = parse_options(args)
+        self.assertTrue(parser.deploy)
+
+        OUTPUT_IMG = 'OUTPUT'
+
+        args = ['vm', 'build', 'http://image', '-o', OUTPUT_IMG]
+        parser = parse_options(args)
+        self.assertEquals(parser.output, OUTPUT_IMG)
+
+        args = ['vm', 'build', 'http://image', '--output', OUTPUT_IMG]
+        parser = parse_options(args)
+        self.assertEquals(parser.output, OUTPUT_IMG)
+
+        # This must fail due to missing output filename
+        args = ['vm', 'build', 'http://image', '--output']
+        with self.assertRaises(SystemExit):
+            parse_options(args)

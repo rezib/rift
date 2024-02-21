@@ -50,15 +50,23 @@ import termios
 import select
 import struct
 import socket
-from subprocess import Popen, PIPE, STDOUT, check_output, CalledProcessError
+import uuid
+import shutil
+import atexit
+import urllib
+from subprocess import Popen, PIPE, STDOUT, check_output, run, CalledProcessError
+
+from jinja2 import Template
 
 from rift import RiftError
 from rift.Config import _DEFAULT_VIRTIOFSD
 from rift.Repository import ProjectArchRepositories
+from rift.TempDir import TempDir
 
 __all__ = ['VM']
 
 ARCH_EFI_BIOS = "./usr/share/edk2/aarch64/QEMU_EFI.silent.fd"
+CLOUD_INIT_SEED_ISO = 'seed.iso'
 
 def is_virtiofs_qemu(virtiofsd=_DEFAULT_VIRTIOFSD):
     """
@@ -152,6 +160,16 @@ class VM():
         self._helpers = []
         self._tmpimg = None
         self.consolesock = '/tmp/rift-vm-console-{0}.sock'.format(uniq_id)
+        self.proxy = config.get('proxy')
+        self.no_proxy = config.get('no_proxy')
+        self.additional_rpms = config.get('vm_additional_rpms')
+        self.cloud_init_tpl = config.project_path(
+            config.get('vm_cloud_init_tpl')
+        )
+        self.build_post_script = config.project_path(
+            config.get('vm_build_post_script')
+        )
+        self.images_cache = config.get('vm_images_cache')
 
     def _mk_tmp_img(self):
         """Create a temp VM image to avoid modifying the real image disk."""
@@ -240,7 +258,7 @@ class VM():
                     sockets.append('/tmp/.virtio_fs_%s' % (repo.name))
             Popen(['sudo', '/bin/chmod', '777'] + sockets).wait()
 
-    def _gen_qemu_args(self, image_file):
+    def _gen_qemu_args(self, image_file, seed):
         """ Generate qemu command line arguments """
         # Start VM process
         cmd = shlex.split(self.qemu)
@@ -289,10 +307,13 @@ class VM():
         else:
             cmd += ['-device', 'virtio-net-pci,netdev=hostnet0,bus=pci.0,addr=0x3']
 
+        if seed is not None:
+            cmd += ['-drive', f"driver=raw,file={seed},if=virtio"]
+
         return cmd
 
 
-    def spawn(self):
+    def spawn(self, seed=None):
         """Start VM process in background"""
 
         # TODO: use -snapshot from qemu cmdline instead of creating temporary VM image
@@ -302,7 +323,7 @@ class VM():
         else:
             imgfile = self._image
 
-        cmd = self._gen_qemu_args(imgfile)
+        cmd = self._gen_qemu_args(imgfile, seed)
         fs_cmds, helper_cmds = self._make_drive_cmd()
         cmd += fs_cmds
 
@@ -398,17 +419,18 @@ class VM():
                     self.shared_fs_type, "\n".join(repos))
         self.cmd(cmd)
 
-    def cmd(self, command=None, options=('-T',), stderr=None):
+    def cmd(self, command=None, options=('-T',), stderr=None, stdin=None):
         """Run specified command inside this VM"""
         cmd = ['ssh', '-oStrictHostKeyChecking=no', '-oLogLevel=ERROR',
-               '-oUserKnownHostsFile=/dev/null', '-p', str(self.port),
+               '-oUserKnownHostsFile=/dev/null',
+               '-oBatchMode=yes', '-p', str(self.port),
                'root@127.0.0.1']
         if options:
             cmd += options
         if command:
             cmd.append(command)
         logging.debug("Running command in VM: %s", ' '.join(cmd))
-        popen = Popen(cmd, stderr=stderr) #, stdout=PIPE, stderr=STDOUT)
+        popen = Popen(cmd, stderr=stderr, stdin=stdin) #, stdout=PIPE, stderr=STDOUT)
         popen.wait()
         return popen.returncode
 
@@ -544,9 +566,9 @@ class VM():
             sys.stdout.flush()
         return False
 
-    def stop(self):
+    def stop(self, unlink=True):
         """
-        Shutdown the VM and remove temporary files.
+        Shutdown the VM and remove temporary files if unlink argument is True.
 
         First try to terminate it cleanly for 5 sec. It fails, kill it.
         """
@@ -575,8 +597,278 @@ class VM():
 
 
         # Unlink temp VM image
+        if unlink:
+            self.unlink()
+
+    def unlink(self):
+        """
+        Remove temporary image if used.
+        """
         if self._tmpimg and not self._tmpimg.closed:
             logging.debug("Unlink VM temporary image file '%s'",
                           self._tmpimg.name)
             self._tmpimg.close()
             self._tmpimg = None
+
+    def restart(self):
+        """
+        Restart a running VM.
+        """
+        logging.info("Restarting VM")
+        if not self.running():
+            raise RiftError(f"Unable to restart unreachable VM")
+        self.cmd("reboot")
+        time.sleep(5)  # let 5 seconds for the VM to stop properly
+        # wait for the VM to restart or fail after timeout
+        if not self.ready():
+            raise RiftError("Failed to restart VM")
+
+    def _dl_base_image(self, url, force):
+        """
+        Download in cache the base cloud image whose URL is provided in
+        argument. The download is skipped if the image is already present in
+        cache. Return the path to the downloaded file on the filesystem.
+        """
+        # If images cache directory is not defined, create a temporary
+        # directory and register its deletion at exit. If it is defined in
+        # configuration, check it exists or fail with RiftError.
+        if not self.images_cache:
+            tmp_cache_dir = TempDir("cache")
+            tmp_cache_dir.create()
+            self.images_cache = tmp_cache_dir.path
+            atexit.register(tmp_cache_dir.delete)
+        elif (
+                not os.path.exists(self.images_cache) or
+                not os.path.isdir(self.images_cache)
+            ):
+            raise RiftError(
+                f"Cloud images cache directory {self.images_cache} does not "
+                "exist"
+            )
+
+        base_image_path = os.path.join(self.images_cache, os.path.basename(url))
+
+        # File is already present in cache, just return its path and skip
+        # download.
+        if os.path.exists(base_image_path):
+            if force:
+                logging.info(
+                    "Download is forced, removing cached file %s",
+                    base_image_path)
+                os.remove(base_image_path)
+            else:
+                logging.info(
+                    "Using cached file %s, skipping download",
+                    base_image_path
+                )
+                return base_image_path
+
+        logging.info("Downloading file %s", url)
+
+        # Setup proxy if defined
+        if self.proxy is not None:
+            opener = urllib.request.build_opener(
+                urllib.request.ProxyHandler(
+                    {
+                        'http' : self.proxy,
+                        'https': self.proxy,
+                    }
+                )
+            )
+            # Change default urllib user agent and emulate real browser to avoid
+            # bots filters that are sometimes configured on server side.
+            opener.addheaders = [('User-agent', 'Mozilla/5.0')]
+            urllib.request.install_opener(opener)
+            # If no_proxy is defined, set environment variable accordingly to
+            # make urllib.request.ProxyHandler skip proxy for these targeted
+            # hosts.
+            if self.no_proxy is not None:
+                os.environ['no_proxy'] = self.no_proxy
+
+        # Download file
+        try:
+            urllib.request.urlretrieve(url, base_image_path)
+        except urllib.error.HTTPError as error:
+            raise RiftError(
+                f"HTTP error while downloading {url}: {str(error)}"
+            ) from error
+        except urllib.error.URLError as error:
+            raise RiftError(
+                f"URL error while downloading {url}: {str(error)}"
+            ) from error
+
+        return base_image_path
+
+    def _build_seed_iso(self):
+        """
+        Generate cloud-init meta-data file and user-data file based on the
+        template in project directory. An ISO image is then generated in
+        conformity with cloud-init expectations for nocloud datasource.
+        """
+        # Create temporary directory and register its deletion on program exit.
+        tmp_seed_dir = TempDir("seed")
+        tmp_seed_dir.create()
+        atexit.register(tmp_seed_dir.delete)
+
+        seed_iso_file = os.path.join(
+            tmp_seed_dir.path,
+            CLOUD_INIT_SEED_ISO
+        )
+        # Generate cloud-init meta_data file
+        meta_data_file = os.path.join(tmp_seed_dir.path, "meta-data")
+        with open(meta_data_file, 'w') as fh_meta:
+            fh_meta.write(
+                f"instance-id: {uuid.uuid4()}\nlocal-hostname: rift\n"
+            )
+
+        # Generate cloud-init user_data file
+        user_data_file = os.path.join(tmp_seed_dir.path, "user-data")
+
+        try:
+            tpl = Template(open(self.cloud_init_tpl).read())
+        except FileNotFoundError as err:
+            raise RiftError(
+                "Unable to find cloud-init template file "
+                f"{self.cloud_init_tpl}"
+            ) from err
+        with open(user_data_file, 'w') as fh_user:
+            fh_user.write(
+                tpl.render(
+                    proxy=self.proxy,
+                    no_proxy=self.no_proxy,
+                    repositories=self._repos
+                )
+            )
+
+        # Generate seed iso
+        logging.info("Generating cloud-init seed ISO %s", seed_iso_file)
+        try:
+            run(
+                ['genisoimage', '-output', seed_iso_file,
+                 '-input-charset', 'utf-8', '-volid', 'cidata', '-joliet',
+                 '-rock', user_data_file, meta_data_file],
+                cwd=tmp_seed_dir.path,
+                check=True)
+        except CalledProcessError as error:
+            raise RiftError(
+                f"Error while generating seed iso: {str(error)}"
+            ) from error
+
+        return seed_iso_file
+
+    def _build_run_post_script(self, rpm_basenames):
+        """
+        Run VM build post script if it exists. The list of RPM packages
+        basenames in argument are provided as an environment variable to the
+        script.
+        """
+        if not os.path.exists(self.build_post_script):
+            logging.info(
+                "Build post script %s not found, skipping its execution…",
+                self.build_post_script
+            )
+            return
+
+        # Run build post script in the VM with some parameters bundled in
+        # environment variables.
+        env_str = (
+            f"RIFT_SHARED_FS_TYPE={self.shared_fs_type} "
+            f"RIFT_ADDITIONAL_RPMS={':'.join(rpm_basenames)} "
+            f"RIFT_REPOS={':'.join([repo.name for repo in self._repos])}"
+        )
+        if self.cmd(
+                f"{env_str} bash -",
+                stderr=STDOUT,
+                stdin=open(self.build_post_script)
+            ):
+            self.stop()
+            raise RiftError("Error while running build post script")
+
+    def _build_write_output(self, output):
+        """
+        Write built VM image in output.
+        """
+        if self.copymode:
+            # In copymode, just copy the image file to its resulting name
+            shutil.copy(self._tmpimg.name, output)
+        else:
+            # If an overlay over the cloud image was used, convert it to a full
+            # image with qemu-img.
+            try:
+                run(
+                    ['qemu-img', 'convert', '-c', '-O', 'qcow2',
+                     self._tmpimg.name, output],
+                    check=True)
+            except CalledProcessError as error:
+                raise RiftError(
+                    f"Error while converting resulting image: {str(error)}"
+                ) from error
+
+    def build(self, url, force, keep, output):
+        """
+        Build VM image.
+        """
+
+        # Check the VM is not already running or fail.
+        if self.running():
+            raise RiftError(
+                'VM is already running then unable to build image, stop the VM '
+                'first.'
+            )
+
+        # Download image if necessary
+        base_image_path = self._dl_base_image(url, force)
+
+        # Build cloud-init seed iso
+        seed_iso_file = self._build_seed_iso()
+
+        # Use cloud base image for current VM and start it with seed iso
+        self._image = base_image_path
+        self.spawn(seed=seed_iso_file)
+
+        if not self.ready():
+            # Unless keep is true, stop virtual machin and unlink temporary
+            # image.
+            if not keep:
+                self.stop()
+            raise RiftError("Failed to start VM with base cloud image")
+
+        # Copy additional RPM and fill a list with all basenames
+        rpm_basenames = []
+        for additional_rpm in self.additional_rpms:
+            rpm_abs_path = os.path.expanduser(additional_rpm)
+            rpm_basename = os.path.basename(rpm_abs_path)
+            self.copy(rpm_abs_path, f"rift:/tmp/{rpm_basename}")
+            rpm_basenames.append(rpm_basename)
+
+        # Run post script
+        self._build_run_post_script(rpm_basenames)
+
+        # Restart the VM to check everything is OK.
+        self.restart()
+
+        # Export the final image
+        logging.info("Exporting image %s", output)
+
+        # Stop VM without removing temporary image
+        self.stop(unlink=False)
+
+        # Check if output already exists
+        if os.path.exists(output):
+            # Ask user interactively if image can be overwritten.
+            user_input = input(
+                f"Image {output} already exist, overwrite this file? (yes/NO): "
+            )
+            if user_input.lower() == "yes":
+                logging.debug("Removing image %s", output)
+                os.remove(output)
+            else:
+                self.unlink()  # remove temporary image
+                logging.info("Exiting")
+                return
+
+        # Write output image
+        self._build_write_output(output)
+
+        # Remove temporary image
+        self.unlink()

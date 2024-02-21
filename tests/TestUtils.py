@@ -12,6 +12,7 @@ import unittest
 import os
 from collections import OrderedDict
 
+import shutil
 import yaml
 from collections import namedtuple
 
@@ -150,6 +151,14 @@ class RiftProjectTestCase(RiftTestCase):
             os.unlink(os.path.join(pkgdir, 'info.yaml'))
             os.rmdir(os.path.join(pkgdir, 'sources'))
             os.rmdir(pkgdir)
+        # Remove potentially generated files for VM related tests
+        for path in [
+            self.config.project_path(self.config.get('vm_cloud_init_tpl')),
+            self.config.project_path(self.config.get('vm_build_post_script')),
+            self.config.project_path(self.config.get('vm_image')),
+        ]:
+            if os.path.exists(path):
+                os.unlink(path)
         os.rmdir(self.packagesdir)
         os.rmdir(self.projdir)
 
@@ -246,6 +255,38 @@ class RiftProjectTestCase(RiftTestCase):
         for arch in self.config.get('arch'):
             mock = Mock(self.config, arch)
             mock.scrub()
+
+    def copy_cloud_init_tpl(self):
+        """Copy cloud-init template in project tree."""
+        shutil.copy(
+            os.path.join(
+                os.path.dirname(os.path.realpath(__file__)),
+                '..',
+                'template',
+                'cloud-init.tpl',
+            ),
+            self.config.project_path(self.config.get('vm_cloud_init_tpl')),
+        )
+
+    def copy_build_post_script(self):
+        """Copy example build post script in project tree."""
+        shutil.copy(
+            os.path.join(
+                os.path.dirname(os.path.realpath(__file__)),
+                '..',
+                'template',
+                'build-post.sh',
+            ),
+            self.config.project_path(self.config.get('vm_build_post_script')),
+        )
+
+    def ensure_vm_images_cache_dir(self):
+        """Ensure VM images cache directory exists."""
+        cache_dir =  self.config.project_path(
+            self.config.get('vm_images_cache')
+        )
+        if not os.path.exists(cache_dir):
+            os.mkdir(cache_dir)
 
 #
 # Temp files

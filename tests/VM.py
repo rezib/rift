@@ -1,13 +1,40 @@
 #
 # Copyright (C) 2024 CEA
 #
+import os
+import shutil
+import atexit
+from unittest.mock import patch
 
 import platform
-from TestUtils import RiftTestCase
+from TestUtils import RiftTestCase, RiftProjectTestCase, make_temp_dir
 from rift.Config import Config, _DEFAULT_VM_ADDRESS, _DEFAULT_QEMU_CMD, \
                         _DEFAULT_VM_MEMORY, _DEFAULT_VIRTIOFSD
 from rift.Repository import RemoteRepository
 from rift.VM import VM, ARCH_EFI_BIOS, gen_virtiofs_args
+from rift import RiftError
+
+# For optimization purpose, create a global cache directory that is removed
+# only when all tests are finished. If this cache directory would have been
+# created in VMTest.setUp(), many tests would trigger image download which
+# would cause multiple GB of data transfer on the Internet and would
+# significantly extend tests duration.
+GLOBAL_CACHE = make_temp_dir()
+atexit.register(shutil.rmtree, GLOBAL_CACHE)
+
+# Use https_proxy as proxy project configuration parameter if defined in
+# environment.
+PROXY = os.environ.get('https_proxy')
+VALID_IMAGE_URL = {
+    'x86_64': (
+        'https://repo.almalinux.org/almalinux/8/cloud/x86_64/images/'
+        'AlmaLinux-8-GenericCloud-latest.x86_64.qcow2'
+    ),
+    'aarch64': (
+        'https://repo.almalinux.org/almalinux/8/cloud/aarch64/images/'
+        'AlmaLinux-8-GenericCloud-latest.aarch64.qcow2'
+    )
+}
 
 class VMTest(RiftTestCase):
     """
@@ -178,7 +205,8 @@ class VMTest(RiftTestCase):
         vm.arch = platform.processor()
         vm.consolesock = '/console'
         image_path = '/my_image'
-        args = vm._gen_qemu_args(image_path)
+        # Test without seed iso path
+        args = vm._gen_qemu_args(image_path, None)
         expected_args = [ vm.qemu, '-enable-kvm', '-cpu', vm.cpu_type,
                           '-name', 'rift', '-display', 'none',
                           '-m', str(vm.memory), '-smp', str(vm.cpus),
@@ -192,8 +220,16 @@ class VMTest(RiftTestCase):
                           '-device',
                           'virtio-net-pci,netdev=hostnet0,bus=pci.0,addr=0x3']
         self.assertEqual(args, expected_args)
+        # Test with seed iso path
+        args = vm._gen_qemu_args(image_path, "/path/to/seed/iso")
+        self.assertEqual(
+            args,
+            expected_args
+            + ['-drive', f"driver=raw,file=/path/to/seed/iso,if=virtio"]
+        )
+        # Test with another arch
         vm.arch = 'aarch64'
-        args = vm._gen_qemu_args(image_path)
+        args = vm._gen_qemu_args(image_path, None)
         expected_args_aarch64 = [ vm.qemu, '-machine', 'virt', '-cpu', vm.cpu_type,
                           '-name', 'rift', '-display', 'none',
                           '-m', str(vm.memory), '-smp', str(vm.cpus),
@@ -209,3 +245,134 @@ class VMTest(RiftTestCase):
                           '-device',
                           'virtio-net-device,netdev=hostnet0']
         self.assertEqual(args, expected_args_aarch64)
+
+
+class VMBuildTest(RiftProjectTestCase):
+    """
+    Test case for VM build() method
+    """
+
+    def setUp(self):
+        super().setUp()
+        # Override some configuration parameters defined in dummy config from
+        # RiftProjectTestCase.
+        self.config.options['vm_images_cache'] = GLOBAL_CACHE
+        self.config.options['proxy'] = PROXY
+        self.repos = [
+            RemoteRepository(
+                (
+                    'https://repo.almalinux.org/almalinux/8/BaseOS/x86_64/os/'
+                ),
+                name='repos',
+                priority=90,
+                config={},
+            )
+        ]
+        self.wrong_url = 'https://127.0.0.1/fail'
+        self.valid_url = VALID_IMAGE_URL['x86_64']
+        self.copy_cloud_init_tpl()
+        self.ensure_vm_images_cache_dir()
+
+    def _check_qemuimg(self):
+        """Check presence of qemu-img executable or skip current test."""
+        if not os.path.exists("/usr/bin/qemu-img"):
+            self.skipTest("qemu-img is not available")
+
+    def test_build_missing_cache_dir(self):
+        """Test VM build with missing cache directory"""
+        vm = VM(self.config, 'x86_64')
+        vm.images_cache = 'non-existent-directory'
+        self.assertFalse(os.path.exists(vm.images_cache))
+        with self.assertRaisesRegex(
+            RiftError,
+            f"^Cloud images cache directory {vm.images_cache} does not "
+            "exist$",
+        ):
+            vm.build(self.valid_url, False, False, vm._image)
+
+    def test_build_wrong_url(self):
+        """Test VM build with URL error"""
+        vm = VM(self.config, 'x86_64')
+        with self.assertRaisesRegex(
+            RiftError,
+            f"^URL error while downloading {self.wrong_url}: .*$",
+        ):
+            vm.build(self.wrong_url, False, False, vm._image)
+        with self.assertRaisesRegex(
+            RiftError,
+            f"^HTTP error while downloading {self.valid_url}.unfound: HTTP "
+            "Error 404: Not Found$",
+        ):
+            vm.build(
+                self.valid_url + '.unfound', False, False, vm._image
+            )
+
+    def test_build_missing_cloudinit_tpl(self):
+        """Test VM build with missing cloud-init template"""
+        vm = VM(self.config, 'x86_64')
+        os.unlink(vm.cloud_init_tpl)
+        with self.assertRaisesRegex(
+            RiftError,
+            "^Unable to find cloud-init template file "
+            f"{vm.cloud_init_tpl}$",
+        ):
+            vm.build(self.valid_url, False, False, vm._image)
+
+    def test_build_ok(self):
+        """Test VM basic build"""
+        self._check_qemuimg()
+        vm = VM(self.config, 'x86_64')
+        vm.build(self.valid_url, False, False, vm._image)
+        self.assertEquals(os.path.exists(vm._image), True)
+
+    def test_build_ok_copymode(self):
+        """Test VM build OK with copymode enabled"""
+        vm = VM(self.config, 'x86_64')
+        vm.copymode = 1
+        vm.build(self.valid_url, False, False, vm._image)
+        self.assertEquals(os.path.exists(vm._image), True)
+
+    @patch('rift.VM.input')
+    def test_build_overwrite(self, mock_input):
+        """Test VM build overwrite"""
+        self._check_qemuimg()
+        vm = VM(self.config, 'x86_64')
+        # create empty output image
+        open(vm._image, 'w').close()
+        mock_input.side_effect = 'yes'
+        vm.build(self.valid_url, False, False, vm._image)
+        self.assertEquals(os.path.exists(vm._image), True)
+        mock_input.assert_called_once()
+
+    def test_build_with_build_script(self):
+        """Test VM build with build script"""
+        self._check_qemuimg()
+        vm = VM(self.config, 'x86_64')
+        with open(vm.build_post_script, 'w') as fh:
+            fh.write("#!/bin/bash\n/bin/true\n")
+        vm.build(self.valid_url, False, False, vm._image)
+        self.assertEquals(os.path.exists(vm._image), True)
+
+    def test_build_with_build_script_error(self):
+        """Test VM build with build script error"""
+        self._check_qemuimg()
+        vm = VM(self.config, 'x86_64')
+        with open(vm.build_post_script, 'w') as fh:
+            fh.write("#!/bin/bash\n/bin/false\n")
+        with self.assertRaisesRegex(
+            RiftError, f"^Error while running build post script$"
+        ):
+            vm.build(self.valid_url, False, False, vm._image)
+        vm.stop()
+
+    def test_build_aarch64(self):
+        """Test VM build aarch64"""
+        self._check_qemuimg()
+        self.config.set('arch', ['aarch64'])
+        vm = VM(self.config, 'aarch64')
+        vm.arch_efi_bios = os.path.join(
+            os.path.dirname(os.path.realpath(__file__)),
+            '..', 'vendor', 'QEMU_EFI.silent.fd'
+        )
+        self.valid_url = VALID_IMAGE_URL[vm.arch]
+        vm.build(self.valid_url, False, False, vm._image)

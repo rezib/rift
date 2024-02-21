@@ -26,8 +26,19 @@ class ControllerProjectTest(RiftProjectTestCase):
     Tests class for Controller
     """
 
-    def make_pkg(self, name='pkg', version='1.0', release='1',
-                 metadata={'module': 'Great module', 'origin': 'Vendor', 'reason': 'Missing feature'}):
+    def make_pkg(
+        self,
+        name='pkg',
+        version='1.0',
+        release='1',
+        metadata={
+            'module': 'Great module',
+            'origin': 'Vendor',
+            'reason': 'Missing feature'
+        },
+        build_requires=['br-package'],
+        requires=['another-package']
+    ):
         # ./packages/pkg
         self.pkgdirs[name] = os.path.join(self.packagesdir, name)
         os.mkdir(self.pkgdirs[name])
@@ -54,8 +65,10 @@ class ControllerProjectTest(RiftProjectTestCase):
             spec.write("URL:            http://nowhere.com/projects/%{name}/\n")
             spec.write("Source0:        %{name}-%{version}.tar.gz\n")
             spec.write("BuildArch:      noarch\n")
-            spec.write("BuildRequires:  br-package\n")
-            spec.write("Requires:       another-package\n")
+            for build_require in build_requires:
+                spec.write(f"BuildRequires:  {build_require}\n")
+            for require in requires:
+                spec.write(f"Requires:       {require}\n")
             spec.write("Provides:       {0}-provide\n".format(name))
             spec.write("%description\n")
             spec.write("A package\n")

@@ -319,6 +319,251 @@ class ConfigTest(RiftTestCase):
         self.assertRaises(DeclError, Config().load, cfgfile.name)
 
 
+class ConfigTestSyntax(RiftTestCase):
+    """Test Config with modified syntax."""
+    def setUp(self):
+        # Save reference to original Config syntax class attribute. There is no
+        # need to copy the dict as a new dict is allocated and assigned to class
+        # attribute right after this.
+        self.syntax_backup = Config.SYNTAX
+        # Initialize syntax with arch which is the only hard requirement in
+        # class logic.
+        Config.SYNTAX = {
+            'arch': {
+                'check': 'list',
+                'default': ['x86_64'],
+            }
+        }
+
+    def tearDown(self):
+        # Restore reference to original syntax dict in class attribute.
+        Config.SYNTAX = self.syntax_backup
+
+    def test_load_dict_without_syntax(self):
+        """Load dict without syntax"""
+        Config.SYNTAX.update({
+            'param0': {
+                'check': 'dict',
+            }
+        })
+
+        cfgfile = make_temp_file(
+            textwrap.dedent(
+                """
+                param0:
+                  key1: value1
+                  with: anything
+                """
+            )
+        )
+        config = Config()
+        config.load(cfgfile.name)
+        self.assertEqual(config.get('param0').get('key1'), 'value1')
+        self.assertEqual(config.get('param0').get('with'), 'anything')
+
+    def test_load_dict_with_arch(self):
+        """Load dict with archs"""
+        Config.SYNTAX.update({
+            'param0': {
+                'check': 'dict',
+            }
+        })
+
+        cfgfile = make_temp_file(
+            textwrap.dedent(
+                """
+                arch:
+                - x86_64
+                - aarch64
+                param0:
+                  key1: value1
+                  with: anything
+                aarch64:
+                    param0:
+                        key1: value2
+                        with: another
+                """
+            )
+        )
+        config = Config()
+        config.load(cfgfile.name)
+        self.assertEqual(config.get('param0').get('key1'), 'value1')
+        self.assertEqual(config.get('param0').get('with'), 'anything')
+        self.assertEqual(
+            config.get('param0', arch='x86_64').get('key1'), 'value1'
+        )
+        self.assertEqual(
+            config.get('param0', arch='x86_64').get('with'), 'anything'
+        )
+        self.assertEqual(
+            config.get('param0', arch='aarch64').get('key1'), 'value2'
+        )
+        self.assertEqual(
+            config.get('param0', arch='aarch64').get('with'), 'another'
+        )
+
+    def _add_fake_dict_param_syntax(self):
+        """Load dict with syntax"""
+        Config.SYNTAX.update({
+            'param0': {
+                'check': 'dict',
+                'syntax': {
+                    'key1': {
+                        'required': True
+                    },
+                    'key2': {
+                        'check': 'digit'
+                    }
+                }
+            }
+        })
+
+    def test_load_dict_with_syntax(self):
+        """Load dict with syntax"""
+        self._add_fake_dict_param_syntax()
+        cfgfile = make_temp_file(
+            textwrap.dedent(
+                """
+                param0:
+                  key1: value1
+                  key2: 2
+                """
+            )
+        )
+        config = Config()
+        config.load(cfgfile.name)
+        self.assertEqual(config.get('param0').get('key1'), 'value1')
+        self.assertEqual(config.get('param0').get('key2'), 2)
+
+        # Test with another value for key1 and key2 undefined.
+        cfgfile = make_temp_file(
+            textwrap.dedent(
+                """
+                param0:
+                  key1: value2
+                """
+            )
+        )
+        config = Config()
+        config.load(cfgfile.name)
+        self.assertEqual(config.get('param0').get('key1'), 'value2')
+        self.assertEqual(config.get('param0').get('key2'), None)
+
+    def test_load_dict_bad_subkey_type(self):
+        """Load dict with bad subkey type"""
+        self._add_fake_dict_param_syntax()
+        cfgfile = make_temp_file(
+            textwrap.dedent(
+                """
+                param0:
+                  key1: value1
+                  key2: fail
+                """
+            )
+        )
+        config = Config()
+        with self.assertRaisesRegex(
+                DeclError,
+                "^Bad data type str for 'key2'$"
+            ):
+            config.load(cfgfile.name)
+
+    def test_load_dict_missing_subkey(self):
+        """Load dict with missing subkey."""
+        self._add_fake_dict_param_syntax()
+        cfgfile = make_temp_file(
+            textwrap.dedent(
+                """
+                param0:
+                  key2: 2
+                """
+            )
+        )
+        config = Config()
+        with self.assertRaisesRegex(
+                DeclError,
+                "^Key key1 is required in dict parameter param0$"
+            ):
+            config.load(cfgfile.name)
+
+    def test_load_dict_unknown_subkey(self):
+        """Load dict with unknown subkey."""
+        self._add_fake_dict_param_syntax()
+        cfgfile = make_temp_file(
+            textwrap.dedent(
+                """
+                param0:
+                  key1: value1
+                  key3: value2
+                """
+            )
+        )
+        config = Config()
+        with self.assertRaisesRegex(
+                DeclError,
+                "^Unknown param0 keys: key3$"
+            ):
+            config.load(cfgfile.name)
+
+    def test_load_dict_recursive_syntax(self):
+        """Load dict with resursive syntax"""
+        Config.SYNTAX.update({
+            'param0': {
+                'check': 'dict',
+                'syntax': {
+                    'key1': {
+                        'check': 'dict',
+                        'syntax': {
+                            'subkey2': {
+                                'required': True
+                            },
+                            'subkey3': {
+                                'check': 'digit'
+                            },
+                        },
+                    },
+                },
+            },
+        })
+        # Check load of valid param0
+        cfgfile = make_temp_file(
+            textwrap.dedent(
+                """
+                param0:
+                  key1:
+                    subkey2: value2
+                    subkey3: 5
+                """
+            )
+        )
+        config = Config()
+        config.load(cfgfile.name)
+        self.assertEqual(
+            config.get('param0').get('key1').get('subkey2'), 'value2'
+        )
+        self.assertEqual(
+            config.get('param0').get('key1').get('subkey3'), 5
+        )
+
+        # Check syntax is really enforced on sub-sub-dict
+        cfgfile = make_temp_file(
+            textwrap.dedent(
+                """
+                param0:
+                  key1:
+                    subkey2: value2
+                    subkey3: fail
+                """
+            )
+        )
+        config = Config()
+        with self.assertRaisesRegex(
+                DeclError,
+                "^Bad data type str for 'subkey3'$"
+            ):
+            config.load(cfgfile.name)
+
+
 class ProjectConfigTest(RiftTestCase):
 
     def setUp(self):

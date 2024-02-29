@@ -347,33 +347,83 @@ class Config():
         if key not in self.SYNTAX:
             raise DeclError("Unknown '%s' key" % key)
 
-        # Check type against the reference key
-        check = self.SYNTAX[key].get('check', 'string')
+        self._arch_options(arch)[key] = self._key_value(
+            self.SYNTAX[key], key, value
+        )
+
+    def _key_value(self, syntax, key, value):
+        """
+        Validate type of value against syntax definition and return its value.
+        """
+        # Check type
+        check = syntax.get('check', 'string')
         assert check in ('string', 'dict', 'list', 'digit', 'enum')
 
-        options = self._arch_options(arch)
-        if check == 'string':
-            if not isinstance(value, str):
-                raise DeclError("Bad data type %s for '%s'" % (value.__class__.__name__, key))
-            options[key] = str(value)
-        elif check == 'dict':
+        if check == 'dict':
             if not isinstance(value, dict):
-                raise DeclError("Bad data type %s for '%s'" % (value.__class__.__name__, key))
-            options[key] = value
-        elif check == 'list':
+                raise DeclError(
+                    f"Bad data type {value.__class__.__name__} for '{key}'"
+                )
+            return self._dict_value(syntax.get('syntax'), key, value)
+        if check == 'list':
             if not isinstance(value, list):
-                raise DeclError("Bad data type %s for '%s'" % (value.__class__.__name__, key))
-            options[key] = value
-        elif check == 'digit':
+                raise DeclError(
+                    f"Bad data type {value.__class__.__name__} for '{key}'"
+                )
+            return value
+        if check == 'digit':
             if not isinstance(value, int):
-                raise DeclError("Bad data type %s for '%s'" % (value.__class__.__name__, key))
-            options[key] = int(value)
-        elif check == 'enum':
-            enum_values = self.SYNTAX[key].get('values', [])
+                raise DeclError(
+                    f"Bad data type {value.__class__.__name__} for '{key}'"
+                )
+            return int(value)
+        if check == 'enum':
+            enum_values = syntax.get('values', [])
             if not value in enum_values:
-                raise DeclError("Bad value %s for '%s' (correct values : %s)" % (
-                    value.__class__.__name__, key, ", ".join(enum_values)))
-            options[key] = value
+                raise DeclError(
+                    f"Bad value {value} ({value.__class__.__name__}) for "
+                    f"'{key}' (correct values: {', '.join(enum_values)})"
+                )
+            return value
+        # At this stage, check is necessary a string.
+        if not isinstance(value, str):
+            raise DeclError(
+                f"Bad data type {value.__class__.__name__} for '{key}'"
+            )
+        return str(value)
+
+    def _dict_value(self, syntax, key, value):
+        """
+        Validate dict value against syntax if defined and return value.
+        """
+
+        # If syntax dict is not defined, just return raw value.
+        if syntax is None:
+            return value
+
+        result = {}
+
+        # Check for unknown keys
+        unknown_keys = set(value.keys()).difference(set(syntax.keys()))
+        if unknown_keys:
+            raise DeclError(f"Unknown {key} keys: {', '.join(unknown_keys)}")
+
+        # Iterate over the keys defined in syntax. If the subvalue is defined,
+        # set it or raise error if required.
+        for subkey, subkey_format in syntax.items():
+            if subkey in value:
+                result[subkey] = self._key_value(
+                    syntax[subkey],
+                    subkey,
+                    value[subkey],
+                )
+            elif subkey_format.get('required', False):
+                raise DeclError(
+                    f"Key {subkey} is required in dict parameter {key}"
+                )
+
+        # Set the key in options dict eventually.
+        return result
 
     def update(self, data):
         """

@@ -188,7 +188,9 @@ class VM():
             # Add a shared memory object to allow virtiofsd shares
             cmd += ['-object',
                     f'memory-backend-file,id=mem,size={str(self.memory)}M,mem-path=/tmp,share=on']
-            if self.arch == platform.processor():
+            # Use platform.machine() instead of platform.proccessor to be container
+            # compatible.
+            if self.arch == platform.machine():
                 cmd += ['-machine', 'memory-backend=mem,accel=kvm']
             else:
                 cmd += ['-machine', 'memory-backend=mem']
@@ -236,7 +238,12 @@ class VM():
         """ Generate qemu command line arguments """
         # Start VM process
         cmd = shlex.split(self.qemu)
-        if self.arch == platform.processor():
+
+        # If we are on the same architecture we should be able to use kvm
+        # acceleration
+        # Use platform.machine() instead of platform.proccessor to be container
+        # compatible.
+        if self.arch == platform.machine():
             cmd += ['-enable-kvm']
         else:
             cmd += ['-machine', 'virt']
@@ -259,6 +266,7 @@ class VM():
         # Console
         cmd += ['-chardev', 'socket,id=charserial0,path=%s,server=on,wait=off'
                 % (self.consolesock)]
+        # aarch64 platform need specific serial configuration
         if self.arch == 'aarch64':
             cmd += ['-device', 'virtio-serial,id=ser0,max_ports=8']
             cmd += ['-serial', 'chardev:charserial0']
@@ -269,6 +277,7 @@ class VM():
         # NIC
         cmd += ['-netdev', 'user,id=hostnet0,hostname=%s,hostfwd=tcp::%d-:22'
                 % (self.NAME, self.port)]
+        # aarch64 platform don't support PCI
         if self.arch == 'aarch64':
             cmd += ['-device', 'virtio-net-device,netdev=hostnet0']
         else:

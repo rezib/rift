@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2014-2019 CEA
+# Copyright (C) 2014-2024 CEA
 #
 # This file is part of Rift project.
 #
@@ -182,6 +182,14 @@ def parse_options(args=None):
 
     subprs_annex = subprs.add_subparsers(dest='annex_cmd',
                                          title='possible commands')
+    subsubprs_annex_backup = subprs_annex.add_parser(
+        'backup', help='backup the annex to a tar.gz archive'
+    )
+    subsubprs_annex_backup.add_argument(
+        '--output-file', metavar='PATH', required=False,
+        help='annex backup output file'
+    )
+
     subprs_annex.add_parser('list', help='list cache content')
     subsubprs = subprs_annex.add_parser('push', help='move a file into cache')
     subsubprs.add_argument('files', metavar='FILENAME', nargs='+',
@@ -289,11 +297,14 @@ def action_check(args, config):
         logging.info('Spec file is OK.')
 
 
-def action_annex(args, config):
+def action_annex(args, config, staff, modules):
     """Action for 'annex' sub-commands."""
     annex = Annex(config)
 
-    assert args.annex_cmd in ('list', 'get', 'push', 'delete', 'restore')
+    assert args.annex_cmd in (
+        'backup', 'list', 'get',
+        'push', 'delete', 'restore'
+    )
     if args.annex_cmd == 'list':
         fmt = "%-32s %10s  %-18s %s"
         print(fmt % ('ID', 'SIZE', 'DATE', 'FILENAMES'))
@@ -328,6 +339,12 @@ def action_annex(args, config):
         annex.get(args.id, args.dest)
         message('%s has been created' % args.dest)
 
+    elif args.annex_cmd == 'backup':
+        message("Annex backup in progress...")
+        output_file = annex.backup(
+            Package.list(config, staff, modules), args.output_file
+        )
+        message(f"Annex backup is available here: {output_file}")
 
 def _vm_start(vm):
     if vm.running():
@@ -740,7 +757,9 @@ def get_packages_from_patch(patch, config, modules, staff):
         raise RiftError("Invalid patch detected (empty commit ?)")
 
     for patchedfile in patchedfiles:
-        pkg = _validate_patch(patchedfile, config=config, modules=modules, staff=staff)
+        pkg = _validate_patch(
+            patchedfile, config=config, modules=modules, staff=staff
+        )
         if pkg is not None and pkg not in pkglist:
             pkglist[pkg.name] = pkg
 
@@ -763,6 +782,11 @@ def action(config, args):
     Manage rift actions on annex, vm, packages or repositories
     """
 
+    staff = Staff(config)
+    staff.load(config.get('staff_file'))
+    modules = Modules(config, staff)
+    modules.load(config.get('modules_file'))
+
     if getattr(args, 'file', None) is not None:
         args.file = os.path.abspath(args.file)
 
@@ -773,12 +797,18 @@ def action(config, args):
 
     # ANNEX
     if args.command == 'annex':
-        action_annex(args, config)
+        action_annex(args, config, staff, modules)
         return
 
     # VM
     if args.command == 'vm':
         return action_vm(args, config)
+
+    # Now, package related commands..
+    # ANNEX
+    if args.command == 'annex':
+        action_annex(args, config, staff, modules)
+        return
 
     # CREATE/IMPORT/REIMPORT
     if args.command in ['create', 'import', 'reimport']:

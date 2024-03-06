@@ -1,4 +1,3 @@
-#
 # Copyright (C) 2014-2016 CEA
 #
 # This file is part of Rift project.
@@ -41,7 +40,9 @@ import logging
 import os
 import string
 import shutil
+import tarfile
 import time
+import tempfile
 import yaml
 
 from rift.TempDir import TempDir
@@ -49,6 +50,20 @@ from rift.Config import OrderedLoader
 
 # List of ASCII printable characters
 _TEXTCHARS = bytearray([9, 10, 13] + list(range(32, 127)))
+
+# Suffix of metadata filename
+_INFOSUFFIX = '.info'
+
+
+def get_digest_from_path(path):
+    """Get file id from the givent path"""
+    return open(path).read()
+
+
+def get_info_from_digest(digest):
+    """Get file info id"""
+    return digest + _INFOSUFFIX
+
 
 def is_binary(filepath, blocksize=65536):
     """
@@ -122,15 +137,15 @@ class Annex():
 
     def get_by_path(self, idpath, destpath):
         """Get a file identified by idpath content, and copy it at destpath."""
-        identifier = open(idpath).read()
-        self.get(identifier, destpath)
+        self.get(get_digest_from_path(idpath), destpath)
 
     def delete(self, identifier):
         """Remove a file from annex, whose ID is `identifier'"""
         idpath = os.path.join(self.path, identifier)
         logging.debug('Deleting from annex: %s', idpath)
-        if os.path.exists(idpath + '.info'):
-            os.unlink(idpath + '.info')
+        infopath = get_info_from_digest(idpath)
+        if os.path.exists(infopath):
+            os.unlink(infopath)
         os.unlink(idpath)
 
     def import_dir(self, dirpath, force_temp=False):
@@ -185,17 +200,18 @@ class Annex():
         Return metadata for specified digest if the annexed file exists.
         """
         # Prepare metadata file
-        metapath = os.path.join(self.path, digest + '.info')
+        metapath = os.path.join(self.path, get_info_from_digest(digest))
         metadata = {}
         # Read current metadata if present
         if os.path.exists(metapath):
             with open(metapath) as fyaml:
-                metadata = yaml.load(fyaml, Loader=OrderedLoader) or {} # Protect against empty file
+                metadata = yaml.load(fyaml, Loader=OrderedLoader) or {}
+                # Protect against empty file
         return metadata
 
     def _save_metadata(self, digest, metadata):
         """Write metadata file for specified digest and data."""
-        metapath = os.path.join(self.path, digest + '.info')
+        metapath = os.path.join(self.path, get_info_from_digest(digest))
         with open(metapath, 'w') as fyaml:
             yaml.dump(metadata, fyaml, default_flow_style=False)
         os.chmod(metapath, self.WMODE)
@@ -259,3 +275,42 @@ class Annex():
         # Create fake pointer file
         with open(filepath, 'w') as fakefile:
             fakefile.write(digest)
+
+
+    def backup(self, packages, output_file=None):
+        """
+        Create a full backup of package list
+        """
+
+        filelist = []
+
+        for package in packages:
+            package.load()
+            for source in package.sources:
+                source_file = os.path.join(package.sourcesdir, source)
+                if self.is_pointer(source_file):
+                    filelist.append(source_file)
+
+        # Manage progession
+        total_packages = len(filelist)
+        pkg_nb = 0
+
+        if output_file is None:
+            output_file = tempfile.NamedTemporaryFile(delete=False,
+                                                      prefix='rift-annex-backup',
+                                                      suffix='.tar.gz').name
+
+        with tarfile.open(output_file, "w:gz") as tar:
+        # translate sourcefiles path to annex path and add it to the output_file
+            for _file in filelist:
+                digest = get_digest_from_path(_file)
+                annex_file = os.path.join(self.path, digest)
+                annex_file_info = os.path.join(self.path, get_info_from_digest(digest))
+
+                tar.add(annex_file, arcname=os.path.basename(annex_file))
+                tar.add(annex_file_info, arcname=os.path.basename(annex_file_info))
+
+                print(f"> {pkg_nb}/{total_packages} ({round((pkg_nb*100)/total_packages,2)})%\r"
+                      , end="")
+                pkg_nb += 1
+        return output_file

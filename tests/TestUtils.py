@@ -165,9 +165,9 @@ def make_temp_filename():
     """Return a temporary name for a file."""
     return (tempfile.mkstemp(prefix='rift-test-'))[1]
 
-def make_temp_file(text):
+def make_temp_file(text, delete=True):
     """ Create a temporary file with the provided text."""
-    tmp = tempfile.NamedTemporaryFile(prefix='rift-test-')
+    tmp = tempfile.NamedTemporaryFile(prefix='rift-test-', delete=delete)
     tmp.write(text.encode())
     tmp.flush()
     return tmp

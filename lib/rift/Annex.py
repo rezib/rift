@@ -35,6 +35,7 @@ Class and function to detect binary files and push them into a file repository
 called an annex.
 """
 
+import datetime
 import hashlib
 import logging
 import os
@@ -180,7 +181,9 @@ class Annex():
         return tmpdir
 
     def _load_metadata(self, digest):
-        """Return metadata for specified digest if file exists."""
+        """
+        Return metadata for specified digest if the annexed file exists.
+        """
         # Prepare metadata file
         metapath = os.path.join(self.path, digest + '.info')
         metadata = {}
@@ -200,14 +203,19 @@ class Annex():
     def list(self):
         """
         Iterate over annex files, returning for them: filename, size and
-        mtime.
+        insertion time.
         """
         for filename in os.listdir(self.path):
             if not filename.endswith('.info'):
-                meta = os.stat(os.path.join(self.path, filename))
                 info = self._load_metadata(filename)
                 names = info.get('filenames', [])
-                yield filename, meta.st_size, meta.st_mtime, names
+                for annexed_file in names.values():
+                    insertion_time = annexed_file['date']
+                    insertion_time = datetime.datetime.strptime(insertion_time, "%c").timestamp()
+
+                #The file size must come from the filesystem
+                meta = os.stat(os.path.join(self.path, filename))
+                yield filename, meta.st_size, insertion_time, names
 
     def push(self, filepath):
         """

@@ -5,7 +5,7 @@ import os
 import time
 import rpm
 
-from TestUtils import make_temp_dir, RiftTestCase
+from TestUtils import make_temp_dir, gen_rpm_spec, RiftTestCase
 from rift import RiftError
 from rift.RPM import Spec, Variable, RPMLINT_CONFIG
 
@@ -31,38 +31,18 @@ class SpecTest(RiftTestCase):
 
     def update_spec(self):
         with open(self.spec, "w") as spec:
-            spec.write("%global foo 1.%{bar}\n")
-            spec.write("%define bar 1\n")
-            spec.write("Name:    {0}\n".format(self.name))
-            spec.write("Version:        {0}\n".format(self.version))
-            spec.write("Release:        {0}\n".format(self.release))
-            spec.write("Summary:        A package\n")
-            spec.write("Group:          System Environment/Base\n")
-            spec.write("License:        GPL\n")
-            spec.write("URL:            http://nowhere.com/projects/%{name}/\n")
-            spec.write("Source0:        https://nowhere.com/sources/%{name}-%{version}.tar.gz\n")
-            spec.write("BuildArch:      {0}\n".format(self.arch))
-            spec.write("BuildRequires:  br-package\n")
-            spec.write("Requires:       another-package\n")
-            spec.write("Provides:       {0}-provide\n".format(self.name))
-            spec.write("%description\n")
-            spec.write("A package\n")
-            spec.write("%prep\n")
-            spec.write("{}".format(self.prepsteps))
-            spec.write("%build\n")
-            spec.write("# Nothing to build\n")
-            spec.write("{}".format(self.buildsteps))
-            spec.write("%install\n")
-            spec.write("# Nothing to install\n")
-            spec.write("{}".format(self.installsteps))
-            spec.write("%files\n")
-            spec.write("# No files\n")
-            spec.write("{}".format(self.files))
-            spec.write("%changelog\n")
-            spec.write("* Tue Feb 26 2019 Myself <buddy@somewhere.org>"
-                       " - {0}-{1}\n".format(self.version, self.release))
-            spec.write("- Update to {0} release\n".format(self.version))
-
+            spec.write(
+                gen_rpm_spec(
+                    name=self.name,
+                    version=self.version,
+                    release=self.release,
+                    arch=self.arch,
+                    prepsteps=self.prepsteps,
+                    buildsteps=self.buildsteps,
+                    installsteps=self.installsteps,
+                    files=self.files
+                )
+            )
 
     def tearDown(self):
         os.unlink(self.spec)
@@ -75,8 +55,7 @@ class SpecTest(RiftTestCase):
         self.assertEqual(len(spec.pkgnames), 1)
         self.assertEqual(spec.arch, self.arch)
         self.assertTrue("{0}-{1}.tar.gz".format(self.name, self.version) in spec.sources)
-        self.assertTrue(len(spec.lines) == 26)
-
+        self.assertEqual(len(spec.lines), 36)
 
     def test_init_fails(self):
         """ Test Spec instanciation with error """

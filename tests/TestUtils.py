@@ -13,6 +13,7 @@ import os
 from collections import OrderedDict
 
 import shutil
+import jinja2
 import yaml
 from collections import namedtuple
 
@@ -66,6 +67,45 @@ module_hotfixes={{ repo.module_hotfixes }}
 {% endfor %}
 """
 '''
+
+SPEC_TPL = """\
+%global foo 1.%{bar}
+%define bar 1
+Name:           {{ name }}
+Version:        {{ version }}
+Release:        {{ release }}
+Summary:        A package
+Group:          System Environment/Base
+License:        GPL
+URL:            http://nowhere.com/projects/%{name}/
+Source0:        https://nowhere.com/sources/%{name}-%{version}.tar.gz
+BuildArch:      {{ arch }}
+BuildRequires:  br-package
+Requires:       another-package
+Provides:       {{ name }}-provide
+
+%description
+A package
+
+%prep
+{{ prepsteps | default("") }}
+
+%build
+# Nothing to build
+{{ buildsteps | default("") }}
+
+%install
+# Nothing to install
+{{ installsteps | default("") }}
+
+%files
+# No files
+{{ files | default("") }}
+
+%changelog
+* Tue Feb 26 2019 Myself <buddy@somewhere.org> {{ version }}-{{release}}
+- Update to {{ version }} release
+"""
 
 SubPackage = namedtuple("SubPackage", ["name"])
 
@@ -287,6 +327,12 @@ class RiftProjectTestCase(RiftTestCase):
         )
         if not os.path.exists(cache_dir):
             os.mkdir(cache_dir)
+
+#
+# RPM spec file
+#
+def gen_rpm_spec(**kwargs):
+    return jinja2.Template(SPEC_TPL).render(**kwargs)
 
 #
 # Temp files

@@ -135,6 +135,7 @@ class Spec():
         self.changelog_time = None
         self.evr = None
         self.arch = None
+        self.exclusive_archs = []
         self.epoch = None
         self.dist = None
         self.buildrequires = None
@@ -183,6 +184,7 @@ class Spec():
         self.basename = hdr.sprintf('%{NAME}')
         self.version = hdr.sprintf('%{VERSION}')
         self.arch = hdr.sprintf('%{ARCH}')
+        self.exclusive_archs = _header_values(hdr[rpm.RPMTAG_EXCLUSIVEARCH])
         if hdr[rpm.RPMTAG_CHANGELOGNAME]:
             self.changelog_name = _header_values(
                 hdr[rpm.RPMTAG_CHANGELOGNAME][0])

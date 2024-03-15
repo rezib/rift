@@ -511,6 +511,16 @@ def test_pkgs(config, args, results, pkgs, arch, extra_repos=None):
 
     for pkg in pkgs:
         pkg.load()
+
+        if not pkg.supports_arch(arch):
+            logging.info(
+                "Skipping test on architecture %s not supported by "
+                "package %s",
+                arch,
+                pkg.name
+            )
+            continue
+
         rc += test_one_pkg(config, args, pkg, vm, arch, repos, results)
 
     if getattr(args, 'noquit', False):
@@ -533,6 +543,15 @@ def validate_pkgs(config, args, results, pkgs, arch):
         raise RiftError("Cannot publish if 'working_repo' is undefined")
 
     for pkg in pkgs:
+
+        if not pkg.supports_arch(arch):
+            logging.info(
+                "Skipping validation on architecture %s not supported by "
+                "package %s",
+                arch,
+                pkg.name
+            )
+            continue
 
         banner(f"Checking package '{pkg.name}' on architecture {arch}")
 
@@ -668,9 +687,18 @@ def action_build(args, config):
     for arch in config.get('arch'):
 
         for pkg in Package.list(config, staff, modules, args.packages):
-            banner(f"Building package '{pkg.name}' for architecture {arch}")
 
             pkg.load()
+            if not pkg.supports_arch(arch):
+                logging.info(
+                    "Skipping build on architecture %s not supported by "
+                    "package %s",
+                    arch,
+                    pkg.name
+                )
+                continue
+
+            banner(f"Building package '{pkg.name}' for architecture {arch}")
             now = time.time()
             try:
                 case = TestCase('build', pkg.name, arch)

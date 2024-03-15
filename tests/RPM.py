@@ -53,6 +53,7 @@ class SpecTest(RiftTestCase):
         spec = Spec(self.spec)
         self.assertTrue(self.name in spec.pkgnames)
         self.assertEqual(len(spec.pkgnames), 1)
+        self.assertEqual(spec.exclusive_archs, [])
         self.assertEqual(spec.arch, self.arch)
         self.assertTrue("{0}-{1}.tar.gz".format(self.name, self.version) in spec.sources)
         self.assertEqual(len(spec.lines), 36)

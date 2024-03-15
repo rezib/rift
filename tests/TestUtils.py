@@ -79,6 +79,9 @@ Group:          System Environment/Base
 License:        GPL
 URL:            http://nowhere.com/projects/%{name}/
 Source0:        https://nowhere.com/sources/%{name}-%{version}.tar.gz
+{% if exclusive_arch %}
+ExclusiveArch:  {{ exclusive_arch }}
+{% endif -%}
 BuildArch:      {{ arch }}
 BuildRequires:  br-package
 Requires:       another-package

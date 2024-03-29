@@ -54,7 +54,7 @@ from rift.Package import Package, Test
 from rift.Repository import Repository, ProjectArchRepositories
 from rift.RPM import RPM, Spec, RPMLINT_CONFIG
 from rift.TempDir import TempDir
-from rift.TestResults import TestResults
+from rift.TestResults import TestCase, TestResults
 from rift.TextTable import TextTable
 from rift.VM import VM
 
@@ -464,16 +464,16 @@ def test_one_pkg(config, args, pkg, vm, repos, results):
     if not args.noauto:
         tests.insert(0, BasicTest(pkg, config=config))
     for test in tests:
-        testname = '%s.%s' % (pkg.name, test.name)
+        case = TestCase(test.name, pkg.name)
         now = time.time()
-        message("Running test '%s'" % testname)
+        message("Running test '%s'" % case.fullname)
         if vm.run_test(test) == 0:
-            results.add_success(test.name, pkg.name, time.time() - now)
-            message("Test '%s': OK" % testname)
+            results.add_success(case, time.time() - now)
+            message("Test '%s': OK" % case.fullname)
         else:
             rc = 1
-            results.add_failure(test.name, pkg.name, time.time() - now)
-            message("Test '%s': ERROR" % testname)
+            results.add_failure(case, time.time() - now)
+            message("Test '%s': ERROR" % case.fullname)
 
     if not getattr(args, 'noquit', False):
         message("Cleaning test environment")
@@ -557,13 +557,14 @@ def validate_pkgs(config, args, results, pkgs):
 
             # Check build RPMS
             message('Validate RPMS build...')
+            case = TestCase('build', pkg.name)
             pkg.build_rpms(mock, srpm)
         except RiftError as ex:
             logging.info("Build failure: %s", str(ex))
-            results.add_failure('build', pkg.name, time.time() - now, str(ex))
+            results.add_failure(case, time.time() - now, str(ex))
             continue  # skip current package
         else:
-            results.add_success('build', pkg.name, time.time() - now)
+            results.add_success(case, time.time() - now)
 
         # Check tests
         mock.publish(staging)
@@ -632,17 +633,13 @@ def action_build(args, config):
         pkg.load()
         now = time.time()
         try:
+            case = TestCase('build', pkg.name)
             build_pkg(config, args, pkg)
         except RiftError as ex:
             logging.info("Build failure: %s", str(ex))
-            results.add_failure(
-                'build',
-                pkg.name,
-                time.time() - now,
-                str(ex)
-            )
+            results.add_failure(case, time.time() - now, str(ex))
         else:
-            results.add_success('build', pkg.name, time.time() - now)
+            results.add_success(case, time.time() - now)
 
     if getattr(args, 'junit', False):
         logging.info('Writing test results in %s', args.junit)

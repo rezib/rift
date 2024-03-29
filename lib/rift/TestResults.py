@@ -30,6 +30,7 @@
 # knowledge of the CeCILL license and that you accept its terms.
 #
 
+import collections
 import xml.etree.cElementTree as ET
 
 from rift.TextTable import TextTable
@@ -39,16 +40,14 @@ class TestCase():
     TestCase: oject for to manage a Test to format ajunit file in TestResult
     """
 
-    def __init__(self, name):
+    def __init__(self, name, classname):
         """
         name: TestCase name
         """
         self.name = name
-        self.classname = None
-        self.result = None
-        self.output = None
-        self.time = None
+        self.classname = classname
 
+    @property
     def fullname(self):
         """
         return the TestCase fullname
@@ -57,7 +56,13 @@ class TestCase():
             return '%s.%s' % (self.classname, self.name)
         return self.name
 
-class TestResults(object):
+
+TestResult = collections.namedtuple(
+    'TestResult', ['case', 'value', 'time', 'output']
+)
+
+
+class TestResults():
     """
     TestResults: gather and mange TestCase results
     """
@@ -78,29 +83,24 @@ class TestResults(object):
         """
         return len(self.results)
 
-    def add_failure(self, name, classname=None, time=None, output=None):
+    def add_failure(self, case, time, output=None):
         """
         Add a failed TestCase
         """
-        self._add_result(classname, name, 'Failure', time, output)
+        self._add_result(TestResult(case, 'Failure', time, output))
         self.global_result = False
 
-    def add_success(self, name, classname=None, time=None, output=None):
+    def add_success(self, case, time, output=None):
         """
         Add a successful TestCase
         """
-        self._add_result(classname, name, 'Success', time, output)
+        self._add_result(TestResult(case, 'Success', time, output))
 
-    def _add_result(self, classname, name, result, time, output):
+    def _add_result(self, result):
         """
         Add a result from a TestCase
         """
-        case = TestCase(name)
-        case.time = time
-        case.result = result
-        case.classname = classname
-        case.output = output
-        self.results.append(case)
+        self.results.append(result)
 
     def junit(self, filename):
         """
@@ -111,15 +111,15 @@ class TestResults(object):
         if self.name:
             suite.set('name', self.name)
 
-        for case in self.results:
-            sub = ET.SubElement(suite, 'testcase', name=case.name)
-            if case.classname:
-                sub.set('classname', 'rift.%s' % case.classname)
-            if case.time:
-                sub.set('time', '%.2f' % case.time)
-            if case.result == 'Failure':
+        for result in self.results:
+            sub = ET.SubElement(suite, 'testcase', name=result.case.name)
+            if result.case.classname:
+                sub.set('classname', 'rift.%s' % result.case.classname)
+            if result.time:
+                sub.set('time', '%.2f' % result.time)
+            if result.value == 'Failure':
                 failure = ET.SubElement(sub, 'failure')
-                failure.text = case.output
+                failure.text = result.output
 
         tree = ET.ElementTree(suite)
         tree.write(filename, encoding='UTF-8', xml_declaration=True)
@@ -129,11 +129,16 @@ class TestResults(object):
         Get a summary table of all tests
         """
         tbl = TextTable("%name %>duration %result")
-        for case in self.results:
-            result = case.result
-            if case.result == 'Failure':
-                result = result.upper()
-            tbl.append({'name': case.fullname(),
-                        'duration': '%.0fs' % case.time,
-                        'result': result})
+        for result in self.results:
+            tbl.append(
+                {
+                    'name': result.case.fullname,
+                    'duration': '%.0fs' % result.time,
+                    'result': (
+                        result.value.upper()
+                        if result.value == 'Failure'
+                        else result.value
+                    )
+                }
+            )
         return str(tbl)

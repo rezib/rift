@@ -13,6 +13,7 @@ import os
 from collections import OrderedDict
 
 import yaml
+from collections import namedtuple
 
 from rift.Config import Config, Staff, Modules
 from rift.Mock import Mock
@@ -64,6 +65,8 @@ module_hotfixes={{ repo.module_hotfixes }}
 {% endfor %}
 """
 '''
+
+SubPackage = namedtuple("SubPackage", ["name"])
 
 
 class RiftTestCase(unittest.TestCase):
@@ -162,6 +165,81 @@ class RiftProjectTestCase(RiftTestCase):
         OrderedDumper.add_representer(OrderedDict, _dict_representer)
         with open(self.projectconf, 'w') as fh:
             fh.write(yaml.dump(self.config.options, Dumper=OrderedDumper))
+
+    def make_pkg(
+        self,
+        name='pkg',
+        version='1.0',
+        release='1',
+        metadata={
+            'module': 'Great module',
+            'origin': 'Vendor',
+            'reason': 'Missing feature'
+        },
+        build_requires=['br-package'],
+        requires=['another-package'],
+        subpackages=[],
+    ):
+        # ./packages/pkg
+        self.pkgdirs[name] = os.path.join(self.packagesdir, name)
+        os.mkdir(self.pkgdirs[name])
+        # ./packages/pkg/info.yaml
+        info = os.path.join(self.pkgdirs[name], 'info.yaml')
+        with open(info, "w") as nfo:
+            nfo.write("package:\n")
+            nfo.write("    maintainers:\n")
+            nfo.write("        - Myself\n")
+            nfo.write("    module: {}\n".format(metadata.get('module', '')))
+            nfo.write("    origin: {}\n".format(metadata.get('origin', '')))
+            nfo.write("    reason: {}\n".format(metadata.get('reason', '')))
+
+        # ./packages/pkg/pkg.spec
+        self.pkgspecs[name] = os.path.join(self.pkgdirs[name],
+                                           "{0}.spec".format(name))
+        with open(self.pkgspecs[name], "w") as spec:
+            spec.write("Name:    {0}\n".format(name))
+            spec.write("Version:        {0}\n".format(version))
+            spec.write("Release:        {0}\n".format(release))
+            spec.write("Summary:        A package\n")
+            spec.write("Group:          System Environment/Base\n")
+            spec.write("License:        GPL\n")
+            spec.write("URL:            http://nowhere.com/projects/%{name}/\n")
+            spec.write("Source0:        %{name}-%{version}.tar.gz\n")
+            spec.write("BuildArch:      noarch\n")
+            for build_require in build_requires:
+                spec.write(f"BuildRequires:  {build_require}\n")
+            for require in requires:
+                spec.write(f"Requires:       {require}\n")
+            spec.write("Provides:       {0}-provide\n".format(name))
+            spec.write("%description\n")
+            spec.write("A package\n")
+            for subpackage in subpackages:
+                spec.write(f"%package -n {subpackage.name}\n")
+                spec.write(f"Summary: Sub-package {subpackage.name}\n")
+                spec.write(f"%description -n {subpackage.name}\n")
+                spec.write(f"Description for package {subpackage.name}\n")
+
+            spec.write("%prep\n")
+            spec.write("%build\n")
+            spec.write("# Nothing to build\n")
+            spec.write("%install\n")
+            spec.write("# Nothing to install\n")
+            spec.write("%files\n")
+            spec.write("# No files\n")
+            spec.write("%changelog\n")
+            spec.write("* Tue Feb 26 2019 Myself <buddy@somewhere.org>"
+                       " - {0}-{1}\n".format(version, release))
+            spec.write("- Update to {0} release\n".format(version))
+
+        # ./packages/pkg/sources
+        srcdir = os.path.join(self.pkgdirs[name], 'sources')
+        os.mkdir(srcdir)
+
+        # ./packages/pkg/sources/pkg-version.tar.gz
+        self.pkgsrc[name] = os.path.join(srcdir,
+                                         "{0}-{1}.tar.gz".format(name, version))
+        with open(self.pkgsrc[name], "w") as src:
+            src.write("ACACACACACACACAC")
 
     def clean_mock_environments(self):
         """Remove mock build environments."""

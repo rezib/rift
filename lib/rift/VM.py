@@ -62,7 +62,7 @@ ARCH_EFI_BIOS = "./usr/share/edk2/aarch64/QEMU_EFI.silent.fd"
 
 def is_virtiofs_qemu(virtiofsd=_DEFAULT_VIRTIOFSD):
     """
-    This function checks if vitiofsd is from qemu package or a standalone rust
+    This function checks if virtiofsd is from qemu package or a standalone rust
     version
     """
     output = ""
@@ -80,9 +80,10 @@ def is_virtiofs_qemu(virtiofsd=_DEFAULT_VIRTIOFSD):
             logging.error("Cannot get %s version", virtiofsd)
 
     if 'qemu' in output.decode() or 'FUSE' in output.decode():
-        logging.debug("%s: Qemu version detectect", virtiofsd)
+        logging.debug("%s: Qemu version detected", virtiofsd)
         return True
-    logging.debug("%s: Qemu version not detectect", virtiofsd)
+
+    logging.debug("%s: Qemu version not detected", virtiofsd)
     return False
 
 

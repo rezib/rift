@@ -102,20 +102,21 @@ class Mock():
         # one each time.
         shutil.copystat(tplfile, dstpath)
 
-
-    def _mock_base(self):
-        """Return base argument to launch mock"""
-        if logging.getLogger().isEnabledFor(logging.INFO):
-            return ['mock', '--configdir=%s' % self._tmpdir.path]
-        return ['mock', '-q', '--configdir=%s' % self._tmpdir.path]
-
-    def init(self, repolist):
+    def _init_tmp_conf(self, repolist=None):
         """
-        Create a Mock environment.
-
-        This should be cleaned with clean().
+        Initialize mock temporary custom configuration directory, unless it is
+        already initialized.
         """
-        # Initialize the custom config directory
+
+        # If _tmpdir is already defined (ie. _init_tmp_conf() has already been
+        # called), do nothing.
+        if self._tmpdir is not None:
+            return
+
+        # Set empty repolist by default.
+        if repolist is None:
+            repolist = []
+
         self._tmpdir = TempDir('mock')
         self._tmpdir.create()
         dstpath = os.path.join(self._tmpdir.path, self.MOCK_DEFAULT)
@@ -124,15 +125,37 @@ class Mock():
             filepath = os.path.join(self.MOCK_DIR, filename)
             shutil.copy2(filepath, self._tmpdir.path)
 
-        # Be sure all repos are initialized
-        for repo in repolist:
-            repo.create()
+    def _mock_base(self):
+        """Return base argument to launch mock"""
+        if logging.getLogger().isEnabledFor(logging.INFO):
+            return ['mock', '--configdir=%s' % self._tmpdir.path]
+        return ['mock', '-q', '--configdir=%s' % self._tmpdir.path]
 
-        cmd = self._mock_base() + ['--init']
+    def _exec(self, cmd):
+        """
+        Execute mock command in argument, check its return code and raise
+        RiftError with its output in case of error.
+        """
+        cmd = self._mock_base() + cmd
+        logging.debug('Running mock: %s', ' '.join(cmd))
         popen = Popen(cmd, stdout=PIPE, cwd='/', universal_newlines=True)
         stdout = popen.communicate()[0]
         if popen.returncode != 0:
             raise RiftError(stdout)
+
+    def init(self, repolist):
+        """
+        Create a Mock environment.
+
+        This should be cleaned with clean().
+        """
+        self._init_tmp_conf(repolist)
+
+        # Be sure all repos are initialized
+        for repo in repolist:
+            repo.create()
+
+        self._exec(['--init'])
 
     def resultrpms(self, pattern='*.rpm', sources=True):
         """
@@ -156,27 +179,18 @@ class Mock():
         """
         specpath = os.path.realpath(specpath)
         sourcedir = os.path.realpath(sourcedir)
-        cmd = self._mock_base() + ['--buildsrpm']
+        cmd = ['--buildsrpm']
         cmd += ['--no-clean', '--no-cleanup-after']
         cmd += ['--spec', specpath, '--source', sourcedir]
-        logging.debug('Running mock: %s', ' '.join(cmd))
-        popen = Popen(cmd, stdout=PIPE, cwd='/', universal_newlines=True)
-        stdout = popen.communicate()[0]
-        if popen.returncode != 0:
-            raise RiftError(stdout)
-
+        self._exec(cmd)
         # XXX: Could be better if we do not use glob() here
         return list(self.resultrpms('*.src.rpm'))[0]
 
     def build_rpms(self, srpm):
         """Build binary RPMS using the provided Source RPM pointed by `srpm'"""
-        cmd = self._mock_base() + ['--no-clean', '--no-cleanup-after']
+        cmd = ['--no-clean', '--no-cleanup-after']
         cmd += [srpm.filepath]
-        logging.debug('Running mock: %s', ' '.join(cmd))
-        popen = Popen(cmd, stdout=PIPE, cwd='/', universal_newlines=True)
-        stdout = popen.communicate()[0]
-        if popen.returncode != 0:
-            raise RiftError(stdout)
+        self._exec(cmd)
 
         # Return the list of built RPMs here.
         return list(self.resultrpms('*.rpm', sources=False))

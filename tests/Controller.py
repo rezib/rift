@@ -478,6 +478,9 @@ rename to packages/pkgnew/sources/pkgnew-1.0.tar.gz
         shutil.rmtree(working_repo)
         atexit.unregister(shutil.rmtree)
 
+        # Remove mock build environments
+        self.clean_mock_environments()
+
     @patch('rift.Controller.VM')
     def test_action_validate(self, mock_vm_class):
         # Declare supported archs and check qemu-user-static is available for
@@ -503,6 +506,9 @@ rename to packages/pkgnew/sources/pkgnew-1.0.tar.gz
         # Check vm.run_test() has been called twice for basic tests on the two
         # architectures.
         self.assertEqual(mock_vm_objects.run_test.call_count, 2)
+
+        # Remove mock build environments
+        self.clean_mock_environments()
 
     @patch('rift.Controller.VM')
     def test_vm_arch_option(self, mock_vm_class):

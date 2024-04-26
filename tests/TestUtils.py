@@ -163,6 +163,11 @@ class RiftProjectTestCase(RiftTestCase):
         with open(self.projectconf, 'w') as fh:
             fh.write(yaml.dump(self.config.options, Dumper=OrderedDumper))
 
+    def clean_mock_environments(self):
+        """Remove mock build environments."""
+        for arch in self.config.get('arch'):
+            mock = Mock(self.config, arch)
+            mock.scrub()
 
 #
 # Temp files

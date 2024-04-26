@@ -173,6 +173,11 @@ class Mock():
         for rpm in self.resultrpms():
             os.unlink(rpm.filepath)
 
+    def scrub(self):
+        """Remove Mock environments (ie. chroots directories) from disk."""
+        self._init_tmp_conf()
+        self._exec(['--scrub=all'])
+
     def build_srpm(self, specpath, sourcedir):
         """
         Build a source RPM using the provided spec file and source directory.

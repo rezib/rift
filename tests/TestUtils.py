@@ -10,6 +10,8 @@ It contains several helper methods or classes like temporary file management.
 import tempfile
 import unittest
 import os
+from collections import OrderedDict
+
 import yaml
 
 from rift.Config import Config, Staff, Modules
@@ -150,8 +152,16 @@ class RiftProjectTestCase(RiftTestCase):
 
     def update_project_conf(self):
         """Update project YAML configuration file with new Config options."""
+        class OrderedDumper(yaml.SafeDumper):
+            pass
+        def _dict_representer(dumper, data):
+            return dumper.represent_mapping(
+                yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+                data.items()
+            )
+        OrderedDumper.add_representer(OrderedDict, _dict_representer)
         with open(self.projectconf, 'w') as fh:
-            fh.write(yaml.dump(self.config.options))
+            fh.write(yaml.dump(self.config.options, Dumper=OrderedDumper))
 
 
 #

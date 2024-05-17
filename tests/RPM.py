@@ -46,6 +46,7 @@ class SpecTest(RiftTestCase):
 
     def tearDown(self):
         os.unlink(self.spec)
+        os.rmdir(self.directory)
 
 
     def test_init(self):
@@ -82,6 +83,7 @@ class SpecTest(RiftTestCase):
         with open(rpmlintfile, "w") as rpmlint:
             rpmlint.write('addFilter("E: hardcoded-library-path")')
         self.assertIsNone(Spec(self.spec).check())
+        os.unlink(rpmlintfile)
 
 
     def test_bump_release(self):

@@ -51,7 +51,7 @@ from rift.Config import Config, Staff, Modules
 from rift.Gerrit import Review
 from rift.Mock import Mock
 from rift.Package import Package, Test
-from rift.Repository import Repository, ProjectArchRepositories
+from rift.Repository import LocalRepository, ProjectArchRepositories
 from rift.RPM import RPM, Spec, RPMLINT_CONFIG
 from rift.TempDir import TempDir
 from rift.TestResults import TestCase, TestResults
@@ -565,7 +565,7 @@ def validate_pkgs(config, args, results, pkgs, arch):
         spec = Spec(pkg.specfile, config=config)
         spec.check(pkg)
 
-        (staging, stagedir) = create_staging_repo(config, arch)
+        (staging, stagedir) = create_staging_repo(config)
 
         message('Preparing Mock environment...')
         mock = Mock(config, arch, config.get('version'))
@@ -594,7 +594,14 @@ def validate_pkgs(config, args, results, pkgs, arch):
 
         rc = 0
         if args.test:
-            rc = test_pkgs(config, args, results, [pkg], arch, [staging])
+            rc = test_pkgs(
+                config,
+                args,
+                results,
+                [pkg],
+                arch,
+                [staging.consumables[arch]]
+            )
 
         # Also publish on working repo if requested
         # XXX: All RPMs should be published when all of them have been validated
@@ -837,7 +844,7 @@ def get_packages_from_patch(patch, config, modules, staff):
 
     return pkglist
 
-def create_staging_repo(config, arch):
+def create_staging_repo(config):
     """
     Create and return staging temporary repository with a 2-tuple containing
     (Repository, TempDir) objects.
@@ -846,11 +853,12 @@ def create_staging_repo(config, arch):
     stagedir = TempDir('stagedir')
     stagedir.create()
     staging_repo_options = {'module_hotfixes': "true"}
-    staging = Repository(path=stagedir.path,
-                         arch=arch,
-                         name='staging',
-                         options=staging_repo_options,
-                         config=config)
+    staging = LocalRepository(
+        path=stagedir.path,
+        config=config,
+        name='staging',
+        options=staging_repo_options,
+    )
     staging.create()
     return (staging, stagedir)
 

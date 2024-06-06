@@ -231,10 +231,14 @@ class VM():
                     'security_model=none' % self._project_dir]
             for repo in self._repos:
                 if repo.is_file():
-                    repo.create()
+                    if not repo.exists():
+                        raise RiftError(
+                            f"Repository {repo.path} does not exist, unable to "
+                            "start VM"
+                        )
                     cmd += ['-virtfs',
                             'local,id=%s,path=%s,mount_tag=%s,security_model=none' %
-                            (repo.name, repo.rpms_dir, repo.name)]
+                            (repo.name, repo.path, repo.name)]
         elif self.shared_fs_type == 'virtiofs':
             # Add a shared memory object to allow virtiofsd shares
             cmd += ['-object',
@@ -259,14 +263,18 @@ class VM():
             )
             for repo in self._repos:
                 if repo.is_file():
-                    repo.create()
+                    if not repo.exists():
+                        raise RiftError(
+                            f"Repository {repo.path} does not exist, unable to "
+                            "start VM"
+                        )
                     cmd += ['-chardev', 'socket,id=%s,path=/tmp/.virtio_fs_%s' % ((repo.name,) * 2),
                             '-device', 'vhost-user-fs-pci,queue-size=1024,chardev=%s,tag=%s'
                             % ((repo.name,) * 2)]
                     helper_cmd.append(
                         gen_virtiofs_args(
                             socket_path='/tmp/.virtio_fs_%s' % repo.name,
-                            directory=repo.rpms_dir,
+                            directory=repo.path,
                             qemu=qemu_version,
                             virtiofsd=self.virtiofsd
                         )

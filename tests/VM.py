@@ -17,7 +17,7 @@ from rift.Config import (
     _DEFAULT_VM_PORT_RANGE_MIN,
     _DEFAULT_VM_PORT_RANGE_MAX,
 )
-from rift.Repository import RemoteRepository
+from rift.Repository import ConsumableRepository
 from rift.VM import VM, ARCH_EFI_BIOS, gen_virtiofs_args
 from rift import RiftError
 
@@ -201,9 +201,11 @@ class VMTest(RiftTestCase):
         self.assertEqual(helper_args, [])
 
         # Test 9p configuration with repos
-        # Use RemoteRepostory to avoid any createrepo stuff in tests
+        # Use ConsumableRepostory to avoid any createrepo stuff in tests
         reponame = 'custom'
-        vm._repos = [RemoteRepository(url='/tmp', name=reponame)]
+        vm._repos = [
+            ConsumableRepository(url='/tmp', name=reponame)
+        ]
 
         repo_args = ['-virtfs',
                      f'local,id={reponame},path=/tmp,mount_tag={reponame},security_model=none']
@@ -249,9 +251,11 @@ class VMTest(RiftTestCase):
         self.assertNotEqual(helper_args, [])
 
         # Test virtiofs configuration with repos
-        # Use RemoteRepostory to avoid any createrepo stuff in tests
+        # Use ConsumableRepostory to avoid any createrepo stuff in tests
         reponame = 'custom'
-        vm._repos = [RemoteRepository(url='/tmp', name=reponame)]
+        vm._repos = [
+            ConsumableRepository(url='/tmp', name=reponame)
+        ]
 
         repo_args = ['-chardev',
                      f'socket,id={reponame},path=/tmp/.virtio_fs_{reponame}',
@@ -262,6 +266,21 @@ class VMTest(RiftTestCase):
         self.assertEqual(args, virtiofs_diff_arch + repo_args)
         # Content of helper_args is not tested here see test_gen_virtiofs_args
         self.assertNotEqual(helper_args, [])
+
+    def test_make_drive_cmd_unexisting_repo(self):
+        """
+        Check drive command line generation raise error when file repository does not exist
+        """
+        vm = VM(self.config, None)
+        vm._repos = [ConsumableRepository("file:///fail")]
+        # test for all supported shared FS types
+        for shared_fs_type in ['9p', 'virtiofs']:
+            vm.shared_fs_type = shared_fs_type
+            with self.assertRaisesRegex(
+                RiftError,
+                '^Repository /fail does not exist, unable to start VM$'
+            ):
+                vm._make_drive_cmd()
 
 
     def test_gen_qemu_args(self):
@@ -325,16 +344,6 @@ class VMBuildTest(RiftProjectTestCase):
         # RiftProjectTestCase.
         self.config.options['vm_images_cache'] = GLOBAL_CACHE
         self.config.options['proxy'] = PROXY
-        self.repos = [
-            RemoteRepository(
-                (
-                    'https://repo.almalinux.org/almalinux/8/BaseOS/x86_64/os/'
-                ),
-                name='repos',
-                priority=90,
-                config={},
-            )
-        ]
         self.wrong_url = 'https://127.0.0.1/fail'
         self.valid_url = VALID_IMAGE_URL['x86_64']
         self.copy_cloud_init_tpl()

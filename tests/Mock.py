@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from TestUtils import make_temp_dir, RiftProjectTestCase
 from rift.Mock import Mock
-from rift.Repository import Repository
+from rift.Repository import ConsumableRepository
 from rift import RiftError
 
 class MockTest(RiftProjectTestCase):
@@ -25,19 +25,17 @@ class MockTest(RiftProjectTestCase):
     def test_build_context(self):
         """ Test mock context generation """
         arch = 'aarch64'
-        repolist = []
-        _config = {'arch': arch,}
         _repo_config = {
                         'module_hotfixes': True,
                         'excludepkgs': 'somepkg',
                         'proxy': 'myproxy',
                     }
-        mock = Mock(_config, arch)
-        repolist.append(Repository('/tmp',
-                                    arch,
-                                    name='tmp',
-                                    options=_repo_config,
-                                    config=_config))
+        mock = Mock({}, arch)
+        repolist = [
+            ConsumableRepository(
+                f"file:///tmp/{arch}", name='tmp', options=_repo_config
+            )
+        ]
         context = mock._build_template_ctx(repolist)
         self.assertEqual(context['name'], 'rift-{}-{}'.format(arch, getpass.getuser()))
         self.assertEqual(context['arch'], arch)
@@ -74,4 +72,16 @@ class MockTest(RiftProjectTestCase):
         mock = Mock(config=self.config, arch='x86_64', proj_vers=1.0)
         with self.assertRaisesRegex(RiftError, "^output$"):
             mock.init([])
+        mock.clean()
+
+    def test_init_unexisting_repo(self):
+        """ Test Mock init raise error on unexisting local file repository """
+        # Emulate mock execution failure
+        mock = Mock(config=self.config, arch='x86_64', proj_vers=1.0)
+        with self.assertRaisesRegex(
+            RiftError,
+            "^Repository /fail does not exist, unable to initialize Mock "
+            "environment$"
+        ):
+            mock.init([ConsumableRepository("file:///fail")])
         mock.clean()

@@ -125,6 +125,14 @@ class Mock():
             filepath = os.path.join(self.MOCK_DIR, filename)
             shutil.copy2(filepath, self._tmpdir.path)
 
+        # Be sure all repos are initialized or raise error
+        for repo in repolist:
+            if repo.is_file() and not repo.exists():
+                raise RiftError(
+                    f"Repository {repo.path} does not exist, unable to "
+                    "initialize Mock environment"
+                )
+
     def _mock_base(self):
         """Return base argument to launch mock"""
         if logging.getLogger().isEnabledFor(logging.INFO):
@@ -150,11 +158,6 @@ class Mock():
         This should be cleaned with clean().
         """
         self._init_tmp_conf(repolist)
-
-        # Be sure all repos are initialized
-        for repo in repolist:
-            repo.create()
-
         self._exec(['--init'])
 
     def resultrpms(self, pattern='*.rpm', sources=True):

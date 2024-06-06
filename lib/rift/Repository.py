@@ -42,134 +42,177 @@ from subprocess import Popen, PIPE, STDOUT
 from rift import RiftError
 from rift.Config import _DEFAULT_REPO_CMD
 
-class RemoteRepository():
+class ConsumableRepository():
     """
-    Simple container for dealing with read-only remote repository using http or
-    ftp.
+    Manipulate RPM packages repository to be consumed by dnf/yum and Mock.
     """
-    def __init__(self, url, name=None, priority=None, options=None, config=None):
+    FILE_SCHEME = 'file://'
+
+    def __init__(self, url, name=None, priority=None, options=None, default_proxy=None):
         self.url = url
         self.name = name
         self.priority = priority
-        if config is None:
-            config = {}
         if options is None:
             options = {}
         self.module_hotfixes = options.get('module_hotfixes')
         self.excludepkgs = options.get('excludepkgs')
-        self.proxy = options.get('proxy', config.get('proxy'))
-        self.createrepo = config.get('createrepo', _DEFAULT_REPO_CMD)
+        self.proxy = options.get('proxy', default_proxy)
 
     def is_file(self):
         """True if repository URL looks like a file URI."""
-        return self.url.startswith('file://') or self.url.startswith('/')
+        return self.url.startswith(self.FILE_SCHEME) or self.url.startswith('/')
 
     @property
-    def rpms_dir(self):
+    def path(self):
         """
-        Path to RPMS directory if this is a local file repo. None otherwise.
+        Absolute path to the local (aka. file) consumable repository. Raise
+        RiftError if the ConsumableRepository is not local/file."
         """
-        if self.url.startswith('/'):
-            return self.url
-        if self.url.startswith('file://'):
-            return self.url[len('file://'):]
-        return None
+        if not self.is_file():
+            raise RiftError("Unable to return path of remote repository")
+        if self.url.startswith(self.FILE_SCHEME):
+            return self.url[len(self.FILE_SCHEME):]
+        return self.url
 
-    def create(self):
+    def exists(self):
         """
-        Read-only repository, create() is a no-op, considering it is always
-        created and usable.
+        Return true if path the local (aka. file) consumable repository actually
+        exists on filesystem, or false otherwise. Raise RiftError if the
+        ConsumableRepository is not local/file.
         """
+        return os.path.exists(self.path)
 
 
-class Repository(RemoteRepository):
+class LocalRepository:
     """
-    Manipulate a RPMS repository structures: RPMs, directories and metadata.
-
-    Metadata are created using 'createrepo' tool.
+    Manipulate local multi-architectures and source RPM packages repository with
+    its structure and metadata using createrepo tool.
     """
 
-    def __init__(self, path, arch, name=None, options=None, config=None):
+    def __init__(self, path, config, name=None, options=None):
         self.path = os.path.realpath(path)
+        self.config = config
         self.srpms_dir = os.path.join(self.path, 'SRPMS')
-        rpms_dir = os.path.join(self.path, arch)
+        if options is None:
+            options = {}
+        self.createrepo = config.get('createrepo', _DEFAULT_REPO_CMD)
 
-        name = name or os.path.basename(self.path)
-        url = 'file://%s' % os.path.realpath(rpms_dir)
-        RemoteRepository.__init__(self,
-                                  url,
-                                  name=name,
-                                  options=options,
-                                  config=config)
+        self.consumables = {
+            arch: ConsumableRepository(
+                f"{ConsumableRepository.FILE_SCHEME}"
+                f"{os.path.realpath(self.path)}/{arch}",
+                name=name or os.path.basename(self.path),
+                options=options,
+                default_proxy=config.get('proxy')
+            )
+            for arch in self.config.get('arch')
+        }
+
+    def rpms_dir(self, arch):
+        """
+        Path to RPMS directory for the given architecture.
+        """
+        if arch not in self.config.get('arch'):
+            raise RiftError(
+                "Unable to get repository RPM directory for unsupported "
+                f"architecture {arch}"
+            )
+        return os.path.join(self.path, arch)
 
     def create(self):
-        """Create repository directory structure and metadata."""
-        for path in (self.path, self.rpms_dir, self.srpms_dir):
+        """
+        Create repository directory structure and metadata.
+        """
+        # Create main repository directory and the SRPM sub-directory.
+        for path in (self.path, self.srpms_dir):
             if not os.path.exists(path):
                 os.mkdir(path)
-
-        repodata = os.path.join(self.rpms_dir, 'repodata')
-        if not os.path.exists(repodata):
-            self.update()
+        # Create all architectures RPM sub-directories and their repodata.
+        for arch in self.config.get('arch'):
+            path = self.rpms_dir(arch)
+            if not os.path.exists(path):
+                os.mkdir(path)
+        self.update()
 
     def update(self):
-        """Update the repository metadata."""
-        cmd = [self.createrepo, '-q', '--update', self.rpms_dir]
-        popen = Popen(cmd, stdout=PIPE, stderr=STDOUT, universal_newlines=True)
-        stdout = popen.communicate()[0]
-        if popen.returncode != 0:
-            raise RiftError(stdout)
+        """
+        Update the repository metadata for SRPMS repository and all
+        architectures RPMS repositories.
+        """
+        def run_update(path):
+            popen = Popen(
+                [self.createrepo, '-q', '--update', path],
+                stdout=PIPE,
+                stderr=STDOUT,
+                universal_newlines=True,
+            )
+            stdout = popen.communicate()[0]
+            if popen.returncode != 0:
+                raise RiftError(stdout)
 
-        cmd = [self.createrepo, '-q', '--update', self.srpms_dir]
-        popen = Popen(cmd, stdout=PIPE, stderr=STDOUT, universal_newlines=True)
-        stdout = popen.communicate()[0]
-        if popen.returncode != 0:
-            raise RiftError(stdout)
+        run_update(self.srpms_dir)
+        for arch in self.config.get('arch'):
+            run_update(self.rpms_dir(arch))
+
 
     def add(self, rpm):
         """
         Copy RPM file pointed `rpm' into the repository, in the correct
         subdirectory based on RPM type and architecture.
         """
+        def add_bin_arch(arch):
+            logging.debug(
+                "Adding %s to repo %s", rpm.filepath, self.rpms_dir(arch)
+            )
+            # rpms_dir already points to architecture directory
+            shutil.copy(rpm.filepath, self.rpms_dir(arch))
         if rpm.is_source:
             logging.debug("Adding %s to repo %s", rpm.filepath, self.srpms_dir)
             shutil.copy(rpm.filepath, self.srpms_dir)
         else:
-            logging.debug("Adding %s to repo %s", rpm.filepath, self.rpms_dir)
-            # rpms_dir already points to architecture directory
-            shutil.copy(rpm.filepath, self.rpms_dir)
+            # Add noarch binary package in all architectures repositories
+            if rpm.arch == 'noarch':
+                for arch in self.config.get('arch'):
+                    add_bin_arch(arch)
+            else:
+                add_bin_arch(rpm.arch)
+
 
 class ProjectArchRepositories:
     """
     Manipulate repositories defined in a project for a particular architecture.
     """
     def __init__(self, config, arch):
-
         self.working = None
+        self.arch = arch
         if config.get('working_repo'):
-            self.working = Repository(
+            self.working = LocalRepository(
                 path=config.get('working_repo', arch=arch),
-                arch=arch,
+                config=config,
                 name='working',
                 options={"module_hotfixes": "true"},
-                config=config
             )
+            self.working.create()
         self.supplementaries = []
         repos = config.get('repos', arch=arch)
         if repos:
             for name, data in repos.items():
                 if isinstance(data, str):
                     self.supplementaries.append(
-                        RemoteRepository(data, name, config=config)
+                        ConsumableRepository(
+                            data,
+                            name,
+                            default_proxy=config.get('proxy')
+                        )
                     )
                 else:
                     self.supplementaries.append(
-                        RemoteRepository(
+                        ConsumableRepository(
                             data['url'],
                             name=name,
                             priority=data.get('priority'),
                             options=data,
-                            config=config,
+                            default_proxy=config.get('proxy'),
                         )
                     )
 
@@ -181,8 +224,11 @@ class ProjectArchRepositories:
         defined).
         """
         return (
-            ([self.working] if self.working is not None else []) +
-            self.supplementaries
+            (
+                [self.working.consumables[self.arch]]
+                if self.working is not None
+                else []
+            ) + self.supplementaries
         )
 
     def can_publish(self):

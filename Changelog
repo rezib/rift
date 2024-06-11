@@ -1,3 +1,13 @@
+Tue Jun 11 2024 Aurelien Cedeyn <aurelien.cedeyn@cea.fr>
+	* Release 0.12
+	* Bugfix: Annex: Fix list method time handling
+	* Bugfix: VM: use platform.machine() instead of platform.processor()
+	* Bugfix: VM: rift regression on aarch64
+	* Config: $arch placeholder and arch override
+	* Feature: Add multi-architectures support
+	* Feature: Annex: add backup function
+	* Tests: add tests for build and validate actions
+
 Tue Feb 20 2024 Aurelien Cedeyn <aurelien.cedeyn@cea.fr>
 	* Release: 0.11
 	* Bugfix: display an error if the VM is already running
@@ -22,7 +32,7 @@ Tue Jun  6 2023 Aurelien Cedeyn <aurelien.cedeyn@cea.fr>
 	* Add support of aarch64
 
 Tue Nov 24 2020 Aurelien Cedeyn <aurelien.cedeyn@cea.fr>
-    * Release: 0.10.4
+	* Release: 0.10.4
 	* Fix dnf history management during simple tests
 
 Tue May 12 2020 Aurelien Cedeyn <aurelien.cedeyn@cea.fr>

@@ -223,11 +223,7 @@ class RiftProjectTestCase(RiftTestCase):
         name='pkg',
         version='1.0',
         release='1',
-        metadata={
-            'module': 'Great module',
-            'origin': 'Vendor',
-            'reason': 'Missing feature'
-        },
+        metadata=None,
         build_requires=['br-package'],
         requires=['another-package'],
         subpackages=[],
@@ -237,13 +233,25 @@ class RiftProjectTestCase(RiftTestCase):
         os.mkdir(self.pkgdirs[name])
         # ./packages/pkg/info.yaml
         info = os.path.join(self.pkgdirs[name], 'info.yaml')
+        if metadata is None:
+            metadata = {}
         with open(info, "w") as nfo:
             nfo.write("package:\n")
             nfo.write("    maintainers:\n")
             nfo.write("        - Myself\n")
-            nfo.write("    module: {}\n".format(metadata.get('module', '')))
-            nfo.write("    origin: {}\n".format(metadata.get('origin', '')))
-            nfo.write("    reason: {}\n".format(metadata.get('reason', '')))
+            nfo.write(
+                "    module: {}\n".format(
+                    metadata.get('module', 'Great module')
+                )
+            )
+            nfo.write(
+                "    origin: {}\n".format(metadata.get('origin', 'Vendor'))
+            )
+            nfo.write(
+                "    reason: {}\n".format(
+                    metadata.get('reason', 'Missing feature')
+                )
+            )
 
         # ./packages/pkg/pkg.spec
         self.pkgspecs[name] = os.path.join(self.pkgdirs[name],

@@ -546,16 +546,7 @@ def validate_pkgs(config, args, results, pkgs, arch):
         spec = Spec(pkg.specfile, config=config)
         spec.check(pkg)
 
-        logging.info('Creating temporary repository')
-        stagedir = TempDir('stagedir')
-        stagedir.create()
-        staging_repo_options = {'module_hotfixes': "true"}
-        staging = Repository(path=stagedir.path,
-                             arch=arch,
-                             name='staging',
-                             options=staging_repo_options,
-                             config=config)
-        staging.create()
+        (staging, stagedir) = create_staging_repo(config, arch)
 
         message('Preparing Mock environment...')
         mock = Mock(config, arch, config.get('version'))
@@ -817,6 +808,23 @@ def get_packages_from_patch(patch, config, modules, staff):
             pkglist[pkg.name] = pkg
 
     return pkglist
+
+def create_staging_repo(config, arch):
+    """
+    Create and return staging temporary repository with a 2-tuple containing
+    (Repository, TempDir) objects.
+    """
+    logging.info('Creating temporary repository')
+    stagedir = TempDir('stagedir')
+    stagedir.create()
+    staging_repo_options = {'module_hotfixes': "true"}
+    staging = Repository(path=stagedir.path,
+                         arch=arch,
+                         name='staging',
+                         options=staging_repo_options,
+                         config=config)
+    staging.create()
+    return (staging, stagedir)
 
 def staff_modules(config):
     """

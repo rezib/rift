@@ -197,6 +197,37 @@ class ConfigTest(RiftTestCase):
         self.assert_except(DeclError, "'annex' is not defined",
                            Config().load)
 
+    def test_load_multiple_files(self):
+        """load() loads multiple files"""
+        conf_files = [
+            make_temp_file(
+                textwrap.dedent(
+                    """
+                    annex: /a/dir
+                    vm_image: /a/image.img
+                    """
+                )
+            ),
+            make_temp_file(
+                textwrap.dedent(
+                    """
+                    vm_image: /b/image.img
+                    arch:
+                    - x86_64
+                    - aarch64
+                    """
+                )
+            ),
+        ]
+        config = Config()
+        config.load([conf_file.name for conf_file in conf_files])
+        # Value from 1st file should be loaded
+        self.assertEqual(config.get('annex'), '/a/dir')
+        # Value from 2nd file should override value from 1st file
+        self.assertEqual(config.get('vm_image'), '/b/image.img')
+        # Value from 2nd file should be loaded
+        self.assertEqual(config.get('arch'), ['x86_64', 'aarch64'])
+
     def test_load_arch_specific(self):
         """load() properly loads architecture specific options"""
         cfgfile = make_temp_file(
@@ -317,6 +348,46 @@ class ConfigTest(RiftTestCase):
         """load() an bad YAML syntax file raises an error"""
         cfgfile = make_temp_file("[value= not really YAML] [ ]\n")
         self.assertRaises(DeclError, Config().load, cfgfile.name)
+
+    def test_load_dict_merged(self):
+        """load() merges dict from multiple files"""
+        conf_files = [
+            make_temp_file(
+                textwrap.dedent(
+                    """
+                    annex: /a/dir
+                    vm_image: /a/image.img
+                    repos:
+                      os:
+                        url: https://os/url/file1
+                      extra:
+                        url: https://extra/url/file1
+                    """
+                )
+            ),
+            make_temp_file(
+                textwrap.dedent(
+                    """
+                    repos:
+                      os:
+                        url: https://os/url/file2
+                        modules_hotfixes: true
+                      update:
+                        url: https://update/url/file2
+                    """
+                )
+            ),
+        ]
+        config = Config()
+        config.load([conf_file.name for conf_file in conf_files])
+        repos = config.get('repos')
+        self.assertTrue('os' in repos)
+        self.assertTrue('update' in repos)
+        self.assertTrue('extra' in repos)
+        self.assertEquals(repos['os']['url'], 'https://os/url/file2')
+        self.assertTrue('modules_hotfixes' in repos['os'])
+        self.assertEquals(repos['update']['url'], 'https://update/url/file2')
+        self.assertEquals(repos['extra']['url'], 'https://extra/url/file1')
 
 
 class ConfigTestSyntax(RiftTestCase):
@@ -673,6 +744,37 @@ class ConfigTestSyntax(RiftTestCase):
                 }
             }
         )
+
+    def test_load_dict_merged_syntax(self):
+        """load() merges dict from multiple files with syntax"""
+        self._add_fake_dict_param_syntax()
+        conf_files = [
+            make_temp_file(
+                textwrap.dedent(
+                    """
+                    param0:
+                      key1: value1
+                    """
+                )
+            ),
+            make_temp_file(
+                textwrap.dedent(
+                    """
+                    param0:
+                      key1: value2
+                      key2: 1
+                    """
+                )
+            ),
+        ]
+        config = Config()
+        config.load([conf_file.name for conf_file in conf_files])
+        param0 = config.get('param0')
+        self.assertTrue('key1' in param0)
+        self.assertTrue('key2' in param0)
+        self.assertEquals(param0['key1'], 'value2')
+        self.assertEquals(param0['key2'], 1)
+
 
 
 class ProjectConfigTest(RiftTestCase):

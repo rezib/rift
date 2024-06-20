@@ -376,9 +376,16 @@ class Config():
         if key not in self.SYNTAX:
             raise DeclError("Unknown '%s' key" % key)
 
-        self._arch_options(arch)[key] = self._key_value(
+        options = self._arch_options(arch)
+        value = self._key_value(
             self.SYNTAX[key], key, value
         )
+        # If the key is a dict and it already has a value, merge it with the new
+        # value.
+        if self.SYNTAX[key].get('check') == 'dict' and key in options:
+            options[key].update(value)
+        else:
+            options[key] = value
 
     def _key_value(self, syntax, key, value):
         """
@@ -426,7 +433,8 @@ class Config():
         Validate dict value against syntax if defined and return value.
         """
 
-        # If syntax dict is not defined, just return raw value.
+        # Just set the dict without further validation if syntax dict is not
+        # defined.
         if syntax is None:
             return value
 

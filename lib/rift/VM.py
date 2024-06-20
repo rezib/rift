@@ -54,6 +54,7 @@ import uuid
 import shutil
 import atexit
 import urllib
+import hashlib
 from subprocess import Popen, PIPE, STDOUT, check_output, run, CalledProcessError
 
 from jinja2 import Template
@@ -119,7 +120,9 @@ class VM():
     SUPPORTED_FS = ('9p', 'virtiofs')
 
     def __init__(self, config, arch, tmpmode=True, extra_repos=None):
-        uniq_id = os.getuid() + 2000
+        self.version = config.get('version', '0')
+        self.arch = arch
+
         self._image = config.get('vm_image', arch=arch)
         self._project_dir = config.project_dir
 
@@ -129,11 +132,10 @@ class VM():
         self._repos = ProjectArchRepositories(config, arch).all + extra_repos
 
         self.address = config.get('vm_address')
-        self.port = config.get('vm_port', uniq_id)
+        self.port = self.default_port(config.get('vm_port_range'))
         self.cpus = config.get('vm_cpus', 1)
         self.memory = config.get('vm_memory')
         self.qemu = config.get('qemu', arch=arch)
-        self.arch = arch
 
         # default emulated cpu architecture
         if self.arch == 'aarch64':
@@ -159,7 +161,7 @@ class VM():
         self._vm = None
         self._helpers = []
         self._tmpimg = None
-        self.consolesock = '/tmp/rift-vm-console-{0}.sock'.format(uniq_id)
+        self.consolesock = '/tmp/rift-vm-console-{0}.sock'.format(self.vmid)
         self.proxy = config.get('proxy')
         self.no_proxy = config.get('no_proxy')
         self.additional_rpms = config.get('vm_additional_rpms')
@@ -170,6 +172,31 @@ class VM():
             config.get('vm_build_post_script')
         )
         self.images_cache = config.get('vm_images_cache')
+
+    @property
+    def vmid(self):
+        """
+        Generate a checksum for the triplet current user, architecture and version
+        that can be used to uniquely identify a VM for this combination.
+        """
+        return hashlib.sha1(
+            f"{os.getuid()}-{self.arch}-{self.version}".encode()
+        ).hexdigest()
+
+    def default_port(self, port_range):
+        """
+        Return the default port number for this VM considering its unique
+        identifier and the given port range.
+        """
+        try:
+            assert port_range['max'] > port_range['min']
+        except AssertionError:
+            raise RiftError(
+                "VM port range maximum must be greater than the minimum"
+            )
+        return (
+            int(self.vmid, 16) % (port_range['max'] - port_range['min'])
+        ) + port_range['min']
 
     def _mk_tmp_img(self):
         """Create a temp VM image to avoid modifying the real image disk."""

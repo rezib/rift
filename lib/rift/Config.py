@@ -71,6 +71,8 @@ _DEFAULT_VM_ADDRESS = '10.0.2.15'
 _DEFAULT_VM_ADDITIONAL_RPMS = []
 _DEFAULT_VM_CLOUD_INIT_TPL = 'cloud-init.tpl'
 _DEFAULT_VM_BUILD_POST_SCRIPT = 'build-post.sh'
+_DEFAULT_VM_PORT_RANGE_MIN = 10000
+_DEFAULT_VM_PORT_RANGE_MAX = 15000
 _DEFAULT_QEMU_CMD = 'qemu-system-$arch'
 _DEFAULT_REPO_CMD = 'createrepo_c'
 _DEFAULT_SHARED_FS_TYPE = '9p'
@@ -129,8 +131,18 @@ class Config():
             'check':    'digit',
             'default': 0,
         },
-        'vm_port': {
-            'check':    'digit',
+        'vm_port_range': {
+            'check':    'dict',
+            'syntax': {
+                'min': {
+                    'check': 'digit',
+                    'default': _DEFAULT_VM_PORT_RANGE_MIN,
+                },
+                'max': {
+                    'check': 'digit',
+                    'default': _DEFAULT_VM_PORT_RANGE_MAX,
+                }
+            }
         },
         'vm_cpu': {},
         'vm_cpus': {

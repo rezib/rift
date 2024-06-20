@@ -12,6 +12,8 @@ from rift import DeclError
 from rift.Config import Staff, Modules, Config, _DEFAULT_PKG_DIR, \
                          _DEFAULT_STAFF_FILE, _DEFAULT_MODULES_FILE, \
                          _DEFAULT_VM_CPUS, _DEFAULT_VM_ADDRESS, \
+                         _DEFAULT_VM_PORT_RANGE_MIN, \
+                         _DEFAULT_VM_PORT_RANGE_MAX, \
                          _DEFAULT_QEMU_CMD, _DEFAULT_REPO_CMD, \
                          _DEFAULT_SHARED_FS_TYPE, _DEFAULT_VIRTIOFSD
 
@@ -29,6 +31,13 @@ class ConfigTest(RiftTestCase):
         self.assertEqual(config.get('vm_address'), _DEFAULT_VM_ADDRESS)
         self.assertEqual(config.get('shared_fs_type'), _DEFAULT_SHARED_FS_TYPE)
         self.assertEqual(config.get('virtiofsd'), _DEFAULT_VIRTIOFSD)
+        self.assertEqual(
+            config.get('vm_port_range'),
+            {
+                'min': _DEFAULT_VM_PORT_RANGE_MIN,
+                'max': _DEFAULT_VM_PORT_RANGE_MAX
+            }
+        )
 
         # Default value argument
         self.assertEqual(config.get('doesnotexist', 'default value'),
@@ -388,6 +397,42 @@ class ConfigTest(RiftTestCase):
         self.assertTrue('modules_hotfixes' in repos['os'])
         self.assertEquals(repos['update']['url'], 'https://update/url/file2')
         self.assertEquals(repos['extra']['url'], 'https://extra/url/file1')
+
+    def test_load_port_partial_port_range(self):
+        """Load partial port range dict"""
+        cfgfile = make_temp_file(
+            textwrap.dedent(
+                """
+                annex: /a/dir
+                vm_image: /a/image.img
+                vm_port_range:
+                  min: 2000
+                """
+            )
+        )
+        config = Config()
+        config.load(cfgfile.name)
+        self.assertEqual(config.get('vm_port_range').get('min'), 2000)
+        self.assertEqual(
+            config.get('vm_port_range').get('max'),
+            _DEFAULT_VM_PORT_RANGE_MAX
+        )
+        cfgfile = make_temp_file(
+            textwrap.dedent(
+                """
+                annex: /a/dir
+                vm_image: /a/image.img
+                vm_port_range:
+                  max: 30000
+                """
+            )
+        )
+        config.load(cfgfile.name)
+        self.assertEqual(
+            config.get('vm_port_range').get('min'),
+            _DEFAULT_VM_PORT_RANGE_MIN
+        )
+        self.assertEqual(config.get('vm_port_range').get('max'), 30000)
 
 
 class ConfigTestSyntax(RiftTestCase):

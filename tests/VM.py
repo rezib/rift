@@ -8,8 +8,15 @@ from unittest.mock import patch
 
 import platform
 from TestUtils import RiftTestCase, RiftProjectTestCase, make_temp_dir
-from rift.Config import Config, _DEFAULT_VM_ADDRESS, _DEFAULT_QEMU_CMD, \
-                        _DEFAULT_VM_MEMORY, _DEFAULT_VIRTIOFSD
+from rift.Config import (
+    Config,
+    _DEFAULT_VM_ADDRESS,
+    _DEFAULT_QEMU_CMD,
+    _DEFAULT_VM_MEMORY,
+    _DEFAULT_VIRTIOFSD,
+    _DEFAULT_VM_PORT_RANGE_MIN,
+    _DEFAULT_VM_PORT_RANGE_MAX,
+)
 from rift.Repository import RemoteRepository
 from rift.VM import VM, ARCH_EFI_BIOS, gen_virtiofs_args
 from rift import RiftError
@@ -76,7 +83,6 @@ class VMTest(RiftTestCase):
         self.config.set('vm_cpus', 32)
         self.config.set('vm_memory', vm_custom_memory)
         self.config.set('arch_efi_bios', '/my_bios')
-        self.config.set('vm_port', 12345)
         self.config.set('vm_image_copy', 1)
         self.config.set('vm_address', '192.168.0.5')
         self.config.set('vm_image', '/my_image')
@@ -88,13 +94,74 @@ class VMTest(RiftTestCase):
         self.assertEqual(vm.cpus, 32)
         self.assertEqual(vm.memory, vm_custom_memory)
         self.assertEqual(vm.arch_efi_bios, '/my_bios')
-        self.assertEqual(vm.port, 12345)
         self.assertEqual(vm.address, '192.168.0.5')
         self.assertEqual(vm._image, '/my_image')
         self.assertEqual(vm.qemu, '/my_custom_qemu')
+        self.assertTrue(vm.port >= _DEFAULT_VM_PORT_RANGE_MIN)
+        self.assertTrue(vm.port <= _DEFAULT_VM_PORT_RANGE_MAX)
         self.assertTrue(vm.copymode)
         self.assertIsNone(vm._vm)
         self.assertIsNone(vm._tmpimg)
+        # Check VM unique ID is a hash of 40 chars
+        self.assertEqual(len(vm.vmid), 40)
+
+    def test_vmid(self):
+        """Check VM ID stability an uniqueness"""
+        # Declare 2 supported architectures for this test
+        self.config.set('arch', ['x86_64', 'aarch64'])
+        # 2 successive calls to id property with same object must return the
+        # same value.
+        vm1 = VM(self.config, 'x86_64')
+        self.assertEquals(vm1.vmid, vm1.vmid)
+        vm2 = VM(self.config, 'aarch64')
+        self.assertEquals(vm2.vmid, vm2.vmid)
+        # Verify vm1 and vm2 ID are different due because of their different
+        # architecture.
+        self.assertNotEquals(vm1.vmid, vm2.vmid)
+        # Get another vm object with the same architecture (and user/version)
+        # than vm1 and check it has the same ID.
+        vm3 = VM(self.config, 'x86_64')
+        self.assertEquals(vm1.vmid, vm3.vmid)
+        # Change version for vm3 and check ID is now different of vm1.
+        self.config.set('version', '2.0')
+        vm3 = VM(self.config, 'x86_64')
+        self.assertNotEquals(vm1.vmid, vm3.vmid)
+
+    def test_default_port(self):
+        """Check VM default port uniqueness and range conformity"""
+        # Declare 2 supported architectures for this test
+        self.config.set('arch', ['x86_64', 'aarch64'])
+        vm1 = VM(self.config, 'x86_64')
+        vm2 = VM(self.config, 'aarch64')
+        vm3 = VM(self.config, 'x86_64')
+        port_range = {'min': 2000,  'max': 3000}
+        # Verify vm1 and vm2 default are different because of their different
+        # architecture.
+        self.assertNotEquals(
+            vm1.default_port(port_range),
+            vm2.default_port(port_range)
+        )
+        # Verify vm1 and vm3 have the same default port because they share the
+        # same combination of user/arch/version.
+        self.assertEquals(
+            vm1.default_port(port_range),
+            vm3.default_port(port_range)
+        )
+        # Verify both default ports are included in range
+        self.assertTrue(vm1.default_port(port_range) >= port_range['min'])
+        self.assertTrue(vm1.default_port(port_range) < port_range['max'])
+        self.assertTrue(vm2.default_port(port_range) >= port_range['min'])
+        self.assertTrue(vm2.default_port(port_range) < port_range['max'])
+
+    def test_default_port_invalid_range(self):
+        """Check VM default port raise error with invalid range"""
+        vm1 = VM(self.config, 'x86_64')
+        port_range = {'min': 2001,  'max': 2000}
+        with self.assertRaisesRegex(
+            RiftError,
+            "^VM port range maximum must be greater than the minimum$"
+        ):
+            vm1.default_port(port_range)
 
     def test_gen_virtiofs_args(self):
         """

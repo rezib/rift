@@ -256,7 +256,21 @@ class Config():
         elif option in self.options:
             value = self.options[option]
         elif option in self.SYNTAX:
-            value = self.SYNTAX[option].get('default', default)
+            # If the option is a dictionnary and it has no global default value
+            # but a syntax, generate dict default value with default values
+            # defined in syntax. In all other cases, just use global default
+            # value from syntax with the default value provided in argument as a
+            # fallback.
+            if (
+                    'default' not in self.SYNTAX[option] and
+                    self.SYNTAX[option].get('check') == 'dict' and
+                    'syntax' in self.SYNTAX[option]
+                ):
+                value = Config._extract_default_dict_syntax(
+                    self.SYNTAX[option]['syntax']
+                )
+            else:
+                value = self.SYNTAX[option].get('default', default)
         else:
             value = default
 
@@ -265,6 +279,21 @@ class Config():
         if option == 'arch' or arch is None:
             return value
         return self._replace_arch(value, arch)
+
+    @staticmethod
+    def _extract_default_dict_syntax(syntax):
+        """
+        Return the default dict value as defined in dict syntax, recursively.
+        """
+        result = {}
+        for key, option in syntax.items():
+            if 'default' in option:
+                result[key] = option['default']
+            elif 'syntax' in option:
+                result[key] = Config._extract_default_dict_syntax(
+                    option['syntax']
+                )
+        return result if result else None
 
     def _replace_arch(self, value, arch):
         """
@@ -408,14 +437,15 @@ class Config():
         if unknown_keys:
             raise DeclError(f"Unknown {key} keys: {', '.join(unknown_keys)}")
 
-        # Iterate over the keys defined in syntax. If the subvalue is defined,
-        # set it or raise error if required.
+        # Iterate over the keys defined in syntax. If the subvalue or default
+        # value is defined, set it or raise error if required.
         for subkey, subkey_format in syntax.items():
-            if subkey in value:
+            subkey_value = value.get(subkey, syntax[subkey].get('default'))
+            if subkey_value is not None:
                 result[subkey] = self._key_value(
                     syntax[subkey],
                     subkey,
-                    value[subkey],
+                    subkey_value,
                 )
             elif subkey_format.get('required', False):
                 raise DeclError(

@@ -563,6 +563,117 @@ class ConfigTestSyntax(RiftTestCase):
             ):
             config.load(cfgfile.name)
 
+    def test_load_dict_with_syntax_default_value_partial_def(self):
+        """Load dict with default value defined in syntax and partial definition"""
+        Config.SYNTAX.update({
+            'param0': {
+                'check': 'dict',
+                'syntax': {
+                    'key1': {
+                        'default': 'default_key1',
+                    },
+                    'key2': {
+                        'check': 'dict',
+                        'syntax': {
+                            'subkey2': {
+                                'default': 'default_subkey2',
+                            },
+                            'subkey3': {
+                                'default': 'default_subkey3',
+                            }
+                        }
+                    },
+                    'key3': {
+                        'check': 'dict',
+                        'default': {
+                            'subkey5': 'default_subkey5',
+                        },
+                    },
+                }
+            }
+        })
+        cfgfile = make_temp_file(
+            textwrap.dedent(
+                """
+                param0:
+                    key2:
+                        subkey3: overriden_subkey3
+                """
+            )
+        )
+        config = Config()
+        config.load(cfgfile.name)
+        self.assertEqual(
+            config.get('param0'),
+            {
+                'key1': 'default_key1',
+                'key2': {
+                    'subkey2': 'default_subkey2',
+                    # Value defined in config file must be properly loaded
+                    'subkey3': 'overriden_subkey3',
+                },
+                'key3': {
+                    'subkey5': 'default_subkey5',
+                }
+            }
+        )
+
+
+    def test_load_dict_with_syntax_default_value(self):
+        """Load dict with default value defined in syntax"""
+        Config.SYNTAX.update({
+            'param0': {
+                'check': 'dict',
+                'syntax': {
+                    'key1': {
+                        'default': 'default_key1',
+                    },
+                    'key2': {
+                        'check': 'dict',
+                        'syntax': {
+                            'subkey2': {
+                                'default': 'default_subkey2',
+                            },
+                            'subkey3': {
+                                'default': 'default_subkey3',
+                            }
+                        }
+                    },
+                    'key3': {
+                        'check': 'dict',
+                        'default': {
+                            'subkey5': 'default_subkey5',
+                        },
+                        'syntax': {
+                            'subkey4': {
+                                'default': 'default_subkey4',
+                            },
+                            'subkey5': {}
+                        },
+                    },
+                }
+            }
+        })
+        cfgfile = make_temp_file('')
+        config = Config()
+        config.load(cfgfile.name)
+        self.assertEqual(
+            config.get('param0'),
+            {
+                'key1': 'default_key1',
+                'key2': {
+                    # Default values must be extracted from key2 syntax.
+                    'subkey2': 'default_subkey2',
+                    'subkey3': 'default_subkey3',
+                },
+                'key3': {
+                    # Default value defined at key3 level has the priority over
+                    # the default value defined at subkeys level in syntax.
+                    'subkey5': 'default_subkey5',
+                }
+            }
+        )
+
 
 class ProjectConfigTest(RiftTestCase):
 

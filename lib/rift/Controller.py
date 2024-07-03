@@ -71,8 +71,8 @@ def banner(title):
     """
     print("** %s **" % title)
 
-def parse_options(args=None):
-    """Parse command line options"""
+def make_parser():
+    """Create command line parser"""
 
     parser = argparse.ArgumentParser()
     # Generic options
@@ -264,7 +264,7 @@ def parse_options(args=None):
     subprs.add_argument('patch', metavar='PATCH', type=argparse.FileType('r'))
 
     # Parse options
-    return parser.parse_args(args)
+    return parser
 
 def action_check(args, config):
     """Action for 'check' sub-commands."""
@@ -1102,7 +1102,7 @@ def main(args=None):
     """Main code of 'rift'"""
 
     # Parse options
-    args = parse_options(args)
+    args = make_parser().parse_args(args)
 
     logging.basicConfig(format="%(levelname)-8s %(message)s",
                         level=(logging.WARNING - args.verbose * 10))

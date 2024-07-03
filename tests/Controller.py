@@ -14,7 +14,7 @@ from TestUtils import (
 
 from VM import GLOBAL_CACHE, VALID_IMAGE_URL, PROXY
 from rift.Controller import (
-    main, _validate_patch, get_packages_from_patch, parse_options
+    main, _validate_patch, get_packages_from_patch, make_parser
 )
 from rift import RiftError
 
@@ -582,56 +582,59 @@ rename to packages/pkgnew/sources/pkgnew-1.0.tar.gz
 class ControllerArgumentsTest(RiftTestCase):
     """ Arguments parsing tests for Controller module"""
 
-    def test_parse_options_updaterepo(self):
+    def test_make_parser_updaterepo(self):
         """ Test option parsing """
         args = ["build", "a_package", "--dont-update-repo"]
-        parser = parse_options(args)
-        self.assertFalse(parser.updaterepo)
+        parser = make_parser()
+        opts = parser.parse_args(args)
+        self.assertFalse(opts.updaterepo)
 
-    def test_parse_options_vm(self):
+    def test_make_parser_vm(self):
         """ Test vm command options parsing """
+        parser = make_parser()
+
         args = ['vm', '--arch', 'x86_64']
-        parser = parse_options(args)
-        self.assertEquals(parser.command, 'vm')
+        opts = parser.parse_args(args)
+        self.assertEquals(opts.command, 'vm')
 
         args = ['vm', 'connect']
-        parser = parse_options(args)
-        self.assertEquals(parser.vm_cmd, 'connect')
+        opts = parser.parse_args(args)
+        self.assertEquals(opts.vm_cmd, 'connect')
 
         args = ['vm', '--arch', 'x86_64', 'connect']
-        parser = parse_options(args)
-        self.assertEquals(parser.vm_cmd, 'connect')
+        opts = parser.parse_args(args)
+        self.assertEquals(opts.vm_cmd, 'connect')
 
         args = ['vm', 'build']
         # This must fail due to missing image URL
         with self.assertRaises(SystemExit):
-            parse_options(args)
+            parser.parse_args(args)
 
         args = ['vm', 'build', 'http://image']
-        parser = parse_options(args)
-        self.assertEquals(parser.vm_cmd, 'build')
-        self.assertEquals(parser.url, 'http://image')
-        self.assertFalse(parser.force)
+        opts = parser.parse_args(args)
+        self.assertEquals(opts.vm_cmd, 'build')
+        self.assertEquals(opts.url, 'http://image')
+        self.assertFalse(opts.force)
 
         args = ['vm', 'build', 'http://image', '--force']
-        parser = parse_options(args)
-        self.assertTrue(parser.force)
+        opts = parser.parse_args(args)
+        self.assertTrue(opts.force)
 
         args = ['vm', 'build', 'http://image', '--deploy']
-        parser = parse_options(args)
-        self.assertTrue(parser.deploy)
+        opts = parser.parse_args(args)
+        self.assertTrue(opts.deploy)
 
         OUTPUT_IMG = 'OUTPUT'
 
         args = ['vm', 'build', 'http://image', '-o', OUTPUT_IMG]
-        parser = parse_options(args)
-        self.assertEquals(parser.output, OUTPUT_IMG)
+        opts = parser.parse_args(args)
+        self.assertEquals(opts.output, OUTPUT_IMG)
 
         args = ['vm', 'build', 'http://image', '--output', OUTPUT_IMG]
-        parser = parse_options(args)
-        self.assertEquals(parser.output, OUTPUT_IMG)
+        opts = parser.parse_args(args)
+        self.assertEquals(opts.output, OUTPUT_IMG)
 
         # This must fail due to missing output filename
         args = ['vm', 'build', 'http://image', '--output']
         with self.assertRaises(SystemExit):
-            parse_options(args)
+            parser.parse_args(args)

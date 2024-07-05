@@ -835,11 +835,6 @@ def action(config, args):
     Manage rift actions on annex, vm, packages or repositories
     """
 
-    staff = Staff(config)
-    staff.load(config.get('staff_file'))
-    modules = Modules(config, staff)
-    modules.load(config.get('modules_file'))
-
     if getattr(args, 'file', None) is not None:
         args.file = os.path.abspath(args.file)
 
@@ -850,23 +845,16 @@ def action(config, args):
 
     # ANNEX
     if args.command == 'annex':
-        action_annex(args, config, staff, modules)
+        action_annex(args, config, *staff_modules(config))
         return
 
     # VM
     if args.command == 'vm':
         return action_vm(args, config)
 
-    # Now, package related commands..
-    # ANNEX
-    if args.command == 'annex':
-        action_annex(args, config, staff, modules)
-        return
-
     # CREATE/IMPORT/REIMPORT
     if args.command in ['create', 'import', 'reimport']:
 
-        staff, modules = staff_modules(config)
         if args.command == 'create':
             pkgname = args.name
         elif args.command in ('import', 'reimport'):
@@ -878,7 +866,7 @@ def action(config, args):
         if args.maintainer is None:
             raise RiftError("You must specify a maintainer")
 
-        pkg = Package(pkgname, config, staff, modules)
+        pkg = Package(pkgname, config, *staff_modules(config))
         if args.command == 'reimport':
             pkg.load()
 
@@ -970,6 +958,7 @@ def action(config, args):
 
     elif args.command == 'changelog':
 
+        staff, modules = staff_modules(config)
         if args.maintainer is None:
             raise RiftError("You must specify a maintainer")
 
@@ -1000,7 +989,7 @@ def action(config, args):
 
     # GERRIT
     elif args.command == 'gerrit':
-        return action_gerrit(args, config, staff, modules)
+        return action_gerrit(args, config, *staff_modules(config))
 
     return 0
 

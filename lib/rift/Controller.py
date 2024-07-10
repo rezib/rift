@@ -293,6 +293,16 @@ def make_parser():
     subprs.add_argument('repositories', metavar='REPOSITORY', nargs='*',
                         help='repositories to synchronize (default: all)')
 
+    # graph
+    subprs = subparsers.add_parser('graph',
+                                   help='Draw graph of packages dependencies')
+    subprs.add_argument('--with-external', action='store_true',
+                        help="add project external dependencies in the graph")
+    subprs.add_argument('--module',
+                        help="represent packages from this module in the graph")
+    subprs.add_argument('packages', metavar='PACKAGE', nargs='*',
+                        help='packages to represent in the graph')
+
     # Parse options
     return parser
 
@@ -1047,6 +1057,32 @@ def action_sync(args, config):
             )
             synchronizer.run()
 
+def action_graph(args, config, staff, modules):
+    """Action for 'graph' command."""
+    # Build dependency graph with all selected packages and generate graphviz
+    # representation of this graph.
+    PackagesDependencyGraph.from_project(config, staff, modules).draw(
+        args.with_external, get_packages_in_graph(args, config, staff, modules)
+    )
+
+def get_packages_in_graph(args, config, staff, modules):
+    """
+    Return the list of packages to represent in the graph depending on the
+    arguments.
+    """
+    if args.module:
+        # If module arg is set by user, search for all packages in this module.
+        if args.module not in modules:
+            raise RiftError(f"Invalid module name {args.module}")
+        packages = []
+        for pkg in Package.list(config, staff, modules, args.packages):
+            pkg.load()
+            if pkg.module == args.module:
+                packages.append(pkg.name)
+        return packages
+    # Else (module arg undefined), use packages args (possibly empty, ie.
+    # all packages are selected eventually).
+    return args.packages
 
 def get_packages_from_patch(patch, config, modules, staff):
     """
@@ -1334,6 +1370,10 @@ def action(config, args):
     # SYNC
     elif args.command == 'sync':
         return action_sync(args, config)
+
+    # GRAPH
+    elif args.command == 'graph':
+        action_graph(args, config, *staff_modules(config))
 
     return 0
 

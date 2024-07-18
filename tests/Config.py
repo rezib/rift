@@ -15,7 +15,9 @@ from rift.Config import Staff, Modules, Config, _DEFAULT_PKG_DIR, \
                          _DEFAULT_VM_PORT_RANGE_MIN, \
                          _DEFAULT_VM_PORT_RANGE_MAX, \
                          _DEFAULT_QEMU_CMD, _DEFAULT_REPO_CMD, \
-                         _DEFAULT_SHARED_FS_TYPE, _DEFAULT_VIRTIOFSD
+                         _DEFAULT_SHARED_FS_TYPE, _DEFAULT_VIRTIOFSD, \
+                         _DEFAULT_SYNC_METHOD, _DEFAULT_SYNC_INCLUDE, \
+                         _DEFAULT_SYNC_EXCLUDE
 
 class ConfigTest(RiftTestCase):
 
@@ -38,6 +40,7 @@ class ConfigTest(RiftTestCase):
                 'max': _DEFAULT_VM_PORT_RANGE_MAX
             }
         )
+        self.assertEqual(config.get('sync'), None)
 
         # Default value argument
         self.assertEqual(config.get('doesnotexist', 'default value'),
@@ -516,6 +519,114 @@ class ConfigTest(RiftTestCase):
         )
         config = Config()
         with self.assertRaisesRegex(DeclError, '^Unknown gpg keys: epic$'):
+            config.load(cfgfile.name)
+
+    def test_load_sync(self):
+        """load() loads repositories synchronization parameters."""
+        # Load full config
+        cfgfile = make_temp_file(
+            textwrap.dedent(
+                """
+                annex: /a/dir
+                vm_image: /a/image.img
+                sync_output: /sync/output
+                repos:
+                  repo1:
+                    sync:
+                      source: https://server1/repo1
+                      method: epel
+                      include:
+                      - include1
+                      - include2
+                    url: file:///sync/output/repo1
+                  repo2:
+                    sync:
+                      source: https://server2/repo2
+                      exclude:
+                      - exclude1
+                      - exclude2
+                    url: file:///sync/output/repo2
+                  repo3:
+                    url: https://server3/repo3
+                """
+            )
+        )
+        config = Config()
+        config.load(cfgfile.name)
+        self.assertEqual(config.get('sync_output'), '/sync/output')
+        self.assertEqual(
+            config.get('repos')['repo1']['sync']['source'], 'https://server1/repo1'
+        )
+        self.assertEqual(
+            config.get('repos')['repo1']['sync']['method'], 'epel'
+        )
+        self.assertEqual(
+            config.get('repos')['repo1']['sync']['include'],
+            ['include1', 'include2']
+        )
+        self.assertEqual(
+            config.get('repos')['repo1']['sync']['exclude'],
+            _DEFAULT_SYNC_EXCLUDE
+        )
+        self.assertEqual(
+            config.get('repos')['repo2']['sync']['source'], 'https://server2/repo2'
+        )
+        self.assertEqual(
+            config.get('repos')['repo2']['sync']['method'], _DEFAULT_SYNC_METHOD
+        )
+        self.assertEqual(
+            config.get('repos')['repo2']['sync']['include'],
+            _DEFAULT_SYNC_EXCLUDE
+        )
+        self.assertEqual(
+            config.get('repos')['repo2']['sync']['exclude'],
+            ['exclude1', 'exclude2']
+        )
+        self.assertIsNone(config.get('repos')['repo3'].get('sync'))
+
+    def test_load_sync_repo_missing_source(self):
+        """load() fails with DeclError when repositories synchronization source URL is missing."""
+        # Load minimal config
+        cfgfile = make_temp_file(
+            textwrap.dedent(
+                """
+                annex: /a/dir
+                vm_image: /a/image.img
+                repos:
+                  repo1:
+                    sync: {}
+                """
+            )
+        )
+        config = Config()
+        with self.assertRaisesRegex(
+            DeclError,
+            r"Key source is required in dict parameter sync"
+        ):
+            config.load(cfgfile.name)
+
+    def test_load_sync_repo_invalid_method(self):
+        """load() fails with DeclError when repositories synchronization method is invalid."""
+        # Load minimal config
+        cfgfile = make_temp_file(
+            textwrap.dedent(
+                """
+                annex: /a/dir
+                vm_image: /a/image.img
+                repos:
+                  repo1:
+                    sync:
+                      source: https://server1/repo1
+                      method: fail
+                """
+            )
+        )
+        config = Config()
+        with self.assertRaisesRegex(
+            DeclError,
+            r"Bad value fail \(str\) for 'method' \(correct values: lftp, "
+            r"epel, dnf\)"
+        ):
             config.load(cfgfile.name)
 
 

@@ -7,6 +7,7 @@ import shutil
 import atexit
 from unittest.mock import patch, Mock
 import subprocess
+from io import StringIO
 
 from unidiff import parse_unidiff
 from TestUtils import (
@@ -772,6 +773,214 @@ rename to packages/pkgnew/sources/pkgnew-1.0.tar.gz
 
         # Remove temporary GPG home with generated key
         shutil.rmtree(gpg_home)
+
+    @patch('rift.sync.RepoSyncBase.run')
+    @patch('sys.stdout', new_callable=StringIO)
+    def test_action_sync_skip_repo_wo_params(self, mock_stdout, mock_reposyncbase_run):
+        """ Test rift runs sync action skips repo without synchronization parameters. """
+        sync_parent = make_temp_dir()
+        sync_output = os.path.join(sync_parent, 'output')
+        self.config.set('arch', ['x86_64'])
+
+        self.config.options['sync_output'] = sync_output
+        self.config.options['repos'] = {
+            'repo1': {
+                'sync': {
+                    'source': 'https://server1/repo1',
+                    'subdir': '$arch',
+                },
+                'url': 'https://server1/repo1',
+            },
+            'repo2': {
+                'url': 'https://server2/repo2',
+            },
+        }
+        # Update project YAML configuration with new options defined above
+        self.update_project_conf()
+        # Run sync and check debug log is emited to indicate repo2 is skipped.
+        with self.assertLogs(level='DEBUG') as log:
+            main(['sync'])
+            self.assertIn(
+                'WARNING:root:x86_64: Skipping repository repo2: no '
+                'synchronization parameters found',
+                log.output
+            )
+        # RepoSyncBase.run() must have been called once for repo1.
+        self.assertEqual(mock_reposyncbase_run.call_count, 1)
+        self.assertIn(
+            '** x86_64: Synchronizing repository repo1: '
+            'https://server1/repo1/x86_64 **',
+            mock_stdout.getvalue()
+        )
+        # Clean synchronization output parent
+        shutil.rmtree(sync_parent)
+
+    @patch('rift.Controller.RepoSyncFactory')
+    def test_action_sync(self, mock_reposync):
+        """ Test rift runs sync action with or without sync conf. """
+        # First run sync without sync conf nor -o, --output argument.
+        # Check warning message log is emitted
+        with self.assertLogs(level='INFO') as log:
+            main(['sync'])
+            self.assertIn(
+                'ERROR:root:Synchronization output directory must be defined '
+                'with sync_output parameter in Rift configuration or -o, '
+                '--output command line option to synchronize repositories',
+                log.output
+            )
+        # Check factory is not called
+        self.assertEqual(mock_reposync.get.call_count, 0)
+
+        # Create temporary synchronization output parent directory
+        sync_parent = make_temp_dir()
+        sync_output = os.path.join(sync_parent, 'output')
+
+        # Add repositories with synchronization parameters in conf.
+        self.config.options['repos'] = {
+            'repo1': {
+                'sync': {
+                    'source': 'https://server1/repo1',
+                },
+                'url': 'https://server1/repo1',
+            },
+            'repo2': {
+                'sync': {
+                    'source': 'https://server2/repo2',
+                },
+                'url': 'https://server2/repo2',
+            },
+        }
+        # Update project YAML configuration with new options defined above
+        self.update_project_conf()
+
+        # Run with --output parameter (without sync_output in conf)
+        main(['sync', '--output', sync_output])
+
+        # Check factory has been called twice, for repo1 and repo2
+        self.assertEqual(mock_reposync.get.call_count, 2)
+        # Check output directory has been created
+        self.assertTrue(os.path.isdir(sync_output))
+        # Clean synchronization output directory
+        shutil.rmtree(sync_output)
+
+        # Reset mock to check the second run.
+        mock_reposync.get.reset_mock()
+
+        # Add sync_output parameter in conf.
+        self.config.options['sync_output'] = sync_output
+        self.update_project_conf()
+
+        # Run sync without -o, --output parameter.
+        main(['sync'])
+        # Check factory has been called twice, for repo1 and repo2
+        self.assertEqual(mock_reposync.get.call_count, 2)
+        # Check output directory has been created
+        self.assertTrue(os.path.isdir(sync_output))
+        # Clean synchronization output parent
+        shutil.rmtree(sync_parent)
+
+    @patch('rift.sync.RepoSyncBase.run')
+    @patch('sys.stdout', new_callable=StringIO)
+    def test_action_sync_multiarch(self, mock_stdout, mock_reposyncbase_run):
+        """ Test rift runs sync action with multiple architectures. """
+        sync_parent = make_temp_dir()
+        sync_output = os.path.join(sync_parent, 'output')
+        self.config.set('arch', ['x86_64', 'aarch64'])
+
+        self.config.options['sync_output'] = sync_output
+        self.config.options['repos'] = {
+            'repo1': {
+                'sync': {
+                    'source': 'https://server1/repo1',
+                    'subdir': '$arch',
+                },
+                'url': 'https://server1/repo1',
+            },
+            'repo2': {
+                'sync': {
+                    'source': 'https://server2/$arch',
+                },
+                'url': 'https://server2/$arch',
+            },
+            'repo3': {
+                'sync': {
+                    'source': 'https://server3/repo3',
+                },
+                'url': 'https://server3/repo3',
+            },
+        }
+        # Update project YAML configuration with new options defined above
+        self.update_project_conf()
+        # Run sync and check debug log is emited to indicate repo3 is skipped
+        # with the 2nd architecture (as the URL is the same as for the 1st
+        # arch).
+        with self.assertLogs(level='DEBUG') as log:
+            main(['sync'])
+            self.assertIn(
+                'DEBUG:root:Skipping already synchronized source '
+                'https://server3/repo3/',
+                log.output
+            )
+        # RepoSyncBase.run() must have been called 5 times:
+        # - 2 calls for repo1
+        # - 2 calls for repo2
+        # - 1 call for repo3
+        self.assertEqual(mock_reposyncbase_run.call_count, 5)
+        self.assertIn(
+            '** x86_64: Synchronizing repository repo1: '
+            'https://server1/repo1/x86_64 **',
+            mock_stdout.getvalue()
+        )
+        self.assertIn(
+            '** aarch64: Synchronizing repository repo1: '
+            'https://server1/repo1/aarch64 **',
+            mock_stdout.getvalue()
+        )
+        self.assertIn(
+            '** x86_64: Synchronizing repository repo2: '
+            'https://server2/x86_64/ **',
+            mock_stdout.getvalue()
+        )
+        self.assertIn(
+            '** aarch64: Synchronizing repository repo2: '
+            'https://server2/aarch64/ **',
+            mock_stdout.getvalue()
+        )
+        self.assertIn(
+            '** x86_64: Synchronizing repository repo3: '
+            'https://server3/repo3/ **',
+            mock_stdout.getvalue()
+        )
+        # Clean synchronization output parent
+        shutil.rmtree(sync_parent)
+
+    def test_action_sync_missing_output_parent(self):
+        """ Test rift raises RiftError when sync output parent is not found. """
+        sync_output = "/tmp/rift/output"
+        self.config.options['sync_output'] = sync_output
+        self.config.options['repos'] = {
+            'repo1': {
+                'sync': {
+                    'source': 'https://server1/repo1',
+                },
+                'url': 'https://server1/repo1',
+            },
+            'repo2': {
+                'sync': {
+                    'source': 'https://server2/repo2',
+                },
+                'url': 'https://server2/repo2',
+            },
+        }
+        # Update project YAML configuration with new options defined above
+        self.update_project_conf()
+        with self.assertRaisesRegex(
+            RiftError,
+            "Unable to create repositories synchronization directory "
+            "/tmp/rift/output, parent directory /tmp/rift does not exist."
+        ):
+            main(['sync'])
+
 
 class ControllerArgumentsTest(RiftTestCase):
     """ Arguments parsing tests for Controller module"""

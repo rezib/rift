@@ -77,6 +77,9 @@ _DEFAULT_QEMU_CMD = 'qemu-system-$arch'
 _DEFAULT_REPO_CMD = 'createrepo_c'
 _DEFAULT_SHARED_FS_TYPE = '9p'
 _DEFAULT_VIRTIOFSD = '/usr/libexec/virtiofsd'
+_DEFAULT_SYNC_METHOD = 'dnf'
+_DEFAULT_SYNC_INCLUDE = []
+_DEFAULT_SYNC_EXCLUDE = []
 
 class Config():
     """
@@ -111,6 +114,28 @@ class Config():
             'check':    'record',
             'content':  'dict',
             'syntax': {
+                'sync': {
+                    'check': 'dict',
+                    'syntax': {
+                        'method': {
+                            'check': 'enum',
+                            'default': _DEFAULT_SYNC_METHOD,
+                            'values': ['lftp', 'epel', 'dnf']
+                        },
+                        'source': {
+                            'required': True,
+                        },
+                        'subdir': {},
+                        'include': {
+                            'check': 'list',
+                            'default': _DEFAULT_SYNC_INCLUDE,
+                        },
+                        'exclude': {
+                            'check': 'list',
+                            'default': _DEFAULT_SYNC_EXCLUDE,
+                        },
+                    },
+                },
                 'url': {
                     'required': True,
                 },
@@ -208,7 +233,8 @@ class Config():
             'default': _DEFAULT_SHARED_FS_TYPE,
             'check': 'enum',
             'values': ['9p', 'virtiofs'],
-        }
+        },
+        'sync_output': {},
         # XXX?: 'mock.name' ?
         # XXX?: 'mock.template' ?
     }

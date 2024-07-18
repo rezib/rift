@@ -53,7 +53,6 @@ import socket
 import uuid
 import shutil
 import atexit
-import urllib
 import hashlib
 from subprocess import Popen, PIPE, STDOUT, check_output, run, CalledProcessError
 
@@ -63,6 +62,7 @@ from rift import RiftError
 from rift.Config import _DEFAULT_VIRTIOFSD
 from rift.Repository import ProjectArchRepositories
 from rift.TempDir import TempDir
+from rift.utils import download_file, setup_dl_opener
 
 __all__ = ['VM']
 
@@ -701,36 +701,10 @@ class VM():
         logging.info("Downloading file %s", url)
 
         # Setup proxy if defined
-        if self.proxy is not None:
-            opener = urllib.request.build_opener(
-                urllib.request.ProxyHandler(
-                    {
-                        'http' : self.proxy,
-                        'https': self.proxy,
-                    }
-                )
-            )
-            # Change default urllib user agent and emulate real browser to avoid
-            # bots filters that are sometimes configured on server side.
-            opener.addheaders = [('User-agent', 'Mozilla/5.0')]
-            urllib.request.install_opener(opener)
-            # If no_proxy is defined, set environment variable accordingly to
-            # make urllib.request.ProxyHandler skip proxy for these targeted
-            # hosts.
-            if self.no_proxy is not None:
-                os.environ['no_proxy'] = self.no_proxy
+        setup_dl_opener(self.proxy, self.no_proxy)
 
         # Download file
-        try:
-            urllib.request.urlretrieve(url, base_image_path)
-        except urllib.error.HTTPError as error:
-            raise RiftError(
-                f"HTTP error while downloading {url}: {str(error)}"
-            ) from error
-        except urllib.error.URLError as error:
-            raise RiftError(
-                f"URL error while downloading {url}: {str(error)}"
-            ) from error
+        download_file(url, base_image_path)
 
         return base_image_path
 

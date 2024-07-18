@@ -57,6 +57,7 @@ from rift.TempDir import TempDir
 from rift.TestResults import TestCase, TestResults
 from rift.TextTable import TextTable
 from rift.VM import VM
+from rift.sync import RepoSyncFactory
 
 
 def message(msg):
@@ -276,6 +277,12 @@ def make_parser():
     subprs.add_argument('--change', help="Gerrit Change-Id", required=True)
     subprs.add_argument('--patchset', help="Gerrit patchset ID", required=True)
     subprs.add_argument('patch', metavar='PATCH', type=argparse.FileType('r'))
+
+    # sync
+    subprs = subparsers.add_parser('sync', help='Synchronize remote repositories')
+    subprs.add_argument('-o', '--output', help='Synchronization output directory')
+    subprs.add_argument('repositories', metavar='REPOSITORY', nargs='*',
+                        help='repositories to synchronize (default: all)')
 
     # Parse options
     return parser
@@ -892,6 +899,63 @@ def action_gerrit(args, config, staff, modules):
     review.msg_header = 'rpmlint analysis'
     review.push(config, args.change, args.patchset)
 
+def action_sync(args, config):
+    """Action for 'sync' command."""
+    synchronized_sources = []
+
+    # If output is set in command line arguments, use it or use sync_output
+    # configuration parameter as default value.
+    if args.output:
+        output = args.output
+    else:
+        output = config.get('sync_output')
+    if output is None:
+        raise RiftError(
+            "Synchronization output directory must be defined with "
+            "sync_output parameter in Rift configuration or -o, --output "
+            "command line option to synchronize repositories"
+        )
+    # Check output directory exists or can be created.
+    output = os.path.expanduser(output)
+    if not os.path.exists(output):
+        try:
+            os.mkdir(output)
+        except FileNotFoundError:
+            raise RiftError(
+                "Unable to create repositories synchronization directory "
+                f"{output}, parent directory {os.path.dirname(output)} does "
+                "not exist."
+            )
+    for arch in config.get('arch'):
+        for name, repo in config.get('repos', default={}, arch=arch).items():
+            if args.repositories and name not in args.repositories:
+                logging.info(
+                    "%s: Skipping repository %s not selected by user",
+                    arch, name,
+                )
+                continue
+            sync = repo.get('sync')
+            if sync is None:
+                logging.warning(
+                        "%s: Skipping repository %s: no synchronization "
+                        "parameters found", arch, name
+                )
+                continue
+            synchronizer = RepoSyncFactory.get(config, name, output, sync)
+            if synchronizer.source in synchronized_sources:
+                logging.debug(
+                    "Skipping already synchronized source %s",
+                    synchronizer.source.geturl()
+                )
+                continue
+            synchronized_sources.append(synchronizer.source)
+            banner(
+                f"{arch}: Synchronizing repository {name}: "
+                f"{synchronizer.source.geturl()}"
+            )
+            synchronizer.run()
+
+
 def get_packages_from_patch(patch, config, modules, staff):
     """
     Return 2-tuple of dicts of updated and removed packages extracted from given
@@ -1127,6 +1191,10 @@ def action(config, args):
     # GERRIT
     elif args.command == 'gerrit':
         return action_gerrit(args, config, *staff_modules(config))
+
+    # SYNC
+    elif args.command == 'sync':
+        return action_sync(args, config)
 
     return 0
 

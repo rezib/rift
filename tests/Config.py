@@ -638,7 +638,7 @@ class ConfigTestSyntax(RiftTestCase):
             config.get('param0', arch='aarch64').get('with'), 'another'
         )
 
-    def _add_fake_dict_param_syntax(self):
+    def _add_fake_params(self):
         """Load dict with syntax"""
         Config.SYNTAX.update({
             'param0': {
@@ -651,12 +651,16 @@ class ConfigTestSyntax(RiftTestCase):
                         'check': 'digit'
                     }
                 }
+            },
+            'record0': {
+                'check': 'record',
+                'content': 'digit',
             }
         })
 
     def test_load_dict_with_syntax(self):
         """Load dict with syntax"""
-        self._add_fake_dict_param_syntax()
+        self._add_fake_params()
         cfgfile = make_temp_file(
             textwrap.dedent(
                 """
@@ -687,7 +691,7 @@ class ConfigTestSyntax(RiftTestCase):
 
     def test_load_dict_bad_subkey_type(self):
         """Load dict with bad subkey type"""
-        self._add_fake_dict_param_syntax()
+        self._add_fake_params()
         cfgfile = make_temp_file(
             textwrap.dedent(
                 """
@@ -706,7 +710,7 @@ class ConfigTestSyntax(RiftTestCase):
 
     def test_load_dict_missing_subkey(self):
         """Load dict with missing subkey."""
-        self._add_fake_dict_param_syntax()
+        self._add_fake_params()
         cfgfile = make_temp_file(
             textwrap.dedent(
                 """
@@ -724,7 +728,7 @@ class ConfigTestSyntax(RiftTestCase):
 
     def test_load_dict_unknown_subkey(self):
         """Load dict with unknown subkey."""
-        self._add_fake_dict_param_syntax()
+        self._add_fake_params()
         cfgfile = make_temp_file(
             textwrap.dedent(
                 """
@@ -912,7 +916,7 @@ class ConfigTestSyntax(RiftTestCase):
 
     def test_load_dict_merged_syntax(self):
         """load() merges dict from multiple files with syntax"""
-        self._add_fake_dict_param_syntax()
+        self._add_fake_params()
         conf_files = [
             make_temp_file(
                 textwrap.dedent(
@@ -940,6 +944,192 @@ class ConfigTestSyntax(RiftTestCase):
         self.assertEquals(param0['key1'], 'value2')
         self.assertEquals(param0['key2'], 1)
 
+    def test_load_record(self):
+        """Load record without content"""
+        Config.SYNTAX.update({
+            'param0': {
+                'check': 'record',
+            }
+        })
+
+        cfgfile = make_temp_file(
+            textwrap.dedent(
+                """
+                param0:
+                  key1: value1
+                  key2: value2
+                """
+            )
+        )
+        config = Config()
+        config.load(cfgfile.name)
+        self.assertEqual(config.get('param0').get('key1'), 'value1')
+        self.assertEqual(config.get('param0').get('key2'), 'value2')
+
+    def test_load_record_with_content(self):
+        """Load record with content specification."""
+        Config.SYNTAX.update({
+            'param0': {
+                'check': 'record',
+                'content': 'digit',
+            },
+            'param1': {
+                'check': 'record',
+                'content': 'dict',
+            },
+            'param2': {
+                'check': 'record',
+                'content': 'dict',
+                'syntax': {
+                    'p2subkey1': {
+                        'check': 'digit',
+                        'default': -1,
+                    },
+                    'p2subkey2': {
+                        'required': True
+                    },
+                },
+            },
+        })
+
+        cfgfile = make_temp_file(
+            textwrap.dedent(
+                """
+                param0:
+                  p0key1: 1
+                  p0key2: 2
+                param1:
+                  p1key1:
+                    p1k1key1: p1k1value1
+                    p1k1key2: p1k1value2
+                  p1key2:
+                    p1k1key3: p1k1value3
+                    p1k1key4: p1k1value4
+                param2:
+                  p2key1:
+                    p2subkey1: 0
+                    p2subkey2: p2k2value1
+                  p2key2:
+                    p2subkey2: p2k2value2
+                """
+            )
+        )
+        config = Config()
+        config.load(cfgfile.name)
+        self.assertEqual(config.get('param0').get('p0key1'), 1)
+        self.assertEqual(config.get('param0').get('p0key2'), 2)
+        self.assertEqual(
+            config.get('param1')['p1key1'].get('p1k1key1'), 'p1k1value1'
+        )
+        self.assertEqual(
+            config.get('param1')['p1key1'].get('p1k1key2'), 'p1k1value2'
+        )
+        self.assertEqual(
+            config.get('param1')['p1key2'].get('p1k1key3'), 'p1k1value3'
+        )
+        self.assertEqual(
+            config.get('param1')['p1key2'].get('p1k1key4'), 'p1k1value4'
+        )
+        self.assertEqual(
+            config.get('param2')['p2key1'].get('p2subkey1'), 0
+        )
+        self.assertEqual(
+            config.get('param2')['p2key1'].get('p2subkey2'), 'p2k2value1'
+        )
+        self.assertEqual(config.get('param2')['p2key2'].get('p2subkey1'), -1)
+        self.assertEqual(
+            config.get('param2')['p2key2'].get('p2subkey2'), 'p2k2value2'
+        )
+
+    def test_load_record_with_invalid_content(self):
+        """Load record with invalid content type"""
+        Config.SYNTAX.update({
+            'param0': {
+                'check': 'record',
+                'content': 'digit'
+            }
+        })
+
+        cfgfile = make_temp_file(
+            textwrap.dedent(
+                """
+                param0:
+                  key1: fail
+                  key2: 2
+                """
+            )
+        )
+        config = Config()
+        with self.assertRaisesRegex(
+            DeclError,
+            "^Bad data type str for 'key1'$"
+        ):
+            config.load(cfgfile.name)
+
+    def test_load_record_with_invalid_dict_content(self):
+        """Load record with invalid dict syntax"""
+        Config.SYNTAX.update({
+            'param0': {
+                'check': 'record',
+                'content': 'dict',
+                'syntax': {
+                    'key1': {},
+                    'key2': {},
+                },
+            },
+        })
+
+        cfgfile = make_temp_file(
+            textwrap.dedent(
+                """
+                param0:
+                  item1:
+                    key1: value1
+                    key2: value2
+                  item2:
+                    key3: value3
+                """
+            )
+        )
+        config = Config()
+        with self.assertRaisesRegex(
+            DeclError,
+            "^Unknown item2 keys: key3$"
+        ):
+            config.load(cfgfile.name)
+
+    def test_load_record_merged(self):
+        """load() merges records from multiple files"""
+        self._add_fake_params()
+        conf_files = [
+            make_temp_file(
+                textwrap.dedent(
+                    """
+                    record0:
+                        value1: 1
+                        value2: 2
+                    """
+                )
+            ),
+            make_temp_file(
+                textwrap.dedent(
+                    """
+                    record0:
+                      value2: 20
+                      value3: 3
+                    """
+                )
+            ),
+        ]
+        config = Config()
+        config.load([conf_file.name for conf_file in conf_files])
+        record0 = config.get('record0')
+        self.assertTrue('value1' in record0)
+        self.assertTrue('value2' in record0)
+        self.assertTrue('value3' in record0)
+        self.assertEquals(record0['value1'], 1)
+        self.assertEquals(record0['value2'], 20)
+        self.assertEquals(record0['value3'], 3)
 
 
 class ProjectConfigTest(RiftTestCase):

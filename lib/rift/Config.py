@@ -313,7 +313,7 @@ class Config():
         for key, option in syntax.items():
             if 'default' in option:
                 result[key] = option['default']
-            elif 'syntax' in option:
+            elif option.get('check') == 'dict' and 'syntax' in option:
                 result[key] = Config._extract_default_dict_syntax(
                     option['syntax']
                 )
@@ -402,22 +402,26 @@ class Config():
 
         options = self._arch_options(arch)
         value = self._key_value(
-            self.SYNTAX[key], key, value
+            self.SYNTAX[key],
+            key,
+            value,
+            self.SYNTAX[key].get('check', 'string'),
         )
-        # If the key is a dict and it already has a value, merge it with the new
-        # value.
-        if self.SYNTAX[key].get('check') == 'dict' and key in options:
+        # If the key is a dict or a record and it already has a value, merge it
+        # with the new value.
+        if (self.SYNTAX[key].get('check') in ['dict', 'record']
+                and key in options):
             options[key].update(value)
         else:
             options[key] = value
 
-    def _key_value(self, syntax, key, value):
+    def _key_value(self, syntax, key, value, check):
         """
         Validate type of value against syntax definition and return its value.
         """
         # Check type
-        check = syntax.get('check', 'string')
-        assert check in ('string', 'dict', 'list', 'digit', 'bool', 'enum')
+        assert check in ('string', 'dict', 'record', 'list', 'digit', 'bool',
+                         'enum')
 
         # All checks values which don't need conversion with their associated
         # python types
@@ -434,6 +438,12 @@ class Config():
                     f"Bad data type {value.__class__.__name__} for '{key}'"
                 )
             return self._dict_value(syntax.get('syntax'), key, value)
+        if check == 'record':
+            if not isinstance(value, dict):
+                raise DeclError(
+                    f"Bad data type {value.__class__.__name__} for '{key}'"
+                )
+            return self._record_value(syntax, value)
         if check == 'enum':
             enum_values = syntax.get('values', [])
             if not value in enum_values:
@@ -476,6 +486,7 @@ class Config():
                     syntax[subkey],
                     subkey,
                     subkey_value,
+                    syntax[subkey].get('check', 'string')
                 )
             elif subkey_format.get('required', False):
                 raise DeclError(
@@ -483,6 +494,21 @@ class Config():
                 )
 
         # Set the key in options dict eventually.
+        return result
+
+    def _record_value(self, syntax, value):
+        """
+        Associate dict value to key and validate the values based on content
+        specification.
+        """
+        result = {}
+        for _key, _value in value.items():
+            result[_key] = self._key_value(
+                syntax,
+                _key,
+                _value,
+                syntax.get('content', 'string')
+            )
         return result
 
     def update(self, data):

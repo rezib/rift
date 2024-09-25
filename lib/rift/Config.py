@@ -417,7 +417,7 @@ class Config():
         """
         # Check type
         check = syntax.get('check', 'string')
-        assert check in ('string', 'dict', 'list', 'digit', 'enum')
+        assert check in ('string', 'dict', 'list', 'digit', 'bool', 'enum')
 
         # All checks values which don't need conversion with their associated
         # python types
@@ -425,6 +425,7 @@ class Config():
             "string": str,
             "list": list,
             "digit": int,
+            "bool": bool,
         }
 
         if check == 'dict':

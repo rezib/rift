@@ -535,6 +535,46 @@ class ConfigTestSyntax(RiftTestCase):
         # Restore reference to original syntax dict in class attribute.
         Config.SYNTAX = self.syntax_backup
 
+    def test_load_bool(self):
+        """Load bool parameter"""
+        Config.SYNTAX.update({
+            'bool0': {
+                'check': 'bool',
+            }
+        })
+
+        cfgfile = make_temp_file(
+            textwrap.dedent(
+                """
+                bool0: true
+                """
+            )
+        )
+        config = Config()
+        config.load(cfgfile.name)
+        self.assertEqual(config.get('bool0'), True)
+
+    def test_load_invalid_bool(self):
+        """Test load invalid bool parameter"""
+        Config.SYNTAX.update({
+            'bool0': {
+                'check': 'bool',
+            }
+        })
+
+        cfgfile = make_temp_file(
+            textwrap.dedent(
+                """
+                bool0: failure
+                """
+            )
+        )
+        config = Config()
+        with self.assertRaisesRegex(
+            DeclError, "^Bad data type str for 'bool0'$"
+        ):
+            config.load(cfgfile.name)
+
     def test_load_dict_without_syntax(self):
         """Load dict without syntax"""
         Config.SYNTAX.update({

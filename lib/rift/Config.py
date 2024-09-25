@@ -419,24 +419,20 @@ class Config():
         check = syntax.get('check', 'string')
         assert check in ('string', 'dict', 'list', 'digit', 'enum')
 
+        # All checks values which don't need conversion with their associated
+        # python types
+        types_no_conv = {
+            "string": str,
+            "list": list,
+            "digit": int,
+        }
+
         if check == 'dict':
             if not isinstance(value, dict):
                 raise DeclError(
                     f"Bad data type {value.__class__.__name__} for '{key}'"
                 )
             return self._dict_value(syntax.get('syntax'), key, value)
-        if check == 'list':
-            if not isinstance(value, list):
-                raise DeclError(
-                    f"Bad data type {value.__class__.__name__} for '{key}'"
-                )
-            return value
-        if check == 'digit':
-            if not isinstance(value, int):
-                raise DeclError(
-                    f"Bad data type {value.__class__.__name__} for '{key}'"
-                )
-            return int(value)
         if check == 'enum':
             enum_values = syntax.get('values', [])
             if not value in enum_values:
@@ -445,12 +441,13 @@ class Config():
                     f"'{key}' (correct values: {', '.join(enum_values)})"
                 )
             return value
-        # At this stage, check is necessary a string.
-        if not isinstance(value, str):
+        # At this stage, check is necessary one of the types which don't need
+        # conversion.
+        if not isinstance(value, types_no_conv[check]):
             raise DeclError(
                 f"Bad data type {value.__class__.__name__} for '{key}'"
             )
-        return str(value)
+        return value
 
     def _dict_value(self, syntax, key, value):
         """

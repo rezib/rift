@@ -271,24 +271,15 @@ class ProjectArchRepositories:
         repos = config.get('repos', arch=arch)
         if repos:
             for name, data in repos.items():
-                if isinstance(data, str):
-                    self.supplementaries.append(
-                        ConsumableRepository(
-                            data,
-                            name,
-                            default_proxy=config.get('proxy')
-                        )
+                self.supplementaries.append(
+                    ConsumableRepository(
+                        data['url'],
+                        name=name,
+                        priority=data.get('priority'),
+                        options=data,
+                        default_proxy=config.get('proxy'),
                     )
-                else:
-                    self.supplementaries.append(
-                        ConsumableRepository(
-                            data['url'],
-                            name=name,
-                            priority=data.get('priority'),
-                            options=data,
-                            default_proxy=config.get('proxy'),
-                        )
-                    )
+                )
 
     @property
     def all(self):

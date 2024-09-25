@@ -57,8 +57,12 @@ class ConfigTest(RiftTestCase):
         self.assertEqual(config.get('vm_cpus'), 42)
 
         # set a 'dict'
-        config.set('repos', {'os': 'http://myserver/pub'})
-        self.assertEqual(config.get('repos'), {'os': 'http://myserver/pub'})
+        config.set('vm_port_range', {'min': 5000, 'max': 6000})
+        self.assertEqual(config.get('vm_port_range'), {'min': 5000, 'max': 6000})
+
+        # set a 'record'
+        config.set('repos', {'os': {'url': 'http://myserver/pub'}})
+        self.assertEqual(config.get('repos'), {'os': {'url': 'http://myserver/pub'}})
 
         # set a 'list'
         config.set('arch', ['x86_64', 'aarch64'])
@@ -360,8 +364,8 @@ class ConfigTest(RiftTestCase):
         cfgfile = make_temp_file("[value= not really YAML] [ ]\n")
         self.assertRaises(DeclError, Config().load, cfgfile.name)
 
-    def test_load_dict_merged(self):
-        """load() merges dict from multiple files"""
+    def test_load_repos_merged(self):
+        """load() merges repos from multiple files"""
         conf_files = [
             make_temp_file(
                 textwrap.dedent(
@@ -382,7 +386,7 @@ class ConfigTest(RiftTestCase):
                     repos:
                       os:
                         url: https://os/url/file2
-                        modules_hotfixes: true
+                        module_hotfixes: true
                       update:
                         url: https://update/url/file2
                     """
@@ -396,7 +400,7 @@ class ConfigTest(RiftTestCase):
         self.assertTrue('update' in repos)
         self.assertTrue('extra' in repos)
         self.assertEquals(repos['os']['url'], 'https://os/url/file2')
-        self.assertTrue('modules_hotfixes' in repos['os'])
+        self.assertTrue('module_hotfixes' in repos['os'])
         self.assertEquals(repos['update']['url'], 'https://update/url/file2')
         self.assertEquals(repos['extra']['url'], 'https://extra/url/file1')
 

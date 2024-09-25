@@ -108,7 +108,21 @@ class Config():
         'working_repo': {
         },
         'repos': {
-            'check':    'dict',
+            'check':    'record',
+            'content':  'dict',
+            'syntax': {
+                'url': {
+                    'required': True,
+                },
+                'priority': {
+                    'check': 'digit',
+                },
+                'excludepkgs': {},
+                'module_hotfixes': {
+                    'check': 'bool'
+                },
+                'proxy': {}
+            }
         },
         'arch': {
             'check': 'list',

@@ -30,10 +30,42 @@
 # knowledge of the CeCILL license and that you accept its terms.
 #
 
+import re
 import collections
 import xml.etree.cElementTree as ET
 
 from rift.TextTable import TextTable
+
+def str_xml_escape(arg):
+    r"""Visually escape invalid XML characters.
+
+    For example, transforms
+        'hello\aworld\b'
+    into
+        'hello#x07world#x08'
+    Note that the #xABs are *not* XML escapes - missing the ampersand &#xAB.
+    The idea is to escape visually for the user rather than for XML itself.
+
+    Initially based on:
+    https://github.com/pytest-dev/pytest/blob/main/src/_pytest/junitxml.py
+    """
+
+    def repl(matchobj) -> str:
+        i = ord(matchobj.group())
+        if i <= 0xFF:
+            return f"#x{i:02X}"
+        return f"#x{i:04X}"
+
+    # The spec range of valid chars is:
+    # Char ::= #x9 | #xA | #xD | [#x20-#xD7FF] | [#xE000-#xFFFD]
+    #          | [#x10000-#x10FFFF]
+    # For an unknown(?) reason, we disallow #x7F (DEL) as well.
+    illegal_xml_re = (
+        "[^\u0009\u000a\u000d\u0020-\u007e\u0080-\ud7ff\ue000-\ufffd\u10000-"
+        "\u10ffff]"
+    )
+    return re.sub(illegal_xml_re, repl, arg)
+
 
 class TestCase():
     """
@@ -61,7 +93,7 @@ class TestCase():
 
 
 TestResult = collections.namedtuple(
-    'TestResult', ['case', 'value', 'time', 'output']
+    'TestResult', ['case', 'value', 'time', 'out', 'err']
 )
 
 
@@ -86,18 +118,18 @@ class TestResults():
         """
         return len(self.results)
 
-    def add_failure(self, case, time, output=None):
+    def add_failure(self, case, time, out=None, err=None):
         """
         Add a failed TestCase
         """
-        self._add_result(TestResult(case, 'Failure', time, output))
+        self._add_result(TestResult(case, 'Failure', time, out, err))
         self.global_result = False
 
-    def add_success(self, case, time, output=None):
+    def add_success(self, case, time, out=None, err=None):
         """
         Add a successful TestCase
         """
-        self._add_result(TestResult(case, 'Success', time, output))
+        self._add_result(TestResult(case, 'Success', time, out, err))
 
     def _add_result(self, result):
         """
@@ -107,7 +139,12 @@ class TestResults():
 
     def junit(self, filename):
         """
-        Generate a junit xml file containing all tests results
+        Generate a junit xml file containing all tests results.
+
+        When result out property is defined, test outputs (out and err) are
+        reported in <system-out/> and <system-err/> tags. When only result err
+        property is defined, it is reported in <failure/> tag onyl when test is
+        failed.
         """
 
         suite = ET.Element('testsuite', tests=str(len(self.results)))
@@ -122,7 +159,14 @@ class TestResults():
                 sub.set('time', f"{result.time:.2f}")
             if result.value == 'Failure':
                 failure = ET.SubElement(sub, 'failure')
-                failure.text = result.output
+                if result.out is None:
+                    failure.text = str_xml_escape(result.err)
+            if result.out:
+                system_out = ET.SubElement(sub, 'system-out')
+                system_out.text = str_xml_escape(result.out)
+            if result.err and result.out:
+                system_err = ET.SubElement(sub, 'system-err')
+                system_err.text = str_xml_escape(result.err)
 
         tree = ET.ElementTree(suite)
         tree.write(filename, encoding='UTF-8', xml_declaration=True)

@@ -174,6 +174,8 @@ def make_parser():
                         help='do not run auto tests')
     subprs.add_argument('--notest', dest='test', action='store_false', default=True,
                         help='do not run ANY tests')
+    subprs.add_argument('--junit', metavar='FILENAME',
+                        help='write junit result file')
     subprs.add_argument('-p', '--publish', action='store_true',
                         help='publish build RPMS to repository')
 
@@ -189,6 +191,8 @@ def make_parser():
                         help='do not run auto tests')
     subprs.add_argument('--notest', dest='test', action='store_false', default=True,
                         help='do not run ANY tests')
+    subprs.add_argument('--junit', metavar='FILENAME',
+                        help='write junit result file')
     subprs.add_argument('-p', '--publish', action='store_true',
                         help='publish build RPMS to repository')
 
@@ -502,11 +506,11 @@ def test_one_pkg(config, args, pkg, vm, arch, repos, results):
         message(f"Running test '{case.fullname}' on architecture '{arch}'")
         proc = vm.run_test(test)
         if proc.returncode == 0:
-            results.add_success(case, time.time() - now)
+            results.add_success(case, time.time() - now, out=proc.out, err=proc.err)
             message(f"Test '{case.fullname}' on architecture {arch}: OK")
         else:
             rc = 1
-            results.add_failure(case, time.time() - now)
+            results.add_failure(case, time.time() - now, out=proc.out, err=proc.err)
             message(f"Test '{case.fullname}' on architecture {arch}: ERROR")
 
     if not getattr(args, 'noquit', False):
@@ -605,7 +609,7 @@ def validate_pkgs(config, args, results, pkgs, arch):
             pkg.build_rpms(mock, srpm, args.sign)
         except RiftError as ex:
             logging.error("Build failure: %s", str(ex))
-            results.add_failure(case, time.time() - now, str(ex))
+            results.add_failure(case, time.time() - now, err=str(ex))
             continue  # skip current package
         else:
             results.add_success(case, time.time() - now)
@@ -756,7 +760,7 @@ def action_build(args, config):
                 build_pkg(config, args, pkg, arch)
             except RiftError as ex:
                 logging.error("Build failure: %s", str(ex))
-                results.add_failure(case, time.time() - now, str(ex))
+                results.add_failure(case, time.time() - now, err=str(ex))
             else:
                 results.add_success(case, time.time() - now)
 

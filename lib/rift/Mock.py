@@ -150,10 +150,16 @@ class Mock():
         """Return base argument to launch mock"""
         args = [f'--configdir={self._tmpdir.path}'] + self._build_macro_args()
         logging.debug("> adding mock arguments %s", args)
-        if logging.getLogger().isEnabledFor(logging.INFO):
-            return ['mock']  + args
-        return ['mock', '-q'] + args
-
+        # Force mock to print build commands output with print_main_output=yes,
+        # no matter if stdout/stderr is a TTY. It is required to capture this
+        # output and have the possibility to report it junit files in case of
+        # failure, in all execution environments.
+        return [
+            'mock',
+            '--config-opts',
+            'print_main_output=yes',
+            f"--configdir={self._tmpdir.path}"
+        ] + self._build_macro_args()
 
     def _exec(self, cmd):
         """

@@ -348,18 +348,6 @@ def gen_rpm_spec(**kwargs):
     return jinja2.Template(SPEC_TPL).render(**kwargs)
 
 
-@contextmanager
-def logLevel(level):
-    """ Run body with logger at a different level """
-    logger = logging.getLogger()  # get root logger
-    saved_level = logger.level
-    logger.setLevel(level)
-    try:
-        yield saved_level
-    finally:
-        logger.setLevel(saved_level)
-
-
 #
 # Temp files
 #

@@ -500,7 +500,8 @@ def test_one_pkg(config, args, pkg, vm, arch, repos, results):
         case = TestCase(test.name, pkg.name, arch)
         now = time.time()
         message(f"Running test '{case.fullname}' on architecture '{arch}'")
-        if vm.run_test(test) == 0:
+        proc = vm.run_test(test)
+        if proc.returncode == 0:
             results.add_success(case, time.time() - now)
             message(f"Test '{case.fullname}' on architecture {arch}: OK")
         else:
@@ -699,11 +700,11 @@ def action_vm(args, config):
         raise RiftError(f"Project does not support architecture '{args.arch}'")
     vm = VM(config, args.arch)
     if args.vm_cmd == 'connect':
-        ret = vm.cmd(options=None)
+        ret = vm.cmd(options=None).returncode
     elif args.vm_cmd == 'console':
         ret = vm.console()
     elif args.vm_cmd == 'cmd':
-        ret = vm.cmd(' '.join(args.commandline), options=None)
+        ret = vm.cmd(' '.join(args.commandline), options=None).returncode
     elif args.vm_cmd == 'copy':
         ret = vm.copy(args.source, args.dest)
     elif args.vm_cmd == 'start':
@@ -712,7 +713,7 @@ def action_vm(args, config):
             message("VM started. Use: rift vm connect")
             ret = 0
     elif args.vm_cmd == 'stop':
-        ret = vm.cmd('poweroff')
+        ret = vm.cmd('poweroff').returncode
     elif args.vm_cmd == 'build':
         ret = vm_build(vm, args, config)
     return ret

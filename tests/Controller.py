@@ -23,6 +23,7 @@ from rift.Controller import (
 )
 from rift.Package import Package
 from rift.RPM import RPM
+from rift.run import RunResult
 from rift import RiftError
 
 VALID_REPOS = {
@@ -510,7 +511,7 @@ rename to packages/pkgnew/sources/pkgnew-1.0.tar.gz
         # Fake stopped VM and successful tests
         mock_vm_objects = mock_vm_class.return_value
         mock_vm_objects.running.return_value = False
-        mock_vm_objects.run_test.return_value = 0
+        mock_vm_objects.run_test.return_value = RunResult(0, None, None)
 
         # Run test on package
         main(['test', 'pkg'])
@@ -543,7 +544,7 @@ rename to packages/pkgnew/sources/pkgnew-1.0.tar.gz
         # Fake stopped VM and successful tests
         mock_vm_objects = mock_vm_class.return_value
         mock_vm_objects.running.return_value = False
-        mock_vm_objects.run_test.return_value = 0
+        mock_vm_objects.run_test.return_value = RunResult(0, None, None)
 
         # Run validate on pkg
         main(['validate', 'pkg'])

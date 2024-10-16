@@ -12,6 +12,7 @@ from TestUtils import make_temp_dir, RiftProjectTestCase, logLevel
 from rift.Mock import Mock
 from rift.Repository import ConsumableRepository
 from rift.TempDir import TempDir
+from rift.run import RunResult
 from rift import RiftError
 
 class MockTest(RiftProjectTestCase):
@@ -50,11 +51,11 @@ class MockTest(RiftProjectTestCase):
         self.assertEqual(repos_ctx['excludepkgs'], 'somepkg')
         self.assertEqual(repos_ctx['proxy'], 'myproxy')
 
-    @patch('rift.Mock.Popen')
-    def test_init(self, mock_popen):
+    @patch('rift.Mock.run_command')
+    def test_init(self, mock_run_command):
         """ Test Mock init creates all files required by mock """
         # Emulate successful mock execution
-        mock_popen.return_value.__enter__.return_value.returncode = 0
+        mock_run_command.return_value = RunResult(0, None, None)
         mock = Mock(config=self.config, arch='x86_64', proj_vers=1.0)
         mock.init([])
         self.assertTrue(
@@ -66,12 +67,11 @@ class MockTest(RiftProjectTestCase):
             )
         mock.clean()
 
-    @patch('rift.Mock.Popen')
-    def test_init_mock_failure(self, mock_popen):
+    @patch('rift.Mock.run_command')
+    def test_init_mock_failure(self, mock_run_command):
         """ Test Mock init raise error on mock command failure """
         # Emulate mock execution failure
-        mock_popen.return_value.__enter__.return_value.returncode = 1
-        mock_popen.return_value.__enter__.return_value.communicate.return_value = ["output"]
+        mock_run_command.return_value = RunResult(1, "output", None)
         mock = Mock(config=self.config, arch='x86_64', proj_vers=1.0)
         with self.assertRaisesRegex(RiftError, "^output$"):
             mock.init([])

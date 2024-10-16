@@ -40,12 +40,12 @@ import shutil
 import glob
 import getpass
 import logging
-from subprocess import Popen, PIPE
 from jinja2 import Template
 
 from rift import RiftError
 from rift.TempDir import TempDir
 from rift.RPM import RPM
+from rift.run import run_command
 
 class Mock():
     """
@@ -162,10 +162,15 @@ class Mock():
         """
         cmd = self._mock_base() + cmd
         logging.debug('Running mock: %s', ' '.join(cmd))
-        with Popen(cmd, stdout=PIPE, cwd='/', universal_newlines=True) as popen:
-            stdout = popen.communicate()[0]
-            if popen.returncode != 0:
-                raise RiftError(stdout)
+        proc = run_command(
+            cmd,
+            live_output=logging.getLogger().isEnabledFor(logging.INFO),
+            capture_output=True,
+            merged_capture=True,
+            cwd='/'
+        )
+        if proc.returncode != 0:
+            raise RiftError(proc.out)
 
     def init(self, repolist):
         """

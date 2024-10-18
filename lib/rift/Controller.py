@@ -596,7 +596,7 @@ def validate_pkgs(config, args, results, pkgs, arch):
             case = TestCase('build', pkg.name, arch)
             pkg.build_rpms(mock, srpm, args.sign)
         except RiftError as ex:
-            logging.info("Build failure: %s", str(ex))
+            logging.error("Build failure: %s", str(ex))
             results.add_failure(case, time.time() - now, str(ex))
             continue  # skip current package
         else:
@@ -747,7 +747,7 @@ def action_build(args, config):
                 case = TestCase('build', pkg.name, arch)
                 build_pkg(config, args, pkg, arch)
             except RiftError as ex:
-                logging.info("Build failure: %s", str(ex))
+                logging.error("Build failure: %s", str(ex))
                 results.add_failure(case, time.time() - now, str(ex))
             else:
                 results.add_success(case, time.time() - now)

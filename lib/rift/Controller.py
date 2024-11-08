@@ -537,7 +537,18 @@ def test_pkgs(config, args, results, pkgs, arch, extra_repos=None):
 
     for pkg in pkgs:
 
-        spec = Spec(pkg.specfile, config=config)
+        now = time.time()
+        try:
+            spec = Spec(pkg.specfile, config=config)
+        except RiftError as ex:
+            # Create a dummy parse test case to report specifically the spec
+            # parsing error. When parsing succeed, this test case is not
+            # reported in test results.
+            case = TestCase("parse", pkg.name, arch)
+            logging.error("Unable to load spec file: %s", str(ex))
+            results.add_failure(case, time.time() - now, err=str(ex))
+            continue
+
         if not spec.supports_arch(arch):
             logging.info(
                 "Skipping test on architecture %s not supported by "
@@ -571,7 +582,15 @@ def validate_pkgs(config, args, results, pkgs, arch):
 
     for pkg in pkgs:
 
-        spec = Spec(pkg.specfile, config=config)
+        case = TestCase('build', pkg.name, arch)
+        now = time.time()
+
+        try:
+            spec = Spec(pkg.specfile, config=config)
+        except RiftError as ex:
+            logging.error("Unable to load spec file: %s", str(ex))
+            results.add_failure(case, time.time() - now, err=str(ex))
+            continue  # skip current package
 
         if not spec.supports_arch(arch):
             logging.info(
@@ -607,7 +626,6 @@ def validate_pkgs(config, args, results, pkgs, arch):
 
             # Check build RPMS
             message('Validate RPMS build...')
-            case = TestCase('build', pkg.name, arch)
             pkg.build_rpms(mock, srpm, args.sign)
         except RiftError as ex:
             logging.error("Build failure: %s", str(ex))
@@ -745,7 +763,14 @@ def action_build(args, config):
 
         for pkg in Package.list(config, staff, modules, args.packages):
 
-            spec = Spec(pkg.specfile, config=config)
+            case = TestCase('build', pkg.name, arch)
+            now = time.time()
+            try:
+                spec = Spec(pkg.specfile, config=config)
+            except RiftError as ex:
+                logging.error("Unable to load spec file: %s", str(ex))
+                results.add_failure(case, time.time() - now, err=str(ex))
+                continue  # skip current package
 
             if not spec.supports_arch(arch):
                 logging.info(
@@ -760,7 +785,6 @@ def action_build(args, config):
             now = time.time()
             try:
                 pkg.load()
-                case = TestCase('build', pkg.name, arch)
                 build_pkg(config, args, pkg, arch)
             except RiftError as ex:
                 logging.error("Build failure: %s", str(ex))

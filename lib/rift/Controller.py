@@ -536,9 +536,9 @@ def test_pkgs(config, args, results, pkgs, arch, extra_repos=None):
     rc = 0
 
     for pkg in pkgs:
-        pkg.load()
 
-        if not pkg.supports_arch(arch):
+        spec = Spec(pkg.specfile, config=config)
+        if not spec.supports_arch(arch):
             logging.info(
                 "Skipping test on architecture %s not supported by "
                 "package %s",
@@ -547,6 +547,7 @@ def test_pkgs(config, args, results, pkgs, arch, extra_repos=None):
             )
             continue
 
+        pkg.load()
         rc += test_one_pkg(config, args, pkg, vm, arch, repos, results)
 
     if getattr(args, 'noquit', False):
@@ -570,7 +571,9 @@ def validate_pkgs(config, args, results, pkgs, arch):
 
     for pkg in pkgs:
 
-        if not pkg.supports_arch(arch):
+        spec = Spec(pkg.specfile, config=config)
+
+        if not spec.supports_arch(arch):
             logging.info(
                 "Skipping validation on architecture %s not supported by "
                 "package %s",
@@ -588,7 +591,6 @@ def validate_pkgs(config, args, results, pkgs, arch):
 
         # Check spec
         message('Validate specfile...')
-        spec = Spec(pkg.specfile, config=config)
         spec.check(pkg)
 
         (staging, stagedir) = create_staging_repo(config)
@@ -743,8 +745,9 @@ def action_build(args, config):
 
         for pkg in Package.list(config, staff, modules, args.packages):
 
-            pkg.load()
-            if not pkg.supports_arch(arch):
+            spec = Spec(pkg.specfile, config=config)
+
+            if not spec.supports_arch(arch):
                 logging.info(
                     "Skipping build on architecture %s not supported by "
                     "package %s",
@@ -756,6 +759,7 @@ def action_build(args, config):
             banner(f"Building package '{pkg.name}' for architecture {arch}")
             now = time.time()
             try:
+                pkg.load()
                 case = TestCase('build', pkg.name, arch)
                 build_pkg(config, args, pkg, arch)
             except RiftError as ex:

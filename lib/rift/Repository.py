@@ -105,6 +105,7 @@ class LocalRepository:
                 f"{ConsumableRepository.FILE_SCHEME}"
                 f"{os.path.realpath(self.path)}/{arch}",
                 name=name or os.path.basename(self.path),
+                priority=1,  # top priority for local repositories
                 options=options,
                 default_proxy=config.get('proxy')
             )

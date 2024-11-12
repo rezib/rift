@@ -43,7 +43,7 @@ class LocalRepositoryTest(RiftTestCase):
         self.assertEqual(
             repo.rpms_dir(arch), '/{}/{}'.format(repo_name, arch)
         )
-        self.assertEqual(repo.consumables[arch].priority, None)
+        self.assertEqual(repo.consumables[arch].priority, 1)
         self.assertEqual(repo.consumables[arch].module_hotfixes, True)
         self.assertEqual(repo.consumables[arch].excludepkgs, 'somepkg')
         self.assertEqual(repo.consumables[arch].proxy, 'myproxy')

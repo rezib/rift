@@ -181,49 +181,88 @@ class Config():
                 }
             }
         },
-        'vm_image':    {
-            'required': True,
-            # XXX?: default value?
-        },
-        'vm_image_copy':    {
-            'check':    'digit',
-            'default': 0,
-        },
-        'vm_port_range': {
+        'vm': {
             'check':    'dict',
+            'required': True,
             'syntax': {
-                'min': {
-                    'check': 'digit',
-                    'default': _DEFAULT_VM_PORT_RANGE_MIN,
+                'image':    {
+                    'required': True,
+                    # XXX?: default value?
                 },
-                'max': {
-                    'check': 'digit',
-                    'default': _DEFAULT_VM_PORT_RANGE_MAX,
-                }
+                'image_copy':    {
+                    'check':    'digit',
+                    'default': 0,
+                },
+                'port_range': {
+                    'check':    'dict',
+                    'syntax': {
+                        'min': {
+                            'check': 'digit',
+                            'default': _DEFAULT_VM_PORT_RANGE_MIN,
+                        },
+                        'max': {
+                            'check': 'digit',
+                            'default': _DEFAULT_VM_PORT_RANGE_MAX,
+                        }
+                    }
+                },
+                'cpu': {},
+                'cpus': {
+                    'check':    'digit',
+                    'default':  _DEFAULT_VM_CPUS,
+                },
+                'memory': {
+                    'check':    'digit',
+                    'default':   _DEFAULT_VM_MEMORY,
+                },
+                'address': {
+                    'default':  _DEFAULT_VM_ADDRESS,
+                },
+                'images_cache': {},
+                'additional_rpms': {
+                    'check':    'list',
+                    'default':  _DEFAULT_VM_ADDITIONAL_RPMS,
+                },
+                'cloud_init_tpl': {
+                    'default': _DEFAULT_VM_CLOUD_INIT_TPL,
+                },
+                'build_post_script': {
+                    'default': _DEFAULT_VM_BUILD_POST_SCRIPT,
+                },
             }
         },
-        'vm_cpu': {},
+        'vm_image':    {
+            'deprecated': 'vm.image'
+        },
+        'vm_image_copy':    {
+            'deprecated': 'vm.image_copy'
+        },
+        'vm_port_range': {
+            'deprecated': 'vm.port_range'
+        },
+        'vm_cpu': {
+            'deprecated': 'vm.cpu'
+        },
         'vm_cpus': {
-            'check':    'digit',
-            'default':  _DEFAULT_VM_CPUS,
+            'deprecated': 'vm.cpus'
         },
         'vm_memory': {
-            'check':    'digit',
-            'default':   _DEFAULT_VM_MEMORY,
+            'deprecated': 'vm.memory'
         },
         'vm_address': {
-            'default':  _DEFAULT_VM_ADDRESS,
+            'deprecated': 'vm.address'
         },
-        'vm_images_cache': {},
+        'vm_images_cache': {
+            'deprecated': 'vm.images_cache'
+        },
         'vm_additional_rpms': {
-            'check':    'list',
-            'default':  _DEFAULT_VM_ADDITIONAL_RPMS,
+            'deprecated': 'vm.additional_rpms'
         },
         'vm_cloud_init_tpl': {
-            'default': _DEFAULT_VM_CLOUD_INIT_TPL,
+            'deprecated': 'vm.cloud_init_tpl'
         },
         'vm_build_post_script': {
-            'default': _DEFAULT_VM_BUILD_POST_SCRIPT,
+            'deprecated': 'vm.build_post_script'
         },
         'gerrit_realm': {},
         'gerrit_server': {},

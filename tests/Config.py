@@ -30,12 +30,12 @@ class ConfigTest(RiftTestCase):
         self.assertEqual(config.get('packages_dir'), _DEFAULT_PKG_DIR)
         self.assertEqual(config.get('staff_file'), _DEFAULT_STAFF_FILE)
         self.assertEqual(config.get('modules_file'), _DEFAULT_MODULES_FILE)
-        self.assertEqual(config.get('vm_cpus'), _DEFAULT_VM_CPUS)
-        self.assertEqual(config.get('vm_address'), _DEFAULT_VM_ADDRESS)
+        self.assertEqual(config.get('vm').get('cpus'), _DEFAULT_VM_CPUS)
+        self.assertEqual(config.get('vm').get('address'), _DEFAULT_VM_ADDRESS)
         self.assertEqual(config.get('shared_fs_type'), _DEFAULT_SHARED_FS_TYPE)
         self.assertEqual(config.get('virtiofsd'), _DEFAULT_VIRTIOFSD)
         self.assertEqual(
-            config.get('vm_port_range'),
+            config.get('vm').get('port_range'),
             {
                 'min': _DEFAULT_VM_PORT_RANGE_MIN,
                 'max': _DEFAULT_VM_PORT_RANGE_MAX
@@ -57,12 +57,21 @@ class ConfigTest(RiftTestCase):
         """simple set() and get()"""
         config = Config()
         # set an 'int'
-        config.set('vm_cpus', 42)
-        self.assertEqual(config.get('vm_cpus'), 42)
+        config.set('vm', {'image': '/path/to/image', 'cpus': 42})
+        self.assertEqual(config.get('vm').get('cpus'), 42)
 
         # set a 'dict'
-        config.set('vm_port_range', {'min': 5000, 'max': 6000})
-        self.assertEqual(config.get('vm_port_range'), {'min': 5000, 'max': 6000})
+        config.set(
+            'vm',
+            {
+                'image': '/path/to/image',
+                'port_range': {'min': 5000, 'max': 6000}
+            }
+        )
+        self.assertEqual(
+            config.get('vm').get('port_range'),
+            {'min': 5000, 'max': 6000}
+        )
 
         # set a 'record'
         config.set('repos', {'os': {'url': 'http://myserver/pub'}})
@@ -78,13 +87,13 @@ class ConfigTest(RiftTestCase):
 
     def test_set_bad_type(self):
         """set() using wrong type raises an error"""
-        self.assert_except(DeclError, "Bad data type str for 'vm_cpus'",
-                           Config().set, 'vm_cpus', 'a string')
+        self.assert_except(DeclError, "Bad data type str for 'cpus'",
+                Config().set, 'vm', {'image': '/path/to/image', 'cpus': 'a string'})
         self.assert_except(DeclError, "Bad data type str for 'repos'",
                            Config().set, 'repos', 'a string')
         # Default check is 'string'
-        self.assert_except(DeclError, "Bad data type int for 'vm_image'",
-                           Config().set, 'vm_image', 42)
+        self.assert_except(DeclError, "Bad data type int for 'image'",
+                Config().set, 'vm', {'image': 42})
         self.assert_except(DeclError,
                            "Bad data type str for 'arch'",
                            Config().set, 'arch', 'x86_64')
@@ -105,13 +114,13 @@ class ConfigTest(RiftTestCase):
         # Declare supported architectures
         config.set('arch', ['x86_64', 'aarch64'])
         # $arch placeholder replacement with string
-        config.set('vm_image', '/path/to/image-$arch.qcow2')
+        config.set('vm', {'image': '/path/to/image-$arch.qcow2'})
         self.assertEqual(
-            config.get('vm_image', arch='x86_64'),
+            config.get('vm', arch='x86_64').get('image'),
             '/path/to/image-x86_64.qcow2'
         )
         self.assertEqual(
-            config.get('vm_image', arch='aarch64'),
+            config.get('vm', arch='aarch64').get('image'),
             '/path/to/image-aarch64.qcow2'
         )
         # $arch placeholder replacement with dict
@@ -162,14 +171,14 @@ class ConfigTest(RiftTestCase):
         # Declare supported architectures
         config.set('arch', ['x86_64', 'aarch64'])
         # Override with arch specific value
-        config.set('vm_image', '/path/to/image-$arch.qcow2')
-        config.set('vm_image', '/path/to/other-image.qcow2', arch='x86_64')
+        config.set('vm', {'image': '/path/to/image-$arch.qcow2'})
+        config.set('vm', {'image': '/path/to/other-image.qcow2'}, arch='x86_64')
         self.assertEqual(
-            config.get('vm_image', arch='aarch64'),
+            config.get('vm', arch='aarch64').get('image'),
             '/path/to/image-aarch64.qcow2'
         )
         self.assertEqual(
-            config.get('vm_image', arch='x86_64'),
+            config.get('vm', arch='x86_64').get('image'),
             '/path/to/other-image.qcow2'
         )
 
@@ -183,7 +192,7 @@ class ConfigTest(RiftTestCase):
             "^Unable to get configuration option for unsupported architecture "
             "'fail'$"
         ):
-            config.get('vm_image', arch='fail')
+            config.get('vm', arch='fail')
 
     def test_set_unsupported_arch(self):
         """set() with unsupported arch"""
@@ -194,7 +203,7 @@ class ConfigTest(RiftTestCase):
             "^Unable to set configuration option for unsupported architecture "
             "'fail'$"
         ):
-            config.set('vm_image', '/path/to/image.qcow2', arch='fail')
+            config.set('vm', {'image': '/path/to/image.qcow2'}, arch='fail')
 
 
     def test_load(self):
@@ -203,7 +212,7 @@ class ConfigTest(RiftTestCase):
         self.assert_except(DeclError, "'annex' is not defined",
                            Config().load, emptyfile.name)
 
-        cfgfile = make_temp_file("annex: /a/dir\nvm_image: /a/image.img")
+        cfgfile = make_temp_file("annex: /a/dir\nvm:\n  image: /a/image.img")
         config = Config()
         # Simple filename
         config.load(cfgfile.name)
@@ -223,14 +232,16 @@ class ConfigTest(RiftTestCase):
                 textwrap.dedent(
                     """
                     annex: /a/dir
-                    vm_image: /a/image.img
+                    vm:
+                      image: /a/image.img
                     """
                 )
             ),
             make_temp_file(
                 textwrap.dedent(
                     """
-                    vm_image: /b/image.img
+                    vm:
+                      image: /b/image.img
                     arch:
                     - x86_64
                     - aarch64
@@ -243,7 +254,7 @@ class ConfigTest(RiftTestCase):
         # Value from 1st file should be loaded
         self.assertEqual(config.get('annex'), '/a/dir')
         # Value from 2nd file should override value from 1st file
-        self.assertEqual(config.get('vm_image'), '/b/image.img')
+        self.assertEqual(config.get('vm').get('image'), '/b/image.img')
         # Value from 2nd file should be loaded
         self.assertEqual(config.get('arch'), ['x86_64', 'aarch64'])
 
@@ -253,22 +264,25 @@ class ConfigTest(RiftTestCase):
             textwrap.dedent(
                 """
                 annex: /a/dir
-                vm_image: /a/image.img
+                vm:
+                  image: /a/image.img
                 arch:
                 - x86_64
                 - aarch64
                 x86_64:
-                    vm_image: /b/image.img
+                  vm:
+                    image: /b/image.img
                 aarch64:
-                    vm_image: /c/image.img
+                  vm:
+                    image: /c/image.img
                 """
             )
         )
         config = Config()
         config.load(cfgfile.name)
-        self.assertEqual(config.get('vm_image'), '/a/image.img')
-        self.assertEqual(config.get('vm_image', arch='x86_64'), '/b/image.img')
-        self.assertEqual(config.get('vm_image', arch='aarch64'), '/c/image.img')
+        self.assertEqual(config.get('vm').get('image'), '/a/image.img')
+        self.assertEqual(config.get('vm', arch='x86_64').get('image'), '/b/image.img')
+        self.assertEqual(config.get('vm', arch='aarch64').get('image'), '/c/image.img')
 
     def test_load_arch_specific_invalid_mapping(self):
         """load() fail with not mapping architecture specific options"""
@@ -276,7 +290,8 @@ class ConfigTest(RiftTestCase):
             textwrap.dedent(
                 """
                 annex: /a/dir
-                vm_image: /a/image.img
+                vm:
+                  image: /a/image.img
                 x86_64: fail
                 """
             )
@@ -294,7 +309,8 @@ class ConfigTest(RiftTestCase):
             textwrap.dedent(
                 """
                 annex: /a/dir
-                vm_image: /a/image.img
+                vm:
+                  image: /a/image.img
                 x86_64:
                     fail: value
                 """
@@ -321,7 +337,8 @@ class ConfigTest(RiftTestCase):
             - x86_64
             - aarch64
             x86_64:
-              vm_image: /a/image.img
+              vm:
+                image: /a/image.img
             """
         }
         for content in contents:
@@ -329,7 +346,7 @@ class ConfigTest(RiftTestCase):
             config = Config()
             with self.assertRaisesRegex(
                 DeclError,
-                "^'vm_image' is not defined$",
+                "^'vm' is not defined$",
             ):
                 config.load(cfgfile.name)
 
@@ -343,9 +360,11 @@ class ConfigTest(RiftTestCase):
                 - x86_64
                 - aarch64
                 x86_64:
-                    vm_image: /b/image.img
+                  vm:
+                    image: /b/image.img
                 aarch64:
-                    vm_image: /c/image.img
+                  vm:
+                    image: /c/image.img
                 """
             )
         )
@@ -375,7 +394,8 @@ class ConfigTest(RiftTestCase):
                 textwrap.dedent(
                     """
                     annex: /a/dir
-                    vm_image: /a/image.img
+                    vm:
+                      image: /a/image.img
                     repos:
                       os:
                         url: https://os/url/file1
@@ -414,35 +434,37 @@ class ConfigTest(RiftTestCase):
             textwrap.dedent(
                 """
                 annex: /a/dir
-                vm_image: /a/image.img
-                vm_port_range:
-                  min: 2000
+                vm:
+                  image: /a/image.img
+                  port_range:
+                    min: 2000
                 """
             )
         )
         config = Config()
         config.load(cfgfile.name)
-        self.assertEqual(config.get('vm_port_range').get('min'), 2000)
+        self.assertEqual(config.get('vm').get('port_range').get('min'), 2000)
         self.assertEqual(
-            config.get('vm_port_range').get('max'),
+            config.get('vm').get('port_range').get('max'),
             _DEFAULT_VM_PORT_RANGE_MAX
         )
         cfgfile = make_temp_file(
             textwrap.dedent(
                 """
                 annex: /a/dir
-                vm_image: /a/image.img
-                vm_port_range:
-                  max: 30000
+                vm:
+                  image: /a/image.img
+                  port_range:
+                    max: 30000
                 """
             )
         )
         config.load(cfgfile.name)
         self.assertEqual(
-            config.get('vm_port_range').get('min'),
+            config.get('vm').get('port_range').get('min'),
             _DEFAULT_VM_PORT_RANGE_MIN
         )
-        self.assertEqual(config.get('vm_port_range').get('max'), 30000)
+        self.assertEqual(config.get('vm').get('port_range').get('max'), 30000)
 
     def test_load_gpg(self):
         """Load gpg parameters"""
@@ -451,7 +473,8 @@ class ConfigTest(RiftTestCase):
             textwrap.dedent(
                 """
                 annex: /a/dir
-                vm_image: /a/image.img
+                vm:
+                  image: /a/image.img
                 gpg:
                   keyring: /path/to/keyring
                   key: rift
@@ -469,7 +492,8 @@ class ConfigTest(RiftTestCase):
             textwrap.dedent(
                 """
                 annex: /a/dir
-                vm_image: /a/image.img
+                vm:
+                  image: /a/image.img
                 gpg:
                   keyring: /path/to/keyring
                   key: rift
@@ -491,7 +515,8 @@ class ConfigTest(RiftTestCase):
                 textwrap.dedent(
                     f"""
                     annex: /a/dir
-                    vm_image: /a/image.img
+                    vm:
+                      image: /a/image.img
                     gpg: {gpg_config}
                     """
                 )
@@ -509,7 +534,8 @@ class ConfigTest(RiftTestCase):
             textwrap.dedent(
                 """
                 annex: /a/dir
-                vm_image: /a/image.img
+                vm:
+                  image: /a/image.img
                 gpg:
                   epic: fail
                   keyring: /path/to/keyring
@@ -528,7 +554,8 @@ class ConfigTest(RiftTestCase):
             textwrap.dedent(
                 """
                 annex: /a/dir
-                vm_image: /a/image.img
+                vm:
+                  image: /a/image.img
                 sync_output: /sync/output
                 repos:
                   repo1:
@@ -591,7 +618,8 @@ class ConfigTest(RiftTestCase):
             textwrap.dedent(
                 """
                 annex: /a/dir
-                vm_image: /a/image.img
+                vm:
+                  image: /a/image.img
                 repos:
                   repo1:
                     sync: {}
@@ -612,7 +640,8 @@ class ConfigTest(RiftTestCase):
             textwrap.dedent(
                 """
                 annex: /a/dir
-                vm_image: /a/image.img
+                vm:
+                  image: /a/image.img
                 repos:
                   repo1:
                     sync:
@@ -628,6 +657,25 @@ class ConfigTest(RiftTestCase):
             r"epel, dnf\)"
         ):
             config.load(cfgfile.name)
+
+    def test_load_deprecated_vm_parameters(self):
+        """load() deprecated vm_* parameters."""
+        cfgfile = make_temp_file(
+            textwrap.dedent(
+                """
+                annex: /a/dir
+                vm_image: /my/custom/image.img
+                vm_cpus: 42
+                vm_memory: 1234
+                """
+            )
+        )
+        config = Config()
+        with self.assertWarns(RiftDeprecatedConfWarning):
+            config.load(cfgfile.name)
+        self.assertEqual(config.get('vm').get('image'), '/my/custom/image.img')
+        self.assertEqual(config.get('vm').get('cpus'), 42)
+        self.assertEqual(config.get('vm').get('memory'), 1234)
 
 
 class ConfigTestSyntax(RiftTestCase):

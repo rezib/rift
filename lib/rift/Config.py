@@ -116,6 +116,7 @@ class Config():
             'syntax': {
                 'sync': {
                     'check': 'dict',
+                    'default': None,
                     'syntax': {
                         'method': {
                             'check': 'enum',
@@ -320,21 +321,7 @@ class Config():
         elif option in self.options:
             value = self.options[option]
         elif option in self.SYNTAX:
-            # If the option is a dictionnary and it has no global default value
-            # but a syntax, generate dict default value with default values
-            # defined in syntax. In all other cases, just use global default
-            # value from syntax with the default value provided in argument as a
-            # fallback.
-            if (
-                    'default' not in self.SYNTAX[option] and
-                    self.SYNTAX[option].get('check') == 'dict' and
-                    'syntax' in self.SYNTAX[option]
-                ):
-                value = Config._extract_default_dict_syntax(
-                    self.SYNTAX[option]['syntax']
-                )
-            else:
-                value = self.SYNTAX[option].get('default', default)
+            value = Config._syntax_default(self.SYNTAX, option, default)
         else:
             value = default
 
@@ -343,6 +330,23 @@ class Config():
         if option == 'arch' or arch is None:
             return value
         return self._replace_arch(value, arch)
+
+    @staticmethod
+    def _syntax_default(syntax, option, default=None):
+        """
+        Return the default value of the option in config syntax.
+        If the option is a dictionnary and it has no global default value but a
+        syntax, generate dict default value with default values defined in
+        syntax. In all other cases, just use optional global default value from
+        syntax or provided default value.
+        """
+        if (
+                'default' not in syntax[option] and
+                syntax[option].get('check') == 'dict' and
+                'syntax' in syntax[option]
+            ):
+            return Config._extract_default_dict_syntax(syntax[option]['syntax'])
+        return syntax[option].get('default', default)
 
     @staticmethod
     def _extract_default_dict_syntax(syntax):
@@ -520,7 +524,8 @@ class Config():
         # Iterate over the keys defined in syntax. If the subvalue or default
         # value is defined, set it or raise error if required.
         for subkey, subkey_format in syntax.items():
-            subkey_value = value.get(subkey, syntax[subkey].get('default'))
+            subkey_value = value.get(subkey,
+                                     Config._syntax_default(syntax, subkey))
             if subkey_value is not None:
                 result[subkey] = self._key_value(
                     syntax[subkey],

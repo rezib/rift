@@ -35,6 +35,9 @@ Config:
 """
 import errno
 import os
+import warnings
+import logging
+
 import yaml
 
 from rift import DeclError
@@ -55,6 +58,9 @@ class OrderedLoader(yaml.SafeLoader):
 def _construct_mapping(loader, node):
     loader.flatten_mapping(node)
     return OrderedDict(loader.construct_pairs(node))
+
+class RiftDeprecatedConfWarning(FutureWarning):
+    """Warning emitted when deprecated configuration parameter is loaded."""
 
 OrderedLoader.add_constructor(
     yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
@@ -444,6 +450,12 @@ class Config():
         if key not in self.SYNTAX:
             raise DeclError(f"Unknown '{key}' key")
 
+        # Check not deprecated
+        replacement = self.SYNTAX[key].get('deprecated')
+        if replacement:
+            raise DeclError(f"Parameter {key} is deprecated, use "
+                            f"{' > '.join(replacement.split('.'))} instead")
+
         options = self._arch_options(arch)
         value = self._key_value(
             self.SYNTAX[key],
@@ -551,6 +563,73 @@ class Config():
             )
         return result
 
+    @staticmethod
+    def _get_replacement_dict_key(data, replacement):
+        """
+        Return a 2-tuple with the dict that contains the replacement parameter
+        and the key of this parameter in this dict.
+        """
+        sub = data
+        replacement_items = replacement.split('.')
+        # Browse in data dict depth until last replacement item.
+        for index, item in enumerate(replacement_items, start=1):
+            if index < len(replacement_items):
+                if item not in sub:
+                    sub[item] = {}
+                sub = sub[item]
+            else:
+                return sub, item
+        return None
+
+    def _move_deprecated_param(self, data, param, value):
+        """
+        If the given parameter is deprecated, move its value to its replacement
+        parameter.
+        """
+        # Leave if parameter not found in syntax, the error is managed in set()
+        # method eventually.
+        if param not in self.SYNTAX:
+            return
+        # Check presence of deprecated attribute and leave if not defined.
+        replacement = self.SYNTAX[param].get("deprecated")
+        if replacement is None:
+            return
+        # Warn user with FutureWarning.
+        warnings.warn(f"Configuration parameter {param} is deprecated, use "
+                      f"{' > '.join(replacement.split('.'))} instead",
+                      RiftDeprecatedConfWarning)
+        # Get position of replacement parameter.
+        sub, item = Config._get_replacement_dict_key(data, replacement)
+        # If both new and deprecated parameter are defined, emit warning log to
+        # explain deprecated parameter is ignored. Else, move deprecated
+        # parameter to its new place.
+        if item in sub:
+            logging.warning("Both deprecated parameter %s and new parameter "
+                            "%s are declared in configuration, deprecated "
+                            "parameter %s is ignored",
+                            param, replacement, param)
+        else:
+            sub[item] = value
+        del data[param]
+
+    def _move_deprecated(self, data):
+        """
+        Iterate over data dict to check for deprecated parameters and move them
+        to their replacements.
+        """
+        # Load generic options (ie. not architecture specific)
+        for param, value in data.copy().items():
+            # Skip architecture specific options
+            if param in self.get('arch'):
+                continue
+            self._move_deprecated_param(data, param, value)
+
+        # Load architecture specific options
+        for arch in self.get('arch'):
+            if arch in data and isinstance(data[arch], dict):
+                for param, value in data.copy()[arch].items():
+                    self._move_deprecated_param(data[arch], param, value)
+
     def update(self, data):
         """
         Update config content with data dict, checking data content respect
@@ -560,6 +639,9 @@ class Config():
         if 'arch' in data:
             self.set('arch', data['arch'])
             del data['arch']
+
+        # Look for deprecated parameters, and update dict with new parameters.
+        self._move_deprecated(data)
 
         # Load generic options (ie. not architecture specific)
         for key, value in data.items():

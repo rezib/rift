@@ -17,7 +17,8 @@ from rift.Config import Staff, Modules, Config, _DEFAULT_PKG_DIR, \
                          _DEFAULT_QEMU_CMD, _DEFAULT_REPO_CMD, \
                          _DEFAULT_SHARED_FS_TYPE, _DEFAULT_VIRTIOFSD, \
                          _DEFAULT_SYNC_METHOD, _DEFAULT_SYNC_INCLUDE, \
-                         _DEFAULT_SYNC_EXCLUDE
+                         _DEFAULT_SYNC_EXCLUDE, \
+                         RiftDeprecatedConfWarning
 
 class ConfigTest(RiftTestCase):
 
@@ -1273,6 +1274,217 @@ class ConfigTestSyntax(RiftTestCase):
         self.assertEqual(record0['value2'], 20)
         self.assertEqual(record0['value3'], 3)
 
+    def test_deprecated_param(self):
+        """Load deprecated parameter"""
+        Config.SYNTAX.update({
+            'new_parameter': {},
+            'old_parameter': {
+                'deprecated': 'new_parameter',
+            },
+        })
+        cfgfile = make_temp_file(
+            textwrap.dedent(
+                """
+                old_parameter: test_value
+                """
+            )
+        )
+        config = Config()
+        with self.assertWarns(RiftDeprecatedConfWarning) as cm:
+            config.load(cfgfile.name)
+        self.assertEqual(
+            config.get('new_parameter'), 'test_value'
+        )
+        self.assertIsNone(config.get('old_parameter'))
+        self.assertEqual(
+            str(cm.warning),
+            "Configuration parameter old_parameter is deprecated, use "
+            "new_parameter instead"
+        )
+        # Check set() on deprecated parameter raise declaration error.
+        with self.assertRaisesRegex(
+            DeclError,
+            "^Parameter old_parameter is deprecated, use new_parameter instead$"
+        ):
+            config.set('old_parameter', 'another value')
+
+
+    def test_deprecated_param_with_arch(self):
+        """Load deprecated parameter with arch override"""
+        Config.SYNTAX.update({
+            'new_parameter_1': {},
+            'old_parameter_1': {
+                'deprecated': 'new_parameter_1',
+            },
+            'new_parameter_2': {},
+            'old_parameter_2': {
+                'deprecated': 'new_parameter_2',
+            },
+        })
+        cfgfile = make_temp_file(
+            textwrap.dedent(
+                """
+                arch:
+                - x86_64
+                - aarch64
+                old_parameter_1: generic_value
+                aarch64:
+                    old_parameter_1: aarch64_value
+                old_parameter_2: generic_value_$arch
+                """
+            )
+        )
+        config = Config()
+        with self.assertWarns(RiftDeprecatedConfWarning):
+            config.load(cfgfile.name)
+        self.assertEqual(config.get('new_parameter_1'), 'generic_value')
+        self.assertEqual(
+            config.get('new_parameter_1', arch='x86_64'), 'generic_value'
+        )
+        self.assertEqual(
+            config.get('new_parameter_1', arch='aarch64'), 'aarch64_value'
+        )
+        self.assertEqual(
+            config.get('new_parameter_2', arch='x86_64'), 'generic_value_x86_64'
+        )
+        self.assertEqual(
+            config.get('new_parameter_2', arch='aarch64'),
+            'generic_value_aarch64'
+        )
+        self.assertIsNone(config.get('old_parameter_1'))
+        self.assertIsNone(config.get('old_parameter_2'))
+
+    def test_deprecated_param_subdict(self):
+        """Load deprecated parameter moved in subdict"""
+        Config.SYNTAX.update({
+            'new_parameter': {
+                'check': 'dict',
+                'syntax': {
+                    'sub_dict1': {
+                        'check': 'dict',
+                        'syntax': {
+                            'new_key1': {}
+                        },
+                    },
+                },
+            },
+            'old_parameter': {
+                'deprecated': 'new_parameter.sub_dict1.new_key1',
+            },
+        })
+        cfgfile = make_temp_file(
+            textwrap.dedent(
+                """
+                old_parameter: test_value
+                """
+            )
+        )
+        config = Config()
+        with self.assertWarns(RiftDeprecatedConfWarning) as cm:
+            config.load(cfgfile.name)
+        self.assertEqual(
+            config.get('new_parameter').get('sub_dict1').get('new_key1'), 'test_value'
+        )
+        self.assertIsNone(config.get('old_parameter'))
+        self.assertEqual(
+            str(cm.warning),
+            "Configuration parameter old_parameter is deprecated, use "
+            "new_parameter > sub_dict1 > new_key1 instead"
+        )
+
+    def test_deprecated_param_invalid_type(self):
+        """Deprecated parameter with invalid type error"""
+        Config.SYNTAX.update({
+            'new_parameter': {
+                'check': 'digit',
+            },
+            'old_parameter': {
+                'deprecated': 'new_parameter',
+            },
+        })
+        cfgfile = make_temp_file(
+            textwrap.dedent(
+                """
+                old_parameter: test_value
+                """
+            )
+        )
+        config = Config()
+        # In this case, Config.set() should emit a declaration error on
+        # new_parameter. Also check warning is emited for old_parameter.
+        with self.assertWarns(RiftDeprecatedConfWarning) as aw:
+            with self.assertRaisesRegex(
+                DeclError,
+                "Bad data type str for 'new_parameter'"
+            ):
+                config.load(cfgfile.name)
+        self.assertEqual(
+            str(aw.warning),
+            "Configuration parameter old_parameter is deprecated, use "
+            "new_parameter instead"
+        )
+
+    def test_deprecated_param_unexisting_replacement(self):
+        """Deprecated parameter without replacement error"""
+        Config.SYNTAX.update({
+            'old_parameter': {
+                'deprecated': 'new_parameter',
+            },
+        })
+        cfgfile = make_temp_file(
+            textwrap.dedent(
+                """
+                old_parameter: test_value
+                """
+            )
+        )
+        config = Config()
+        # In this case, Config.set() should emit a declaration error.
+        with self.assertWarns(RiftDeprecatedConfWarning) as aw:
+            with self.assertRaisesRegex(
+                DeclError, "Unknown 'new_parameter' key"):
+                config.load(cfgfile.name)
+        self.assertEqual(
+            str(aw.warning),
+            "Configuration parameter old_parameter is deprecated, use "
+            "new_parameter instead"
+        )
+
+    def test_deprecated_param_conflict(self):
+        """Load deprecated parameter conflict with replacement parameter"""
+        Config.SYNTAX.update({
+            'new_parameter': {},
+            'old_parameter': {
+                'deprecated': 'new_parameter',
+            },
+        })
+        cfgfile = make_temp_file(
+            textwrap.dedent(
+                """
+                new_parameter: test_new_value
+                old_parameter: test_old_value
+                """
+            )
+        )
+        config = Config()
+        with self.assertWarns(RiftDeprecatedConfWarning) as aw:
+            with self.assertLogs(level='WARNING') as al:
+                config.load(cfgfile.name)
+        self.assertEqual(
+            config.get('new_parameter'), 'test_new_value'
+        )
+        self.assertIsNone(config.get('old_parameter'))
+        self.assertEqual(
+            str(aw.warning),
+            "Configuration parameter old_parameter is deprecated, use "
+            "new_parameter instead"
+        )
+        self.assertEqual(
+            al.output,
+            ['WARNING:root:Both deprecated parameter old_parameter and new '
+             'parameter new_parameter are declared in configuration, '
+             'deprecated parameter old_parameter is ignored']
+        )
 
 class ProjectConfigTest(RiftTestCase):
 

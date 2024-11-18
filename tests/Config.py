@@ -677,6 +677,27 @@ class ConfigTest(RiftTestCase):
         self.assertEqual(config.get('vm').get('cpus'), 42)
         self.assertEqual(config.get('vm').get('memory'), 1234)
 
+    def test_load_deprecated_gerrit_parameters(self):
+        """load() deprecated gerrit_* parameters."""
+        cfgfile = make_temp_file(
+            textwrap.dedent(
+                """
+                annex: /a/dir
+                vm:
+                  image: /a/image.img
+                gerrit_realm: Rift
+                gerrit_url: https://localhost
+                gerrit_username: rift
+                """
+            )
+        )
+        config = Config()
+        with self.assertWarns(RiftDeprecatedConfWarning):
+            config.load(cfgfile.name)
+        self.assertEqual(config.get('gerrit').get('realm'), 'Rift')
+        self.assertEqual(config.get('gerrit').get('url'), 'https://localhost')
+        self.assertEqual(config.get('gerrit').get('username'), 'rift')
+
 
 class ConfigTestSyntax(RiftTestCase):
     """Test Config with modified syntax."""

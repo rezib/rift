@@ -264,11 +264,31 @@ class Config():
         'vm_build_post_script': {
             'deprecated': 'vm.build_post_script'
         },
-        'gerrit_realm': {},
-        'gerrit_server': {},
-        'gerrit_url': {},
-        'gerrit_username': {},
-        'gerrit_password': {},
+        'gerrit': {
+            'check': 'dict',
+            'syntax': {
+                'realm': {},
+                'server': {},
+                'url': {},
+                'username': {},
+                'password': {},
+            }
+        },
+        'gerrit_realm': {
+            'deprecated': 'gerrit.realm'
+        },
+        'gerrit_server': {
+            'deprecated': 'gerrit.server'
+        },
+        'gerrit_url': {
+            'deprecated': 'gerrit.url'
+        },
+        'gerrit_username': {
+            'deprecated': 'gerrit.username'
+        },
+        'gerrit_password': {
+            'deprecated': 'gerrit.password'
+        },
         'rpm_macros': {
             'check':    'dict',
         },

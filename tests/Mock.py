@@ -4,11 +4,14 @@
 
 import os
 import getpass
+import logging
+import tempfile
 from unittest.mock import patch
 
-from TestUtils import make_temp_dir, RiftProjectTestCase
+from TestUtils import make_temp_dir, RiftProjectTestCase, logLevel
 from rift.Mock import Mock
 from rift.Repository import ConsumableRepository
+from rift.TempDir import TempDir
 from rift import RiftError
 
 class MockTest(RiftProjectTestCase):
@@ -85,3 +88,37 @@ class MockTest(RiftProjectTestCase):
         ):
             mock.init([ConsumableRepository("file:///fail")])
         mock.clean()
+
+    def test_args_log_errors(self):
+        """ Test mock runs quiet with warning log level """
+        mock = Mock(config={}, arch='x86_64', proj_vers=1.0)
+        # Init tmp directory
+        mock._tmpdir = TempDir('test_mock')
+        mock._tmpdir.create()
+        with logLevel(logging.WARNING):
+            self.assertEqual(mock._mock_base(),
+                             ['mock', '-q', f'--configdir={mock._tmpdir.path}'])
+
+    def test_args_log_info(self):
+        """ Test mock does not run quiet with info log level """
+        mock = Mock(config={}, arch='x86_64', proj_vers=1.0)
+        # Init tmp directory
+        mock._tmpdir = TempDir('test_mock')
+        mock._tmpdir.create()
+        with logLevel(logging.INFO):
+            self.assertEqual(mock._mock_base(),
+                             ['mock', f'--configdir={mock._tmpdir.path}'])
+
+    def test_args_with_macros(self):
+        """ Test Mock macro arguments """
+        mock = Mock(config={"rpm_macros": {"my_version" : 1}}, arch='x86_64', proj_vers=1.0)
+        # Init tmp directory
+        mock._tmpdir = TempDir('test_mock')
+        mock._tmpdir.create()
+
+        macro_file = os.path.join(mock._tmpdir.path, 'rpm.macro')
+        with logLevel(logging.WARNING):
+            self.assertEqual(mock._mock_base(),
+                             ['mock', '-q', f'--configdir={mock._tmpdir.path}',
+                              f'--macro-file={macro_file}'])
+        self.assertEqual(open(macro_file).readlines(), ["%my_version 1\n"])

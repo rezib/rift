@@ -133,12 +133,27 @@ class Mock():
                     f"Repository {repo.path} does not exist, unable to "
                     "initialize Mock environment"
                 )
+    def _build_macro_args(self):
+        """ Return mock argument to define rpm_macros file """
+        rpm_macros = self._config.get('rpm_macros', {})
+        if not rpm_macros:
+            return []
+        # Generate rpm.macro file
+        macropath = os.path.join(self._tmpdir.path, 'rpm.macro')
+        with open(macropath, 'w') as fmacro:
+            for key, value in rpm_macros.items():
+                logging.debug("> adding macro %s=%s", key, value)
+                fmacro.write(f"%{key} {value}\n")
+        return [f"--macro-file={macropath}"]
 
     def _mock_base(self):
         """Return base argument to launch mock"""
+        args = [f'--configdir={self._tmpdir.path}'] + self._build_macro_args()
+        logging.debug("> adding mock arguments %s", args)
         if logging.getLogger().isEnabledFor(logging.INFO):
-            return ['mock', f"--configdir={self._tmpdir.path}"]
-        return ['mock', '-q', f"--configdir={self._tmpdir.path}"]
+            return ['mock']  + args
+        return ['mock', '-q'] + args
+
 
     def _exec(self, cmd):
         """

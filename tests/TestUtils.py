@@ -7,6 +7,7 @@ Helper module to write unit tests for Rift project.
 It contains several helper methods or classes like temporary file management.
 """
 
+import logging
 import tempfile
 import unittest
 import os
@@ -16,6 +17,7 @@ import shutil
 import jinja2
 import yaml
 from collections import namedtuple
+from contextlib import contextmanager
 
 from rift.Config import Config, Staff, Modules
 from rift.Mock import Mock
@@ -344,6 +346,19 @@ class RiftProjectTestCase(RiftTestCase):
 #
 def gen_rpm_spec(**kwargs):
     return jinja2.Template(SPEC_TPL).render(**kwargs)
+
+
+@contextmanager
+def logLevel(level):
+    """ Run body with logger at a different level """
+    logger = logging.getLogger()  # get root logger
+    saved_level = logger.level
+    logger.setLevel(level)
+    try:
+        yield saved_level
+    finally:
+        logger.setLevel(saved_level)
+
 
 #
 # Temp files

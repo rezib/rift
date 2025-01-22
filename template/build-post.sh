@@ -10,7 +10,7 @@ echo '> Fetching Vm repositories...'
 grep '^\[' /etc/yum.repos.d/*
 
 echo '> Disable default repositories'
-for repo in $(grep "^\[" /etc/yum.repos.d/CentOS* -h | sed -e "s/\]\|\[//g"); do
+for repo in $(grep "^\[" /etc/yum.repos.d/CentOS* /etc/yum.repos.d/alma* /etc/yum.repos.d/Rocky* -h | sed -e "s/\]\|\[//g"); do
     yum-config-manager --disable $repo
     echo "    * $repo - disabled"
 done
@@ -33,10 +33,7 @@ if [ ${RIFT_SHARED_FS_TYPE} = "9p" ] ; then
 fi
 
 echo '> Yum update...'
-yum -y update || exit 1
-
-echo '> Install kernel if possible'
-yum -y install kernel
+yum -y update || true
 
 echo '> Yum cleaning...'
 yum clean all

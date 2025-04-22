@@ -34,4 +34,4 @@ jobs:
           pip install .
 
       - name: Run tests
-        run: python3 -m unittest discover -s tests -p '*.py'
+        run: pytest

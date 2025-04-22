@@ -25,7 +25,7 @@ jobs:
 
       - name: Install tests dependencies
         run: |
-          sudo apt-get install -y python3-rpm gpg
+          sudo apt-get install -y python3-rpm python3-dnf gpg
           python -m pip install --upgrade pip
           pip install pytest rpm
 

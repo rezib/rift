@@ -42,6 +42,10 @@ setup(name='rift',
       author_email='aurelien.cedeyn@cea.fr',
       package_dir={'': 'lib'},
       packages=['rift'],
+      install_requires=[
+          'Jinja2',
+          'PyYAML',
+      ],
       py_modules = ['unidiff'],
       data_files = [
                   ('/usr/share/rift/template', ['template/project.conf', 'template/local.conf', 'template/mock.tpl']),

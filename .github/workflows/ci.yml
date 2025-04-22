@@ -27,7 +27,7 @@ jobs:
         run: |
           sudo apt-get install -y python3-rpm gpg
           python -m pip install --upgrade pip
-          pip install pytest
+          pip install pytest rpm
 
       - name: Install application
         run: |

@@ -22,7 +22,7 @@ jobs:
 
       - name: Install tests dependencies
         run: |
-          dnf install python3-jinja2 python3-PyYAML python3-rpm python3-dnf rpm-sign openssh-clients genisoimage qemu qemu-img
+          dnf install python3-jinja2 python3-PyYAML python3-rpm python3-dnf rpm-sign openssh-clients genisoimage qemu-kvm qemu-img
 
       - name: Run tests
         run: pytest

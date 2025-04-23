@@ -35,13 +35,14 @@ jobs:
         run: |
           dnf -y install python3-pip python3-jinja2 python3-PyYAML python3-rpm python3-dnf python3-pytest rpm-sign rpmlint openssh-clients genisoimage qemu qemu-img mock createrepo_c
 
+      # Some tests expect to run as non-root
       - name: Create unprivileged user
         run: |
           useradd ci
           usermod -aG kvm ci
 
       - name: Install application
-        run: su ci -c 'pip3 install -e .'
+        run: su ci -c 'pip3 install --user -e .'
 
       - name: Run tests
         run: su ci -c 'pytest-3'

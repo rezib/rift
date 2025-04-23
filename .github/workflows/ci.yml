@@ -20,6 +20,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Enable EPEL
+        run: |
+          dnf config-manager --set-enabled powertools
+          dnf install https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm
+
       - name: Install tests dependencies
         run: |
           dnf -y install python3-pip python3-jinja2 python3-PyYAML python3-rpm python3-dnf python3-pytest rpm-sign rpmlint openssh-clients genisoimage qemu-kvm qemu-img mock createrepo_c

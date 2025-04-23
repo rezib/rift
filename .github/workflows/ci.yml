@@ -40,6 +40,7 @@ jobs:
         run: |
           useradd ci
           usermod -aG kvm ci
+          ls -lh /dev/kvm
 
       - name: Install application
         run: pip3 install -e .

@@ -39,7 +39,7 @@ jobs:
       - name: Create unprivileged user
         run: |
           useradd ci
-          usermod -aG kvm ci
+          usermod -aG ssh_keys ci
           ls -lh /dev/kvm
 
       - name: Install application

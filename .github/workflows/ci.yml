@@ -13,7 +13,7 @@ jobs:
   tests:
     strategy:
       matrix:
-        containers: [ "almalinux/8-base" ]
+        container: [ "almalinux/8-base" ]
     runs-on: ubuntu-latest
     container:
       image: ${{ matrix.container }}

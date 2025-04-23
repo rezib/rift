@@ -25,4 +25,4 @@ jobs:
           dnf -y install python3-jinja2 python3-PyYAML python3-rpm python3-dnf python3-pytest rpm-sign openssh-clients genisoimage qemu-kvm qemu-img
 
       - name: Run tests
-        run: pytest
+        run: pytest-3

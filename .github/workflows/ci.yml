@@ -42,7 +42,7 @@ jobs:
           usermod -aG kvm ci
 
       - name: Install application
-        run: su ci -c 'pip3 install --user -e .'
+        run: pip3 install --user -e .
 
       - name: Run tests
         run: su ci -c 'pytest-3'

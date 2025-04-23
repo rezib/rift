@@ -13,25 +13,16 @@ jobs:
   tests:
     strategy:
       matrix:
-        os: ["ubuntu-latest"]
-        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13"]
-    runs-on: ${{ matrix.os }}
+        containers: [ "almalinux/8-base" ]
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.container }}
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
 
       - name: Install tests dependencies
         run: |
-          sudo apt-get install -y python3-rpm python3-dnf gpg
-          python -m pip install --upgrade pip
-          pip install pytest rpm
-
-      - name: Install application
-        run: |
-          pip install .
+          dnf install python3-jinja2 python3-PyYAML python3-rpm python3-dnf rpm-sign openssh-clients genisoimage qemu qemu-img
 
       - name: Run tests
         run: pytest

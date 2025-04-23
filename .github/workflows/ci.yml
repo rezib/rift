@@ -33,9 +33,9 @@ jobs:
 
       - name: Install tests dependencies
         run: |
-          dnf -y install python3-pip python3-jinja2 python3-PyYAML python3-rpm python3-dnf python3-pytest rpm-sign rpmlint openssh-clients genisoimage qemu qemu-img qemu-virtiofsd mock createrepo_c
+          dnf -y install python3-pip python3-jinja2 python3-PyYAML python3-rpm python3-dnf python3-pytest rpm-sign rpmlint openssh-clients genisoimage qemu qemu-user qemu-img qemu-virtiofsd mock createrepo_c
 
-      # Some tests expect to run as non-root
+      # Some tests expect to run as non-root with sudo permissions
       - name: Create unprivileged user
         run: |
           useradd ci

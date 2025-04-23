@@ -21,29 +21,32 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Enable EPEL
+      # Required for mock
+      - name: Enable EPEL repository
         run: |
           dnf -y install 'dnf-command(config-manager)'
           dnf config-manager --set-enabled powertools
           dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm
 
-      - name: Enable Ocean
+      # Required for qemu
+      - name: Enable Ocean repository
         run:
           dnf -y install https://ocean.eupex.eu/install/ocean-repos-3.8-1.x86_64.rpm
 
       - name: Install tests dependencies
         run: |
-          dnf -y install python3-pip python3-jinja2 python3-PyYAML python3-rpm python3-dnf python3-pytest rpm-sign rpmlint openssh-clients genisoimage qemu qemu-user qemu-img qemu-virtiofsd mock createrepo_c
+          dnf -y install python3-pip python3-jinja2 python3-PyYAML python3-rpm python3-dnf python3-pytest sudo rpm-sign rpmlint openssh-clients genisoimage qemu qemu-user qemu-img qemu-virtiofsd mock createrepo_c
 
-      # Some tests expect to run as non-root with sudo permissions
+      - name: Install application
+        run: pip3 install -e .
+
+      # Some tests expect to run as non-root with kvm and sudo permissions
       - name: Create unprivileged user
         run: |
           useradd ci
           usermod -aG $(stat -c %G /dev/kvm) ci
           ls -lh /dev/kvm
-
-      - name: Install application
-        run: pip3 install -e .
+          echo "ci ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/00-ci
 
       - name: Run tests
-        run: su ci -c 'pytest-3'
+        run: su ci -c 'pytest-3 -v'

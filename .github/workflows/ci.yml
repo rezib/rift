@@ -43,6 +43,7 @@ jobs:
       - name: Install tests dependencies
         run: |
           dnf -y install python3-pip python3-jinja2 python3-PyYAML python3-rpm python3-dnf python3-pytest sudo rpm-sign rpmlint openssh-clients genisoimage qemu qemu-user qemu-img qemu-virtiofsd mock createrepo_c
+          ls -lh /usr/bin/qemu*
 
       - name: Install application
         run: pip3 install -e .

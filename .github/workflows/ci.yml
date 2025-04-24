@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ${{ matrix.container }}
-      options: --device=/dev/kvm
+      options: --device=/dev/kvm --privileged
     steps:
       - uses: actions/checkout@v4
 

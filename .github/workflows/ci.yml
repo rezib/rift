@@ -31,6 +31,7 @@ jobs:
       # Required for mock
       - name: Enable EPEL repository
         run: |
+          mount binfmt_misc -t binfmt_misc /proc/sys/fs/binfmt_misc
           dnf -y install 'dnf-command(config-manager)'
           dnf config-manager --set-enabled powertools
           dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm

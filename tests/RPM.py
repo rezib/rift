@@ -85,6 +85,7 @@ class SpecTest(RiftTestCase):
         with self.assertRaisesRegex(RiftError, 'rpmlint reported errors'):
             Spec(self.spec).check()
 
+        # FIXME: test if rpmlint v1 or v2
         # Create rpmlintfile to ignore hardcoded library path
         rpmlintfile = os.sep.join([self.directory, RPMLINT_CONFIG_V1])
         with open(rpmlintfile, "w") as rpmlint:

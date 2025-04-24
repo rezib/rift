@@ -59,7 +59,7 @@ def _header_values(values):
     return str(values)
 
 
-def _rpmlint_2():
+def _rpmlint_v2():
     """Return True if rpmlint major version is 2."""
     # check --version output
     try:
@@ -417,12 +417,13 @@ class Spec():
         else:
             env = None
 
-        if _rpmlint_2():
-            cmd = ['rpmlint', '-c',
-               os.path.join(os.path.dirname(self.filepath), RPMLINT_CONFIG_V2),
-               self.filepath]
+        if _rpmlint_v2():
+            cmd = ['rpmlint', self.filepath]
+            config = os.path.join(os.path.dirname(self.filepath), RPMLINT_CONFIG_V2)
+            if os.path.exists(config):
+                cmd[1:1] = ['-c', config]
         else:
-            # rpmlint v1
+            # rpmlint v1. Does not fail when config file is missing.
             cmd = ['rpmlint', '-o', 'NetworkEnabled False', '-f',
                 os.path.join(os.path.dirname(self.filepath), RPMLINT_CONFIG_V1),
                 self.filepath]

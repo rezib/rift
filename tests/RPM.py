@@ -14,7 +14,7 @@ from TestUtils import (
     RiftProjectTestCase,
 )
 from rift import RiftError
-from rift.RPM import Spec, Variable, RPMLINT_CONFIG, RPM
+from rift.RPM import Spec, Variable, RPMLINT_CONFIG_V1, RPMLINT_CONFIG_V2, RPM
 
 class SpecTest(RiftTestCase):
     """
@@ -86,7 +86,7 @@ class SpecTest(RiftTestCase):
             Spec(self.spec).check()
 
         # Create rpmlintfile to ignore hardcoded library path
-        rpmlintfile = os.sep.join([self.directory, RPMLINT_CONFIG])
+        rpmlintfile = os.sep.join([self.directory, RPMLINT_CONFIG_V1])
         with open(rpmlintfile, "w") as rpmlint:
             rpmlint.write('addFilter("E: hardcoded-library-path")')
         self.assertIsNone(Spec(self.spec).check())

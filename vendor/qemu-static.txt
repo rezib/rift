@@ -1,0 +1,26 @@
+To be able to autolauch arm binaries on x86 architecture you have to register aarch64 and arm binaries in:
+
+$ cat /proc/sys/fs/binfmt_misc/qemu-a*
+enabled
+interpreter /usr/bin/qemu-aarch64-static
+flags: F
+offset 0
+magic 7f454c460201010000000000000000000200b700
+mask ffffffffffffff00fffffffffffffffffeffffff
+enabled
+interpreter /usr/bin/qemu-arm-static
+flags: F
+offset 0
+magic 7f454c4601010100000000000000000002002800
+mask ffffffffffffff00fffffffffffffffffeffffff
+
+To actually register a new binary type, you have to set up a string looking like
+``:name:type:offset:magic:mask:interpreter:flags`` (where you can choose the
+``:`` upon your needs) and echo it to ``/proc/sys/fs/binfmt_misc/register``.
+
+For each binary type you want to register:
+
+echo ":qemu-aarch64:M::\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\xb7\x00:\xff\xff\xff\xff\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff\xfe\xff\xff\xff:/usr/bin/qemu-aarch64-static:F" | sudo tee -a /proc/sys/fs/binfmt_misc/register
+
+For more details:
+ https://www.kernel.org/doc/Documentation/admin-guide/binfmt-misc.rst

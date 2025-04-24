@@ -20,17 +20,20 @@ jobs:
   tests:
     strategy:
       matrix:
-        container: [ "almalinux/8-base" ]
+        container: [ "almalinux/8-base", "fedora" ]
     runs-on: ubuntu-latest
     container:
       image: ${{ matrix.container }}
+      # --privileged for `mount`
       options: --device=/dev/kvm --privileged
     steps:
       - uses: actions/checkout@v4
 
       # Required for mock
       - name: Enable EPEL repository
+        if: ${{ matrix.container.startswith('almalinux') }}
         run: |
+          cat /proc/mounts
           mount binfmt_misc -t binfmt_misc /proc/sys/fs/binfmt_misc
           dnf -y install 'dnf-command(config-manager)'
           dnf config-manager --set-enabled powertools
@@ -38,6 +41,7 @@ jobs:
 
       # Required for qemu
       - name: Enable Ocean repository
+        if: ${{ matrix.container.startswith('almalinux') }}
         run:
           dnf -y install https://ocean.eupex.eu/install/ocean-repos-3.8-1.x86_64.rpm
 

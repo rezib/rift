@@ -301,6 +301,7 @@ class VM():
         # acceleration
         # Use platform.machine() instead of platform.proccessor to be container
         # compatible.
+        logging.warning("arch: %s, platform.machine: %s", self.arch, platform.machine())
         if self.arch == platform.machine():
             cmd += ['-enable-kvm']
         else:

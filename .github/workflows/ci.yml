@@ -29,12 +29,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Does it need this virtual FS for /usr/bin/qemu-aarch64-static?
+      # cat /proc/mounts
+      # mount binfmt_misc -t binfmt_misc /proc/sys/fs/binfmt_misc
+
       # Required for mock
       - name: Enable EPEL repository
         if: ${{ startsWith(matrix.container, 'almalinux') }}
         run: |
-          cat /proc/mounts
-          mount binfmt_misc -t binfmt_misc /proc/sys/fs/binfmt_misc
           dnf -y install 'dnf-command(config-manager)'
           dnf config-manager --set-enabled powertools
           dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm

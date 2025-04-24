@@ -20,12 +20,16 @@ jobs:
   tests:
     strategy:
       matrix:
-        container: [ "almalinux/8-base", "fedora" ]
+        envs:
+        - container: "almalinux/8-base"
+          epel: 8
+          ocean-repos: 3.8-1
+        - container: "fedora"
     runs-on: ubuntu-latest
     container:
-      image: ${{ matrix.container }}
-      # --privileged for `mount`
-      options: --device=/dev/kvm --privileged
+      image: ${{ matrix.envs.container }}
+      # --privileged for `mount`?
+      options: --device=/dev/kvm
     steps:
       - uses: actions/checkout@v4
 
@@ -35,17 +39,17 @@ jobs:
 
       # Required for mock
       - name: Enable EPEL repository
-        if: ${{ startsWith(matrix.container, 'almalinux') }}
+        if: ${{ startsWith(matrix.envs.container, 'almalinux') }}
         run: |
           dnf -y install 'dnf-command(config-manager)'
           dnf config-manager --set-enabled powertools
-          dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm
+          dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-${{ matrix.envs.epel }}.noarch.rpm
 
       # Required for qemu
       - name: Enable Ocean repository
-        if: ${{ startsWith(matrix.container, 'almalinux') }}
+        if: ${{ startsWith(matrix.envs.container, 'almalinux') }}
         run:
-          dnf -y install https://ocean.eupex.eu/install/ocean-repos-3.8-1.x86_64.rpm
+          dnf -y install https://ocean.eupex.eu/install/ocean-repos-${{ matrix.envs.ocean-repos }}.x86_64.rpm
 
       - name: Install tests dependencies
         run: |

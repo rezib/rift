@@ -204,15 +204,15 @@ class RPMTest(RiftProjectTestCase):
         """RPM initializer works with bin/src RPM with/without conf."""
         # test load bin RPM without config
         rpm = RPM(self.bin_rpm)
-        self.assertEquals(rpm.name, 'pkg')
-        self.assertEquals(rpm.arch, 'noarch')
-        self.assertEquals(rpm.is_source, False)
+        self.assertEqual(rpm.name, 'pkg')
+        self.assertEqual(rpm.arch, 'noarch')
+        self.assertEqual(rpm.is_source, False)
 
         # test load src RPM with config
         rpm = RPM(self.src_rpm, self.config)
-        self.assertEquals(rpm.name, 'pkg')
-        self.assertEquals(rpm.arch, 'noarch')
-        self.assertEquals(rpm.is_source, True)
+        self.assertEqual(rpm.name, 'pkg')
+        self.assertEqual(rpm.arch, 'noarch')
+        self.assertEqual(rpm.is_source, True)
 
     def test_extract_srpm(self):
         """RPM.extract_srpm() extracts files from source RPM."""

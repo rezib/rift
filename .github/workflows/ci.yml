@@ -31,7 +31,7 @@ jobs:
 
       # Required for mock
       - name: Enable EPEL repository
-        if: ${{ matrix.container.startswith('almalinux') }}
+        if: ${{ startsWith(matrix.container, 'almalinux') }}
         run: |
           cat /proc/mounts
           mount binfmt_misc -t binfmt_misc /proc/sys/fs/binfmt_misc
@@ -41,7 +41,7 @@ jobs:
 
       # Required for qemu
       - name: Enable Ocean repository
-        if: ${{ matrix.container.startswith('almalinux') }}
+        if: ${{ startsWith(matrix.container, 'almalinux') }}
         run:
           dnf -y install https://ocean.eupex.eu/install/ocean-repos-3.8-1.x86_64.rpm
 

@@ -73,7 +73,7 @@ def is_virtiofs_qemu(virtiofsd=_DEFAULT_VIRTIOFSD):
     This function checks if virtiofsd is from qemu package or a standalone rust
     version
     """
-    output = ""
+    output = b''
     try:
         output = check_output(f"{virtiofsd} --version",
                               stderr=STDOUT,

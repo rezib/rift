@@ -218,11 +218,10 @@ class VMTest(RiftTestCase):
         """
         Check drive command line generation for virtiofs
         """
-        vm = VM(self.config, None)
+        vm = VM(self.config, platform.machine())
         # Test virtiofs configuration without any repos
         vm.shared_fs_type = 'virtiofs'
         vm._project_dir = '/somewhere/else'
-        vm.arch = platform.processor()
         args, helper_args = vm._make_drive_cmd()
         virtiofs_same_arch = ['-object',
                               f'memory-backend-file,id=mem,size={str(vm.memory)}M,'
@@ -287,8 +286,7 @@ class VMTest(RiftTestCase):
         """
         Check qemu args generator
         """
-        vm = VM(self.config, None)
-        vm.arch = platform.processor()
+        vm = VM(self.config, platform.machine())
         vm.consolesock = '/console'
         image_path = '/my_image'
         # Test without seed iso path

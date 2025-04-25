@@ -70,9 +70,9 @@ jobs:
           usermod -aG $(stat -c %G /dev/kvm) ci
           usermod -aG mock ci
           echo "ci ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/00-ci
-          getent passwd ci
-          ls -lah ~ci
 
+      # Move coverage data file in ~ci because ci unprilived user does not have
+      # permissions in working directory after checkout by root.
       - name: Run tests
         run: |
           cat <<EOF > .coveragerc

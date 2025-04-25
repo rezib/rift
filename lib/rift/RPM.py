@@ -47,7 +47,8 @@ import rpm
 from rift import RiftError
 from rift.Annex import Annex, is_binary
 
-RPMLINT_CONFIG = 'rpmlint'
+RPMLINT_CONFIG_V1 = 'rpmlint'
+RPMLINT_CONFIG_V2 = 'rpmlint.toml'
 
 def _header_values(values):
     """ Convert values from header specfile to strings """
@@ -56,6 +57,19 @@ def _header_values(values):
     if isinstance(values, bytes):
         return values.decode("utf8")
     return str(values)
+
+
+def rpmlint_v2():
+    """Return True if rpmlint major version is 2."""
+    # check --version output
+    try:
+        proc = run(['rpmlint', '--version'], stdout=PIPE, check=True)
+    except CalledProcessError as err:
+        raise RiftError(
+            f"Unable to get rpmlint version: {str(err)}"
+        ) from err
+    return proc.stdout.decode().startswith("2")
+
 
 class RPM():
     """Manipulate a source or binary RPM."""
@@ -85,7 +99,15 @@ class RPM():
         self.name = _header_values(hdr[rpm.RPMTAG_NAME])
         self.arch = _header_values(hdr[rpm.RPMTAG_ARCH])
         self.source_rpm = _header_values(hdr[rpm.RPMTAG_SOURCERPM])
-        self.is_signed = hdr[rpm.RPMTAG_SIGPGP] is not None
+        logging.warning("RPMVERSION: %s", hdr[rpm.RPMTAG_RPMVERSION])
+        logging.warning("SIGPGP: %s", hdr[rpm.RPMTAG_SIGPGP])
+        logging.warning("HEADERSIGNATURES: %s", hdr[rpm.RPMTAG_HEADERSIGNATURES])
+        logging.warning("RSAHEADER: %s", hdr[rpm.RPMTAG_RSAHEADER])
+        logging.warning("DSAHEADER: %s", hdr[rpm.RPMTAG_DSAHEADER])
+        logging.warning("SHA256HEADER: %s", hdr[rpm.RPMTAG_SHA256HEADER])
+        logging.warning("PAYLOADDIGEST: %s", hdr[rpm.RPMTAG_PAYLOADDIGEST])
+        # ref: https://github.com/rpm-software-management/rpm/blob/master/docs/manual/format_v4.md#signature
+        self.is_signed = hdr[rpm.RPMTAG_SIGPGP] is not None or hdr[rpm.RPMTAG_RSAHEADER] is not None or hdr[rpm.RPMTAG_DSAHEADER] is not None
         self.is_source = hdr.isSource()
         self._srcfiles.extend(_header_values(hdr[rpm.RPMTAG_SOURCE]))
         self._srcfiles.extend(_header_values(hdr[rpm.RPMTAG_PATCH]))
@@ -403,9 +425,16 @@ class Spec():
         else:
             env = None
 
-        cmd = ['rpmlint', '-o', 'NetworkEnabled False', '-f',
-               os.path.join(os.path.dirname(self.filepath), RPMLINT_CONFIG),
-               self.filepath]
+        if rpmlint_v2():
+            cmd = ['rpmlint', self.filepath]
+            config = os.path.join(os.path.dirname(self.filepath), RPMLINT_CONFIG_V2)
+            if os.path.exists(config):
+                cmd[1:1] = ['-c', config]
+        else:
+            # rpmlint v1. Does not fail when config file is missing.
+            cmd = ['rpmlint', '-o', 'NetworkEnabled False', '-f',
+                os.path.join(os.path.dirname(self.filepath), RPMLINT_CONFIG_V1),
+                self.filepath]
         logging.debug('Running rpmlint: %s', ' '.join(cmd))
         return cmd, env
 

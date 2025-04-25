@@ -59,7 +59,7 @@ def _header_values(values):
     return str(values)
 
 
-def _rpmlint_v2():
+def rpmlint_v2():
     """Return True if rpmlint major version is 2."""
     # check --version output
     try:
@@ -99,6 +99,7 @@ class RPM():
         self.name = _header_values(hdr[rpm.RPMTAG_NAME])
         self.arch = _header_values(hdr[rpm.RPMTAG_ARCH])
         self.source_rpm = _header_values(hdr[rpm.RPMTAG_SOURCERPM])
+        # Check RPM format version?
         self.is_signed = hdr[rpm.RPMTAG_SIGPGP] is not None or hdr[rpm.RPMTAG_HEADERSIGNATURES] is not None
         self.is_source = hdr.isSource()
         self._srcfiles.extend(_header_values(hdr[rpm.RPMTAG_SOURCE]))
@@ -417,7 +418,7 @@ class Spec():
         else:
             env = None
 
-        if _rpmlint_v2():
+        if rpmlint_v2():
             cmd = ['rpmlint', self.filepath]
             config = os.path.join(os.path.dirname(self.filepath), RPMLINT_CONFIG_V2)
             if os.path.exists(config):

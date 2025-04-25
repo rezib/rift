@@ -19,6 +19,9 @@ on:
 jobs:
   tests:
     strategy:
+      # Disable automatic cancellation of other running jobs as soon as one
+      # failure occurs in the matrix.
+      fail-fast: false
       matrix:
         envs:
         - container: "almalinux/8-base"
@@ -53,7 +56,7 @@ jobs:
 
       - name: Install tests dependencies
         run: |
-          dnf -y install python3-pip python3-jinja2 python3-PyYAML python3-rpm python3-dnf python3-pytest sudo rpm-sign rpmlint openssh-clients genisoimage qemu qemu-user qemu-img qemu-virtiofsd mock createrepo_c
+          dnf -y install python3-pip python3-jinja2 python3-PyYAML python3-rpm python3-dnf python3-pytest python3-pytest-co sudo rpm-sign rpmlint openssh-clients genisoimage qemu qemu-user qemu-img qemu-virtiofsd mock createrepo_c
           ls -lh /usr/bin/qemu*
 
       - name: Install application
@@ -69,4 +72,4 @@ jobs:
           echo "ci ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/00-ci
 
       - name: Run tests
-        run: su ci -c 'pytest-3 -v'
+        run: su ci -c 'pytest-3 -v --cov=rift'

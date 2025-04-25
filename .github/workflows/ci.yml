@@ -72,4 +72,6 @@ jobs:
           echo "ci ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/00-ci
 
       - name: Run tests
-        run: su ci -c 'pytest-3 -v --cov=rift'
+        env:
+          COV_CORE_DATAFILE: ~ci/.coverage
+        run: su ci -c pytest-3

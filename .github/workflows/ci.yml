@@ -70,8 +70,13 @@ jobs:
           usermod -aG $(stat -c %G /dev/kvm) ci
           usermod -aG mock ci
           echo "ci ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/00-ci
+          getent passwd ci
+          ls -lah ~ci
 
       - name: Run tests
-        env:
-          COV_CORE_DATAFILE: ~ci/.coverage
-        run: su ci -c pytest-3
+        run: |
+          cat <<EOF > .coveragerc
+          [run]
+          data_file = ~ci/.coverage
+          EOF
+          su ci -c pytest-3

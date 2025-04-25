@@ -98,7 +98,7 @@ class SpecTest(RiftTestCase):
         """ Test specfile check function with a custom rpmlint v2 file"""
         if not rpmlint_v2():
             self.skipTest("This test requires rpmlint v2")
-        self.buildsteps("$RPM_BUILD_ROOT")
+        self.buildsteps = "$RPM_BUILD_ROOT"
         self.update_spec()
 
         with self.assertRaisesRegex(RiftError, 'rpmlint reported errors'):

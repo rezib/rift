@@ -106,7 +106,7 @@ class RPM():
         logging.warning("DSAHEADER: %s", hdr[rpm.RPMTAG_DSAHEADER])
         logging.warning("SHA256HEADER: %s", hdr[rpm.RPMTAG_SHA256HEADER])
         logging.warning("PAYLOADDIGEST: %s", hdr[rpm.RPMTAG_PAYLOADDIGEST])
-        self.is_signed = hdr[rpm.RPMTAG_SIGPGP] is not None or hdr[rpm.RPMTAG_HEADERSIGNATURES] is not None
+        self.is_signed = hdr[rpm.RPMTAG_SIGPGP] is not None or hdr[rpm.RPMTAG_RSAHEADER] is not None or hdr[rpm.RPMTAG_DSAHEADER] is not None
         self.is_source = hdr.isSource()
         self._srcfiles.extend(_header_values(hdr[rpm.RPMTAG_SOURCE]))
         self._srcfiles.extend(_header_values(hdr[rpm.RPMTAG_PATCH]))

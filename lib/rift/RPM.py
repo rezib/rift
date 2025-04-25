@@ -102,7 +102,8 @@ class RPM():
         logging.warning("RPMVERSION: %s", hdr[rpm.RPMTAG_RPMVERSION])
         logging.warning("SIGPGP: %s", hdr[rpm.RPMTAG_SIGPGP])
         logging.warning("HEADERSIGNATURES: %s", hdr[rpm.RPMTAG_HEADERSIGNATURES])
-        logging.warning("SHA1HEADER: %s", hdr[rpm.RPMTAG_SHA1HEADER])
+        logging.warning("RSAHEADER: %s", hdr[rpm.RPMTAG_RSAHEADER])
+        logging.warning("DSAHEADER: %s", hdr[rpm.RPMTAG_DSAHEADER])
         logging.warning("SHA256HEADER: %s", hdr[rpm.RPMTAG_SHA256HEADER])
         logging.warning("PAYLOADDIGEST: %s", hdr[rpm.RPMTAG_PAYLOADDIGEST])
         self.is_signed = hdr[rpm.RPMTAG_SIGPGP] is not None or hdr[rpm.RPMTAG_HEADERSIGNATURES] is not None

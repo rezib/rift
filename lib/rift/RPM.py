@@ -99,6 +99,9 @@ class RPM():
         self.name = _header_values(hdr[rpm.RPMTAG_NAME])
         self.arch = _header_values(hdr[rpm.RPMTAG_ARCH])
         self.source_rpm = _header_values(hdr[rpm.RPMTAG_SOURCERPM])
+        logging.warning("RPMVERSION: %s", hdr[rpm.RPMTAG_RPMVERSION])
+        logging.warning("SIGPGP: %s", hdr[rpm.RPMTAG_SIGPGP])
+        logging.warning("HEADERSIGNATURES: %s", hdr[rpm.RPMTAG_HEADERSIGNATURES])
         self.is_signed = hdr[rpm.RPMTAG_SIGPGP] is not None or hdr[rpm.RPMTAG_HEADERSIGNATURES] is not None
         self.is_source = hdr.isSource()
         self._srcfiles.extend(_header_values(hdr[rpm.RPMTAG_SOURCE]))

@@ -31,8 +31,8 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ${{ matrix.envs.container }}
-      # --privileged for `mount`?
-      options: --device=/dev/kvm
+      # --privileged for `mount`? required for mock+podman on fedora
+      options: --device=/dev/kvm --privileged
     steps:
       - uses: actions/checkout@v4
 

@@ -99,7 +99,20 @@ class RPM():
         self.name = _header_values(hdr[rpm.RPMTAG_NAME])
         self.arch = _header_values(hdr[rpm.RPMTAG_ARCH])
         self.source_rpm = _header_values(hdr[rpm.RPMTAG_SOURCERPM])
-        self.is_signed = hdr[rpm.RPMTAG_SIGPGP] is not None
+        # With RPM format v3, signature can be found in SIGPIP tag. Starting
+        # with RPM format v4, signature is either stored in RSAHEADER or
+        # DSAHEADER tags.
+        #
+        # For reference, see:
+        # https://github.com/rpm-software-management/rpm/blob/master/docs/manual/format_v4.md#signature
+        #
+        # In order to check presence of the signature whatever the RPM package
+        # format, we look at all three tags.
+        self.is_signed = (
+            hdr[rpm.RPMTAG_SIGPGP] is not None
+            or hdr[rpm.RPMTAG_RSAHEADER] is not None
+            or hdr[rpm.RPMTAG_DSAHEADER] is not None
+        )
         self.is_source = hdr.isSource()
         self._srcfiles.extend(_header_values(hdr[rpm.RPMTAG_SOURCE]))
         self._srcfiles.extend(_header_values(hdr[rpm.RPMTAG_PATCH]))

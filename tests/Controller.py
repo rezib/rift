@@ -5,24 +5,24 @@
 import os.path
 import shutil
 import atexit
-from unittest.mock import patch, Mock
+from unittest.mock import patch, Mock, call
 import subprocess
 from io import StringIO
 import textwrap
 
-from TestUtils import (
+from .TestUtils import (
     make_temp_dir, make_temp_file, gen_rpm_spec, RiftTestCase, RiftProjectTestCase
 )
 
-from VM import GLOBAL_CACHE, VALID_IMAGE_URL, PROXY
+from .VM import GLOBAL_CACHE, VALID_IMAGE_URL, PROXY
 from rift.Controller import (
     main,
     remove_packages,
     make_parser,
 )
-from rift.Package import Package
+from rift.package.rpm import PackageRPM, ActionableArchPackageRPM
+from rift.TestResults import TestResults
 from rift.RPM import RPM, Spec
-from rift.run import RunResult
 from rift import RiftError, DeclError
 
 VALID_REPOS = {
@@ -182,8 +182,8 @@ class ControllerProjectActionCreateTest(RiftProjectTestCase):
         """simple create"""
         main(['create', 'pkg', '-m', 'Great module', '-r', 'Good reason',
               '--maintainer', 'Myself'])
-        pkg = Package('pkg', self.config, self.staff, self.modules)
-        pkg.load()
+        pkg = PackageRPM('pkg', self.config, self.staff, self.modules)
+        pkg.load_info()
         self.assertEqual(pkg.module, 'Great module')
         self.assertEqual(pkg.reason, 'Good reason')
         self.assertCountEqual(pkg.maintainers, ['Myself'])
@@ -239,17 +239,17 @@ class ControllerProjectActionImportTest(RiftProjectTestCase):
         """simple import"""
         main(['import', self.src_rpm, '-m', 'Great module', '-r', 'Good reason',
               '--maintainer', 'Myself'])
-        pkg = Package('pkg', self.config, self.staff, self.modules)
+        pkg = PackageRPM('pkg', self.config, self.staff, self.modules)
         pkg.load()
         self.assertEqual(pkg.module, 'Great module')
         self.assertEqual(pkg.reason, 'Good reason')
         self.assertCountEqual(pkg.maintainers, ['Myself'])
-        spec = Spec(filepath=pkg.specfile)
+        spec = Spec(filepath=pkg.buildfile)
         spec.load()
         self.assertEqual(spec.changelog_name, 'Myself <buddy@somewhere.org> - 1.0-1')
         self.assertEqual(spec.version, '1.0')
         self.assertEqual(spec.release, '1')
-        self.assertTrue(os.path.exists(f"{pkg.specfile}.orig"))
+        self.assertTrue(os.path.exists(f"{pkg.buildfile}.orig"))
         shutil.rmtree(os.path.dirname(pkg.metafile))
 
     def test_import_unknown_maintainer(self):
@@ -285,18 +285,18 @@ class ControllerProjectActionReimportTest(RiftProjectTestCase):
         """simple reimport"""
         self.make_pkg(name='pkg')
         main(['reimport', self.src_rpm, '--maintainer', 'Myself'])
-        pkg = Package('pkg', self.config, self.staff, self.modules)
+        pkg = PackageRPM('pkg', self.config, self.staff, self.modules)
         pkg.load()
         self.assertEqual(pkg.module, 'Great module')
         self.assertEqual(pkg.reason, 'Missing feature')
         self.assertCountEqual(pkg.maintainers, ['Myself'])
-        spec = Spec(filepath=pkg.specfile)
+        spec = Spec(filepath=pkg.buildfile)
         spec.load()
         self.assertEqual(spec.changelog_name, 'Myself <buddy@somewhere.org> - 1.0-1')
         self.assertEqual(spec.version, '1.0')
         self.assertEqual(spec.release, '1')
-        self.assertTrue(os.path.exists(f"{pkg.specfile}.orig"))
-        os.unlink(f"{pkg.specfile}.orig")
+        self.assertTrue(os.path.exists(f"{pkg.buildfile}.orig"))
+        os.unlink(f"{pkg.buildfile}.orig")
 
 
 class ControllerProjectActionCheckTest(RiftProjectTestCase):
@@ -473,7 +473,7 @@ class ControllerProjectActionValiddiffTest(RiftProjectTestCase):
                               mock_validate_pkgs, mock_remove_packages):
         """ Test validdiff action calls expected functions """
         mock_get_packages_from_patch.return_value = (
-            {'pkg': Package('pkg', self.config, self.staff, self.modules)}, {}
+            {'pkg': PackageRPM('pkg', self.config, self.staff, self.modules)}, {}
         )
         self.assertEqual(main(['validdiff', '/dev/null']), 0)
         mock_get_packages_from_patch.assert_called_once()
@@ -501,7 +501,7 @@ class ControllerProjectActionValiddiffTest(RiftProjectTestCase):
 
         # Define a list of packages to remove
         pkgs_to_remove = [
-            Package('pkg', self.config, self.staff, self.modules)
+            PackageRPM('pkg', self.config, self.staff, self.modules)
         ]
 
         # Define working_repo in configuration
@@ -545,7 +545,7 @@ class ControllerProjectActionValiddiffTest(RiftProjectTestCase):
 
 class ControllerProjectActionBuildTest(RiftProjectTestCase):
     """
-    Tests class for Controller actions build and validate
+    Tests class for Controller actions build, test and validate
     """
     def _check_qemuuserstatic(self):
         """Skip the test if none qemu-$arch-static executable is found for all
@@ -558,9 +558,55 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         ):
             self.skipTest("qemu-user-static is not available")
 
-    @patch('rift.Controller.VM')
-    def test_action_build_test(self, mock_vm_class):
+    @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
+    def test_action_build(self, mock_pkg_rpm):
 
+        # Declare supported archs.
+        self.config.set('arch', ['x86_64', 'aarch64'])
+
+        # Create temporary working repo and register its deletion at exit
+        working_repo = make_temp_dir()
+        atexit.register(shutil.rmtree, working_repo)
+
+        self.config.set('working_repo', working_repo)
+        self.update_project_conf()
+
+        # Create fake package without build requirement
+        self.make_pkg(build_requires=[])
+
+        # Get PackageRPM instances mock
+        mock_pkg_rpm_objs = mock_pkg_rpm.return_value
+        # Initialize PackageRPM object attributes
+        PackageRPM.__init__(
+            mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
+        # Make PackageRPM.supports_arch() return True for all archs
+        mock_pkg_rpm_objs.supports_arch.return_value = True
+
+        # Mock ActionableArchPackageRPM objects
+        mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
+
+        self.assertEqual(main(['build', 'pkg', '--publish']), 0)
+
+        # Check RPM package supports_arch() method is called for all supported
+        # archs.
+        for arch in self.config.get('arch'):
+            mock_pkg_rpm_objs.supports_arch.assert_any_call(arch)
+
+        # Check actionnable RPM package build(), publish() and clean() methods
+        # are called for all supported arch (ie. twice).
+        mock_act_arch_pkg_rpm.build.assert_has_calls(
+            [call(sign=False), call(sign=False)])
+        mock_act_arch_pkg_rpm.publish.assert_has_calls(
+            [call(updaterepo=True), call(updaterepo=True)])
+        mock_act_arch_pkg_rpm.clean.assert_has_calls([call(), call()])
+
+        # Remove temporary working repo and unregister its deletion at exit
+        shutil.rmtree(working_repo)
+        atexit.unregister(shutil.rmtree)
+
+    def test_action_build_publish_functional(self):
+        """Functional RPM build and publish test"""
         # Declare supported archs and check qemu-user-static is available for
         # these architectures or skip the test.
         self.config.set('arch', ['x86_64', 'aarch64'])
@@ -577,61 +623,104 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        main(['build', 'pkg', '--publish'])
+        self.assertEqual(main(['build', 'pkg', '--publish']), 0)
         for arch in self.config.get('arch'):
             self.assertTrue(
                 os.path.exists(f"{working_repo}/{arch}/pkg-1.0-1.noarch.rpm")
             )
 
-        # Fake stopped VM and successful tests
-        mock_vm_objects = mock_vm_class.return_value
-        mock_vm_objects.running.return_value = False
-        mock_vm_objects.run_test.return_value = RunResult(0, None, None)
-
-        # Run test on package
-        main(['test', 'pkg'])
-
-        # Check two VM objects have been initialized for the two architectures.
-        self.assertEqual(mock_vm_class.call_count, 2)
-        # Check vm.run_test() has been called twice for basic tests on the two
-        # architectures.
-        self.assertEqual(mock_vm_objects.run_test.call_count, 2)
+        # Remove mock build environments
+        self.clean_mock_environments()
 
         # Remove temporary working repo and unregister its deletion at exit
         shutil.rmtree(working_repo)
         atexit.unregister(shutil.rmtree)
 
-        # Remove mock build environments
-        self.clean_mock_environments()
+    @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
+    def test_action_test(self, mock_pkg_rpm):
 
-    @patch('rift.Controller.VM')
-    def test_action_validate(self, mock_vm_class):
-        # Declare supported archs and check qemu-user-static is available for
-        # these architectures or skip the test.
+        # Declare supported archs.
         self.config.set('arch', ['x86_64', 'aarch64'])
-        self._check_qemuuserstatic()
-        self.config.options['repos'] = VALID_REPOS
         self.update_project_conf()
 
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        # Fake stopped VM and successful tests
-        mock_vm_objects = mock_vm_class.return_value
-        mock_vm_objects.running.return_value = False
-        mock_vm_objects.run_test.return_value = RunResult(0, None, None)
+        # Get PackageRPM instances mock
+        mock_pkg_rpm_objs = mock_pkg_rpm.return_value
+        # Initialize PackageRPM object attributes
+        PackageRPM.__init__(
+            mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
+        # Make PackageRPM.supports_arch() return True for all archs
+        mock_pkg_rpm_objs.supports_arch.return_value = True
+        # Mock ActionableArchPackageRPM objects
+        mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
+        # Make ActionableArchPackageRPM.test() return empty but successful test
+        # results.
+        mock_act_arch_pkg_rpm.test.return_value = TestResults()
+
+        # Run test on package
+        self.assertEqual(main(['test', 'pkg']), 0)
+
+        # Check RPM package supports_arch() method is called for all supported
+        # archs.
+        for arch in self.config.get('arch'):
+            mock_pkg_rpm_objs.supports_arch.assert_any_call(arch)
+
+        # Check actionnable RPM package test() method is called for all
+        # supported arch (ie. twice).
+        mock_act_arch_pkg_rpm.test.assert_has_calls(
+            [call(noauto=False, noquit=False),
+             call(noauto=False, noquit=False)])
+
+    @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
+    def test_action_validate(self, mock_pkg_rpm):
+
+        # Declare supported archs.
+        self.config.set('arch', ['x86_64', 'aarch64'])
+        self.update_project_conf()
+
+        # Create fake package without build requirement
+        self.make_pkg(build_requires=[])
+
+        # Get PackageRPM instances mock
+        mock_pkg_rpm_objs = mock_pkg_rpm.return_value
+        # Initialize PackageRPM object attributes
+        PackageRPM.__init__(
+            mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
+        # Make PackageRPM.supports_arch() return True for all archs
+        mock_pkg_rpm_objs.supports_arch.return_value = True
+        # Mock ActionableArchPackageRPM objects
+        mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
+        # MakeActionableArchPackageRPM.test() return empty but successful test
+        # results.
+        mock_act_arch_pkg_rpm.test.return_value = TestResults()
 
         # Run validate on pkg
-        main(['validate', 'pkg'])
+        self.assertEqual(main(['validate', 'pkg']), 0)
 
-        # Check two VM objects have been initialized for the two architectures.
-        self.assertEqual(mock_vm_class.call_count, 2)
-        # Check vm.run_test() has been called twice for basic tests on the two
-        # architectures.
-        self.assertEqual(mock_vm_objects.run_test.call_count, 2)
+        # Check RPM package supports_arch() method is called for all supported
+        # archs.
+        for arch in self.config.get('arch'):
+            mock_pkg_rpm_objs.supports_arch.assert_any_call(arch)
 
-        # Remove mock build environments
-        self.clean_mock_environments()
+        # Check RPM package check() method is called for all supported arch
+        # (ie. twice).
+        mock_pkg_rpm_objs.check.assert_has_calls([call(), call()])
+
+        # Check actionnable RPM package build(), publish(staging), test() and
+        # clean() methods are called for all supported arch (ie. twice).
+        mock_act_arch_pkg_rpm.build.assert_has_calls(
+            [call(sign=False), call(sign=False)])
+        mock_act_arch_pkg_rpm.publish.assert_has_calls(
+            [call(staging=True), call(staging=True)])
+        mock_act_arch_pkg_rpm.test.assert_has_calls(
+            [call(noauto=False, staging=True, noquit=False),
+             call(noauto=False, staging=True, noquit=False)])
+        mock_act_arch_pkg_rpm.clean.assert_has_calls(
+            [call(noquit=False), call(noquit=False)])
 
 
 class ControllerProjectActionVMTest(RiftProjectTestCase):

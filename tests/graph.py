@@ -7,8 +7,8 @@ import io
 from unittest.mock import patch
 
 from rift.graph import PackagesDependencyGraph
-from rift.Package import Package
-from TestUtils import RiftProjectTestCase, SubPackage
+from rift.package.rpm import PackageRPM
+from .TestUtils import RiftProjectTestCase, SubPackage
 
 class GraphTest(RiftProjectTestCase):
     """
@@ -18,7 +18,7 @@ class GraphTest(RiftProjectTestCase):
         """ Test graph with one package """
         pkg_name = 'fake'
         self.make_pkg(name=pkg_name)
-        package = Package(pkg_name, self.config, self.staff, self.modules)
+        package = PackageRPM(pkg_name, self.config, self.staff, self.modules)
         graph = PackagesDependencyGraph.from_project(
             self.config,
             self.staff,
@@ -36,7 +36,7 @@ class GraphTest(RiftProjectTestCase):
         packages = {}
         for pkg_name in pkgs_names:
             self.make_pkg(name=pkg_name)
-            packages[pkg_name] = Package(pkg_name, self.config, self.staff, self.modules)
+            packages[pkg_name] = PackageRPM(pkg_name, self.config, self.staff, self.modules)
         # Remove info.yaml in packages failed to generate error
         os.unlink(packages['failed'].metafile)
         # Build packages graph
@@ -87,7 +87,7 @@ class GraphTest(RiftProjectTestCase):
             self.staff,
             self.modules
         )
-        package = Package('another', self.config, self.staff, self.modules)
+        package = PackageRPM('another', self.config, self.staff, self.modules)
         build_requirements = graph.solve(package)
         self.assertEqual(len(build_requirements), 0)
 
@@ -121,7 +121,7 @@ class GraphTest(RiftProjectTestCase):
 
         # Rebuild of my-software does not trigger rebuild of other packages.
         build_requirements = graph.solve(
-            Package('my-software', self.config, self.staff, self.modules)
+            PackageRPM('my-software', self.config, self.staff, self.modules)
         )
         self.assertEqual(len(build_requirements), 1)
         self.assertEqual(build_requirements[0].package.name, 'my-software')
@@ -130,7 +130,7 @@ class GraphTest(RiftProjectTestCase):
         # Rebuild of libone triggers rebuild of my-software because it depends
         # on libone.
         build_requirements = graph.solve(
-            Package('libone', self.config, self.staff, self.modules)
+            PackageRPM('libone', self.config, self.staff, self.modules)
         )
         self.assertEqual(len(build_requirements), 2)
         self.assertEqual(build_requirements[0].package.name, 'libone')
@@ -145,7 +145,7 @@ class GraphTest(RiftProjectTestCase):
         # - libone because it depends on libtwo
         # - my-software because it depends on libone
         build_requirements = graph.solve(
-            Package('libtwo', self.config, self.staff, self.modules)
+            PackageRPM('libtwo', self.config, self.staff, self.modules)
         )
         self.assertEqual(len(build_requirements), 3)
         self.assertEqual(build_requirements[0].package.name, 'libtwo')
@@ -198,7 +198,7 @@ class GraphTest(RiftProjectTestCase):
 
         # Rebuild of my-software does not trigger rebuild of other packages.
         build_requirements = graph.solve(
-            Package('my-software', self.config, self.staff, self.modules)
+            PackageRPM('my-software', self.config, self.staff, self.modules)
         )
         self.assertEqual(len(build_requirements), 1)
         self.assertEqual(build_requirements[0].package.name, 'my-software')
@@ -208,7 +208,7 @@ class GraphTest(RiftProjectTestCase):
         # Rebuild of libone triggers rebuild of my-software because my-software
         # build requires on one of libone subpackage.
         build_requirements = graph.solve(
-            Package('libone', self.config, self.staff, self.modules)
+            PackageRPM('libone', self.config, self.staff, self.modules)
         )
         self.assertEqual(len(build_requirements), 2)
         self.assertEqual(build_requirements[0].package.name, 'libone')
@@ -224,7 +224,7 @@ class GraphTest(RiftProjectTestCase):
         # - my-software build requires on one of libtwo subpackage and on one
         #   of libone subpackage.
         build_requirements = graph.solve(
-            Package('libtwo', self.config, self.staff, self.modules)
+            PackageRPM('libtwo', self.config, self.staff, self.modules)
         )
         self.assertEqual(len(build_requirements), 3)
         self.assertEqual(build_requirements[0].package.name, 'libtwo')
@@ -261,7 +261,7 @@ class GraphTest(RiftProjectTestCase):
         self.assertEqual(
             len(
                 graph.solve(
-                    Package('libone', self.config, self.staff, self.modules)
+                    PackageRPM('libone', self.config, self.staff, self.modules)
                 )
             ),
             1
@@ -297,7 +297,7 @@ class GraphTest(RiftProjectTestCase):
         # Rebuild of libone triggers rebuild of my-software because my-software
         # build requires on one of libone subpackage provides.
         build_requirements = graph.solve(
-            Package('libone', self.config, self.staff, self.modules)
+            PackageRPM('libone', self.config, self.staff, self.modules)
         )
         self.assertEqual(len(build_requirements), 2)
         self.assertEqual(build_requirements[0].package.name, 'libone')
@@ -344,7 +344,7 @@ class GraphTest(RiftProjectTestCase):
             self.assertEqual(
                 len(
                     graph.solve(
-                        Package(package, self.config, self.staff, self.modules)
+                        PackageRPM(package, self.config, self.staff, self.modules)
                     )
                 ),
                 3

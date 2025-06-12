@@ -5,7 +5,7 @@
 from io import StringIO
 from unittest.mock import patch
 
-from TestUtils import RiftTestCase
+from .TestUtils import RiftTestCase
 from rift.utils import message, banner
 
 class UtilsTest(RiftTestCase):

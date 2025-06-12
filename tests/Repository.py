@@ -6,7 +6,7 @@ import os
 import shutil
 from unittest.mock import patch
 
-from TestUtils import make_temp_dir, RiftTestCase
+from .TestUtils import make_temp_dir, RiftTestCase
 from rift.Repository import ConsumableRepository, LocalRepository, ProjectArchRepositories
 from rift.Config import _DEFAULT_REPO_CMD, Config
 from rift.RPM import RPM

@@ -40,7 +40,7 @@ import textwrap
 import logging
 import re
 
-from rift.Package import Package
+from rift.package import ProjectPackages
 from rift.RPM import Spec
 
 BuildRequirement = namedtuple("BuildRequirement", ["package", "reasons"])
@@ -51,7 +51,7 @@ class PackageDependencyNode:
     def __init__(self, package):
         self.package = package
         # parse spec file subpackages and build requires
-        spec = Spec(package.specfile)
+        spec = Spec(package.buildfile)
         self.subpackages = spec.provides
         # Parse buildrequires string in spec file to discard explicit versions
         # enforcement.
@@ -401,5 +401,5 @@ class PackagesDependencyGraph:
         if list is not provided.
         """
         graph = cls()
-        graph.build(Package.list(config, staff, modules))
+        graph.build(ProjectPackages.list(config, staff, modules))
         return graph

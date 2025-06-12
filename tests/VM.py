@@ -7,7 +7,7 @@ import atexit
 from unittest.mock import patch, Mock
 
 import platform
-from TestUtils import RiftTestCase, RiftProjectTestCase, make_temp_dir
+from .TestUtils import RiftTestCase, RiftProjectTestCase, make_temp_dir
 from rift.Config import (
     Config,
     _DEFAULT_VM_ADDRESS,

@@ -10,17 +10,17 @@ import subprocess
 from io import StringIO
 import textwrap
 
-from TestUtils import (
+from .TestUtils import (
     make_temp_dir, make_temp_file, gen_rpm_spec, RiftTestCase, RiftProjectTestCase
 )
 
-from VM import GLOBAL_CACHE, VALID_IMAGE_URL, PROXY
+from .VM import GLOBAL_CACHE, VALID_IMAGE_URL, PROXY
 from rift.Controller import (
     main,
     remove_packages,
     make_parser,
 )
-from rift.Package import Package
+from rift.package.rpm import PackageRPM
 from rift.RPM import RPM, Spec
 from rift.run import RunResult
 from rift import RiftError, DeclError
@@ -182,8 +182,8 @@ class ControllerProjectActionCreateTest(RiftProjectTestCase):
         """simple create"""
         main(['create', 'pkg', '-m', 'Great module', '-r', 'Good reason',
               '--maintainer', 'Myself'])
-        pkg = Package('pkg', self.config, self.staff, self.modules)
-        pkg.load()
+        pkg = PackageRPM('pkg', self.config, self.staff, self.modules)
+        pkg._load_info()
         self.assertEqual(pkg.module, 'Great module')
         self.assertEqual(pkg.reason, 'Good reason')
         self.assertCountEqual(pkg.maintainers, ['Myself'])
@@ -239,17 +239,17 @@ class ControllerProjectActionImportTest(RiftProjectTestCase):
         """simple import"""
         main(['import', self.src_rpm, '-m', 'Great module', '-r', 'Good reason',
               '--maintainer', 'Myself'])
-        pkg = Package('pkg', self.config, self.staff, self.modules)
+        pkg = PackageRPM('pkg', self.config, self.staff, self.modules)
         pkg.load()
         self.assertEqual(pkg.module, 'Great module')
         self.assertEqual(pkg.reason, 'Good reason')
         self.assertCountEqual(pkg.maintainers, ['Myself'])
-        spec = Spec(filepath=pkg.specfile)
+        spec = Spec(filepath=pkg.buildfile)
         spec.load()
         self.assertEqual(spec.changelog_name, 'Myself <buddy@somewhere.org> - 1.0-1')
         self.assertEqual(spec.version, '1.0')
         self.assertEqual(spec.release, '1')
-        self.assertTrue(os.path.exists(f"{pkg.specfile}.orig"))
+        self.assertTrue(os.path.exists(f"{pkg.buildfile}.orig"))
         shutil.rmtree(os.path.dirname(pkg.metafile))
 
     def test_import_unknown_maintainer(self):
@@ -285,18 +285,18 @@ class ControllerProjectActionReimportTest(RiftProjectTestCase):
         """simple reimport"""
         self.make_pkg(name='pkg')
         main(['reimport', self.src_rpm, '--maintainer', 'Myself'])
-        pkg = Package('pkg', self.config, self.staff, self.modules)
+        pkg = PackageRPM('pkg', self.config, self.staff, self.modules)
         pkg.load()
         self.assertEqual(pkg.module, 'Great module')
         self.assertEqual(pkg.reason, 'Missing feature')
         self.assertCountEqual(pkg.maintainers, ['Myself'])
-        spec = Spec(filepath=pkg.specfile)
+        spec = Spec(filepath=pkg.buildfile)
         spec.load()
         self.assertEqual(spec.changelog_name, 'Myself <buddy@somewhere.org> - 1.0-1')
         self.assertEqual(spec.version, '1.0')
         self.assertEqual(spec.release, '1')
-        self.assertTrue(os.path.exists(f"{pkg.specfile}.orig"))
-        os.unlink(f"{pkg.specfile}.orig")
+        self.assertTrue(os.path.exists(f"{pkg.buildfile}.orig"))
+        os.unlink(f"{pkg.buildfile}.orig")
 
 
 class ControllerProjectActionCheckTest(RiftProjectTestCase):
@@ -472,7 +472,7 @@ class ControllerProjectActionValiddiffTest(RiftProjectTestCase):
                               mock_validate_pkgs, mock_remove_packages):
         """ Test validdiff action calls expected functions """
         mock_get_packages_from_patch.return_value = (
-            {'pkg': Package('pkg', self.config, self.staff, self.modules)}, {}
+            {'pkg': PackageRPM('pkg', self.config, self.staff, self.modules)}, {}
         )
         self.assertEqual(main(['validdiff', '/dev/null']), 0)
         mock_get_packages_from_patch.assert_called_once()
@@ -500,7 +500,7 @@ class ControllerProjectActionValiddiffTest(RiftProjectTestCase):
 
         # Define a list of packages to remove
         pkgs_to_remove = [
-            Package('pkg', self.config, self.staff, self.modules)
+            PackageRPM('pkg', self.config, self.staff, self.modules)
         ]
 
         # Define working_repo in configuration
@@ -557,7 +557,7 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         ):
             self.skipTest("qemu-user-static is not available")
 
-    @patch('rift.Controller.VM')
+    @patch('rift.package.rpm.VM')
     def test_action_build_test(self, mock_vm_class):
 
         # Declare supported archs and check qemu-user-static is available for
@@ -603,7 +603,7 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Remove mock build environments
         self.clean_mock_environments()
 
-    @patch('rift.Controller.VM')
+    @patch('rift.package.rpm.VM')
     def test_action_validate(self, mock_vm_class):
         # Declare supported archs and check qemu-user-static is available for
         # these architectures or skip the test.

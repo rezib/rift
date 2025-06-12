@@ -3,17 +3,16 @@
 #
 import os
 
+from rift import RiftError
 from rift.Config import Config, Staff, Modules
-from rift.Package import _SOURCES_DIR, _DOC_FILES, _META_FILE, _TESTS_DIR, Package
-from TestUtils import make_temp_file, make_temp_dir, RiftTestCase
+from rift.package import Package
+from rift.package._base import _SOURCES_DIR, _DOC_FILES, _META_FILE, _TESTS_DIR
+from ..TestUtils import make_temp_file, make_temp_dir, gen_rpm_spec, RiftTestCase
 
-class PackageTest(RiftTestCase):
-    """
-    Tests class for Package
-    """
-    def setUp(self):
+class RiftPackageTestCase(RiftTestCase):
+
+    def init_config(self):
         self.config = Config()
-        self.config.project_dir = '/'
         self.staff = Staff(config = self.config)
         self.staff_file = make_temp_file("""
 staff:
@@ -29,15 +28,29 @@ modules:
         self.modules = Modules(config = self.config, staff = self.staff)
         self.modules.load(self.config_file.name)
 
+
+class PackageTest(RiftPackageTestCase):
+    """
+    Tests class for Package
+    """
+    def setUp(self):
+        self.init_config()
+
     def test_init(self):
         """ Test Package initialisation """
         pkgname = 'pkg'
-        pkg = Package(pkgname, self.config, self.staff, self.modules)
+        self.config.project_dir = '/'
+        pkg = Package(pkgname, self.config, self.staff, self.modules, 'rpm', f"{pkgname}.spec")
         self.assertEqual(pkg.dir, '/{0}/{1}'.format(self.config.get('packages_dir'), pkgname))
         self.assertEqual(pkg.sourcesdir, os.path.join(pkg.dir, _SOURCES_DIR))
         self.assertEqual(pkg.testsdir, os.path.join(pkg.dir, _TESTS_DIR))
         self.assertEqual(pkg.metafile, os.path.join(pkg.dir, _META_FILE))
-        self.assertEqual(pkg.specfile, '{0}/{1}.spec'.format(pkg.dir, pkgname))
+        self.assertEqual(pkg.format, 'rpm')
+        self.assertEqual(pkg.buildfile, '{0}/{1}.spec'.format(pkg.dir, pkgname))
+
+    def test_init_invalid_format(self):
+        with self.assertRaisesRegex(RiftError, "^Unsupported package format fail$"):
+            Package('pkg', self.config, self.staff, self.modules, 'fail', 'build.fail')
 
     def test_load(self):
         """ Test Package information loading """
@@ -48,17 +61,10 @@ package:
   module: Tools
   reason: Missing package
   origin: Company
-  rpm_names:
-  - pkg
-  - pkg-devel
-  ignore_rpms:
-  - pkg-debuginfos
         """)
-        pkg = Package('pkg', self.config, self.staff, self.modules)
+        pkg = Package('pkg', self.config, self.staff, self.modules, 'rpm', 'pkg.spec')
         pkg.load(infopath = pkgfile.name)
         self.assertEqual(pkg.module, 'Tools')
         self.assertEqual(pkg.maintainers, ['J. Doe'])
         self.assertEqual(pkg.reason, 'Missing package')
         self.assertEqual(pkg.origin, 'Company')
-        self.assertEqual(pkg.rpmnames, [ 'pkg', 'pkg-devel' ])
-        self.assertEqual(pkg.ignore_rpms, [ 'pkg-debuginfos' ])

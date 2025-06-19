@@ -21,6 +21,7 @@ from rift.Controller import (
     make_parser,
 )
 from rift.package.rpm import PackageRPM, ActionableArchPackageRPM
+from rift.package.oci import PackageOCI, ActionableArchPackageOCI
 from rift.TestResults import TestResults, TestCase
 from rift.RPM import RPM, Spec
 from rift import RiftError, DeclError
@@ -76,7 +77,9 @@ class ControllerProjectActionQueryTest(RiftProjectTestCase):
         self.assertIn(textwrap.dedent("""
             ---- ------       ----------- ------ ------- ------- -------------
             pkg1 Great module Myself      rpm    1.0     1       buddy@somewhere.org
+            pkg1 Great module Myself      oci    1.0     1       buddy@somewhere.org
             pkg2 Great module Myself      rpm    2.1     3       buddy@somewhere.org
+            pkg2 Great module Myself      oci    2.1     3       buddy@somewhere.org
             """),
             mock_stdout.getvalue())
 
@@ -98,7 +101,9 @@ class ControllerProjectActionQueryTest(RiftProjectTestCase):
         self.assertIn(textwrap.dedent("""
             ---- ------       ------ ------          ------ ----- ------- ----   ------- -------------                      ------------- ----------- -------------       -------------
             pkg1 Great module Vendor Missing feature rpm    1     1.0     noarch 1       Myself <buddy@somewhere.org> 1.0-1 2019-02-26    Myself      buddy@somewhere.org br-package
+            pkg1 Great module Vendor Missing feature oci    1     1.0            1                                                        Myself      buddy@somewhere.org
             pkg2 Great module Vendor Missing feature rpm    1     2.1     noarch 3       Myself <buddy@somewhere.org> 2.1-3 2019-02-26    Myself      buddy@somewhere.org br-package
+            pkg2 Great module Vendor Missing feature oci    1     2.1            3                                                        Myself      buddy@somewhere.org
             """),
             mock_stdout.getvalue())
 
@@ -158,6 +163,13 @@ class ControllerProjectActionChangelogTest(RiftProjectTestCase):
         self.make_pkg()
         with self.assertRaises(TypeError):
             main(['changelog', 'pkg', '-c', 'basic change', '-t', 'Fail'])
+
+    def test_action_changelog_unsupported_format(self):
+        """changelog with unsupported format"""
+        self.make_pkg(formats=['oci'])
+        self.assertEqual(
+            main(['changelog', 'pkg', '-c', 'basic change', '-t', 'Myself', '--bump']),
+            1)
 
 
 class ControllerProjectActionCreateTest(RiftProjectTestCase):
@@ -544,8 +556,10 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         ):
             self.skipTest("qemu-user-static is not available")
 
+
+    @patch('rift.package._project.PackageOCI', autospec=PackageOCI)
     @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
-    def test_action_build(self, mock_pkg_rpm):
+    def test_action_build(self, mock_pkg_rpm, mock_pkg_oci):
 
         # Declare supported archs.
         self.config.set('arch', ['x86_64', 'aarch64'])
@@ -560,32 +574,44 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        # Get PackageRPM instances mock
+        # Get Package{RPM,OCI} instances mock
         mock_pkg_rpm_objs = mock_pkg_rpm.return_value
-        # Initialize PackageRPM object attributes
+        mock_pkg_oci_objs = mock_pkg_oci.return_value
+        # Initialize Package{RPM,OCI} object attributes
         PackageRPM.__init__(
             mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
-        # Make PackageRPM.supports_arch() return True for all archs
+        PackageOCI.__init__(
+            mock_pkg_oci_objs, 'pkg', self.config, self.staff, self.modules)
+        # Make Package{RPM,OCI}.supports_arch() return True for all archs
         mock_pkg_rpm_objs.supports_arch.return_value = True
+        mock_pkg_oci_objs.supports_arch.return_value = True
 
-        # Mock ActionableArchPackageRPM objects
+        # Mock ActionableArchPackage{RPM,OCI} objects
         mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_act_arch_pkg_oci = Mock(spec=ActionableArchPackageOCI)
         mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
+        mock_pkg_oci_objs.for_arch.return_value = mock_act_arch_pkg_oci
 
         self.assertEqual(main(['build', 'pkg', '--publish']), 0)
 
-        # Check RPM package supports_arch() method is called for all supported
-        # archs.
+        # Check RPM and OCI package supports_arch() method is called for all
+        # supported archs.
         for arch in self.config.get('arch'):
             mock_pkg_rpm_objs.supports_arch.assert_any_call(arch)
+            mock_pkg_oci_objs.supports_arch.assert_any_call(arch)
 
-        # Check actionnable RPM package build(), publish() and clean() methods
-        # are called for all supported arch (ie. twice).
+        # Check actionnable RPM and OCI package build(), publish() and clean()
+        # methods are called for all supported arch (ie. twice).
         mock_act_arch_pkg_rpm.build.assert_has_calls(
+            [call(sign=False), call(sign=False)])
+        mock_act_arch_pkg_oci.build.assert_has_calls(
             [call(sign=False), call(sign=False)])
         mock_act_arch_pkg_rpm.publish.assert_has_calls(
             [call(updaterepo=True), call(updaterepo=True)])
+        mock_act_arch_pkg_oci.publish.assert_has_calls(
+            [call(updaterepo=True), call(updaterepo=True)])
         mock_act_arch_pkg_rpm.clean.assert_has_calls([call(), call()])
+        mock_act_arch_pkg_oci.clean.assert_has_calls([call(), call()])
 
         # Remove temporary working repo and unregister its deletion at exit
         shutil.rmtree(working_repo)
@@ -614,6 +640,10 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
             self.assertTrue(
                 os.path.exists(f"{working_repo}/{arch}/pkg-1.0-1.noarch.rpm")
             )
+        # Check presence of container image (FIXME: multi-arch?)
+        self.assertTrue(
+            os.path.exists(f"{working_repo}/oci/pkg_1.0-1.tar")
+        )
 
         # Remove mock build environments
         self.clean_mock_environments()
@@ -622,39 +652,52 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         shutil.rmtree(working_repo)
         atexit.unregister(shutil.rmtree)
 
+    @patch('rift.package._project.PackageOCI', autospec=PackageOCI)
     @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
-    def test_action_build_load_failure(self, mock_pkg_rpm):
+    def test_action_build_load_failure(self, mock_pkg_rpm, mock_pkg_oci):
 
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        # Get PackageRPM instances mock
+        # Get Package{RPM,OCI} instances mock
         mock_pkg_rpm_objs = mock_pkg_rpm.return_value
-        # Initialize PackageRPM object attributes
+        mock_pkg_oci_objs = mock_pkg_oci.return_value
+        # Initialize Package{RPM,OCI} object attributes
         PackageRPM.__init__(
             mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
-        # Make PackageRPM.load() raise RiftError
-        mock_pkg_rpm_objs.load.side_effect = RiftError("fake load failure")
-        # Mock ActionableArchPackageRPM objects
+        PackageOCI.__init__(
+            mock_pkg_oci_objs, 'pkg', self.config, self.staff, self.modules)
+
+        # Make Package{RPM,OCI}.load() raise RiftError
+        mock_pkg_rpm_objs.load.side_effect = RiftError("fake rpm load failure")
+        mock_pkg_oci_objs.load.side_effect = RiftError("fake oci load failure")
+
+        # Mock ActionableArchPackage{RPM,OCI} objects
         mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_act_arch_pkg_oci = Mock(spec=ActionableArchPackageOCI)
         mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
+        mock_pkg_oci_objs.for_arch.return_value = mock_act_arch_pkg_oci
 
         with self.assertLogs(level='ERROR') as log:
             # Check main returns non-zero exit code
             self.assertEqual(main(['build', 'pkg']), 2)
         self.assertIn(
-            'ERROR:root:Unable to load rpm package: fake load failure',
+            'ERROR:root:Unable to load rpm package: fake rpm load failure',
             log.output
         )
-
+        self.assertIn(
+            'ERROR:root:Unable to load oci package: fake oci load failure',
+            log.output
+        )
         # Check actionnable RPM package build(), publish() and clean() have not
         # been called.
         mock_act_arch_pkg_rpm.build.assert_not_called()
         mock_act_arch_pkg_rpm.publish.assert_not_called()
         mock_act_arch_pkg_rpm.clean.assert_not_called()
 
+    @patch('rift.package._project.PackageOCI', autospec=PackageOCI)
     @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
-    def test_action_build_skip_unsupported_arch(self, mock_pkg_rpm):
+    def test_action_build_skip_unsupported_arch(self, mock_pkg_rpm, mock_pkg_oci):
 
         # Declare multiple supported archs.
         self.config.set('arch', ['x86_64', 'aarch64'])
@@ -663,35 +706,52 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        # Get PackageRPM instances mock
+        # Get Package{RPM,OCI} instances mock
         mock_pkg_rpm_objs = mock_pkg_rpm.return_value
-        # Initialize PackageRPM object attributes
+        mock_pkg_oci_objs = mock_pkg_oci.return_value
+        # Initialize Package{RPM,OCI} object attributes
         PackageRPM.__init__(
             mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
-        # Mock ActionableArchPackageRPM objects
+        PackageOCI.__init__(
+            mock_pkg_oci_objs, 'pkg', self.config, self.staff, self.modules)
+        # Mock ActionableArchPackage{RPM,OCI} objects
         mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_act_arch_pkg_oci = Mock(spec=ActionableArchPackageOCI)
         mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
+        mock_pkg_oci_objs.for_arch.return_value = mock_act_arch_pkg_oci
 
         # Run build with PackageRPM.supports_arch() that returns True only for
-        # x86_64.
+        # x86_64 and PackageOCI.supports_arch() that returns True only for
+        # aarch64.
         with patch.object(
-            mock_pkg_rpm_objs, "supports_arch", new=lambda arch: arch == 'x86_64'):
-            with self.assertLogs(level='INFO') as log:
-                self.assertEqual(main(['build', 'pkg']), 0)
+            mock_pkg_rpm_objs, "supports_arch",
+            new=lambda arch: arch == 'x86_64'):
+            with patch.object(
+                mock_pkg_oci_objs, "supports_arch",
+                new=lambda arch: arch == 'aarch64'):
+                with self.assertLogs(level='INFO') as log:
+                    self.assertEqual(main(['build', 'pkg']), 0)
         # Check skipping arch info in logs.
         self.assertIn(
             'INFO:root:Skipping build on architecture aarch64 not supported by '
             'rpm package pkg',
             log.output
         )
-
-        # Check actionnable RPM package build() and clean() have been called
-        # only once for x86_64.
+        self.assertIn(
+            'INFO:root:Skipping build on architecture x86_64 not supported by '
+            'oci package pkg',
+            log.output
+        )
+        # Check actionnable RPM and OCI package build() and clean() have been
+        # called only once, respectively for x86_64 and aarch64.
         mock_act_arch_pkg_rpm.build.assert_has_calls([call(sign=False)])
+        mock_act_arch_pkg_oci.build.assert_has_calls([call(sign=False)])
         mock_act_arch_pkg_rpm.clean.assert_has_calls([call()])
+        mock_act_arch_pkg_oci.clean.assert_has_calls([call()])
 
+    @patch('rift.package._project.PackageOCI', autospec=PackageOCI)
     @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
-    def test_action_build_failure(self, mock_pkg_rpm):
+    def test_action_build_failure(self, mock_pkg_rpm, mock_pkg_oci):
 
         # Declare multiple supported archs.
         self.config.set('arch', ['x86_64', 'aarch64'])
@@ -706,17 +766,28 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        # Get PackageRPM instances mock
+        # Get Package{RPM,OCI} instances mock
         mock_pkg_rpm_objs = mock_pkg_rpm.return_value
-        # Initialize PackageRPM object attributes
+        mock_pkg_oci_objs = mock_pkg_oci.return_value
+        # Initialize Package{RPM,OCI} object attributes
         PackageRPM.__init__(
             mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
+        PackageOCI.__init__(
+            mock_pkg_oci_objs, 'pkg', self.config, self.staff, self.modules)
 
-        # Mock ActionableArchPackageRPM objects
+        # Make Package{RPM,OCI}.supports_arch() return True for all archs
+        mock_pkg_rpm_objs.supports_arch.return_value = True
+        mock_pkg_oci_objs.supports_arch.return_value = True
+
+        # Mock ActionableArchPackage{RPM,OCI} objects
         mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_act_arch_pkg_oci = Mock(spec=ActionableArchPackageOCI)
         mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
-        mock_act_arch_pkg_rpm.build.side_effect = RiftError(
-            "fake build failure")
+        mock_pkg_oci_objs.for_arch.return_value = mock_act_arch_pkg_oci
+
+        # Make ActionableArchPackage{RPM,OCI}.build() raise RiftError
+        mock_act_arch_pkg_rpm.build.side_effect = RiftError("fake rpm build failure")
+        mock_act_arch_pkg_oci.build.side_effect = RiftError("fake oci build failure")
 
         with self.assertLogs(level='ERROR') as log:
             # Check main returns non-zero exit code
@@ -724,26 +795,35 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
 
         # Check build failure error in logs.
         self.assertIn(
-            'ERROR:root:rpm build failure: fake build failure',
+            'ERROR:root:rpm build failure: fake rpm build failure',
+            log.output
+        )
+        self.assertIn(
+            'ERROR:root:oci build failure: fake oci build failure',
             log.output
         )
 
-        # Check actionnable RPM package build() and clean() methods have been
+        # Check actionnable RPM and OCI package build() and clean() have been
         # called for all supported arch (ie. twice).
         mock_act_arch_pkg_rpm.build.assert_has_calls(
             [call(sign=False), call(sign=False)])
         mock_act_arch_pkg_rpm.clean.assert_has_calls(
             [call(), call()])
-        # Check actionnable RPM package publish() is not called because of
-        # build failures.
+        mock_act_arch_pkg_oci.build.assert_has_calls(
+            [call(sign=False), call(sign=False)])
+        mock_act_arch_pkg_rpm.clean.assert_has_calls([call(), call()])
+        mock_act_arch_pkg_oci.clean.assert_has_calls([call(), call()])
+        # Check actionnable RPM and OCI package publish() have not been called
+        # because of build failures.
         mock_act_arch_pkg_rpm.publish.assert_not_called()
 
         # Remove temporary working repo and unregister its deletion at exit
         shutil.rmtree(working_repo)
         atexit.unregister(shutil.rmtree)
 
+    @patch('rift.package._project.PackageOCI', autospec=PackageOCI)
     @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
-    def test_action_test(self, mock_pkg_rpm):
+    def test_action_test(self, mock_pkg_rpm, mock_pkg_oci):
 
         # Declare supported archs.
         self.config.set('arch', ['x86_64', 'aarch64'])
@@ -752,61 +832,93 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        # Get PackageRPM instances mock
+        # Get Package{RPM,OCI} instances mock
         mock_pkg_rpm_objs = mock_pkg_rpm.return_value
-        # Initialize PackageRPM object attributes
+        mock_pkg_oci_objs = mock_pkg_oci.return_value
+        # Initialize Package{RPM,OCI} object attributes
         PackageRPM.__init__(
             mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
-        # Make PackageRPM.supports_arch() return True for all archs
+        PackageOCI.__init__(
+            mock_pkg_oci_objs, 'pkg', self.config, self.staff, self.modules)
+
+        # Make Package{RPM,OCI}.supports_arch() return True for all archs
         mock_pkg_rpm_objs.supports_arch.return_value = True
-        # Mock ActionableArchPackageRPM objects
+        mock_pkg_oci_objs.supports_arch.return_value = True
+
+        # Mock ActionableArchPackage{RPM,OCI} objects
         mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_act_arch_pkg_oci = Mock(spec=ActionableArchPackageOCI)
         mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
-        # Make ActionableArchPackageRPM.test() return empty but successful test
-        # results.
+        mock_pkg_oci_objs.for_arch.return_value = mock_act_arch_pkg_oci
+
+        # Make ActionableArchPackage{RPM,OCI}.test() return empty but successful
+        # test results.
         mock_act_arch_pkg_rpm.test.return_value = TestResults()
+        mock_act_arch_pkg_oci.test.return_value = TestResults()
 
         # Run test on package
         self.assertEqual(main(['test', 'pkg']), 0)
 
-        # Check RPM package supports_arch() method is called for all supported
-        # archs.
+        # Check RPM and OCI package supports_arch() method is called for all
+        # supported archs.
         for arch in self.config.get('arch'):
             mock_pkg_rpm_objs.supports_arch.assert_any_call(arch)
+            mock_pkg_oci_objs.supports_arch.assert_any_call(arch)
 
-        # Check actionnable RPM package test() method is called for all
+        # Check actionnable RPM and OCI package test() method is called for all
         # supported arch (ie. twice).
         mock_act_arch_pkg_rpm.test.assert_has_calls(
             [call(noauto=False, noquit=False),
              call(noauto=False, noquit=False)])
+        mock_act_arch_pkg_oci.test.assert_has_calls(
+            [call(noauto=False, noquit=False),
+             call(noauto=False, noquit=False)])
 
+    @patch('rift.package._project.PackageOCI', autospec=PackageOCI)
     @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
-    def test_action_test_load_failure(self, mock_pkg_rpm):
+    def test_action_test_load_failure(self, mock_pkg_rpm, mock_pkg_oci):
 
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        # Get PackageRPM instances mock
+        # Get Package{RPM,OCI} instances mock
         mock_pkg_rpm_objs = mock_pkg_rpm.return_value
-        # Initialize PackageRPM object attributes
+        mock_pkg_oci_objs = mock_pkg_oci.return_value
+        # Initialize Package{RPM,OCI} object attributes
         PackageRPM.__init__(
             mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
-        # Make PackageRPM.load() raise RiftError
-        mock_pkg_rpm_objs.load.side_effect = RiftError("fake load failure")
-        # Mock ActionableArchPackageRPM objects
+        PackageOCI.__init__(
+            mock_pkg_oci_objs, 'pkg', self.config, self.staff, self.modules)
+
+        # Make Package{RPM,OCI}.load() raise RiftError
+        mock_pkg_rpm_objs.load.side_effect = RiftError("fake rpm load failure")
+        mock_pkg_oci_objs.load.side_effect = RiftError("fake oci load failure")
+
+        # Mock ActionableArchPackage{RPM,OCI} objects
         mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_act_arch_pkg_oci = Mock(spec=ActionableArchPackageOCI)
         mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
+        mock_pkg_oci_objs.for_arch.return_value = mock_act_arch_pkg_oci
 
         with self.assertLogs(level='ERROR') as log:
             self.assertEqual(main(['test', 'pkg']), 2)
         self.assertIn(
-            'ERROR:root:Unable to load rpm package: fake load failure',
+            'ERROR:root:Unable to load rpm package: fake rpm load failure',
             log.output
         )
-        mock_act_arch_pkg_rpm.test.assert_not_called()
+        self.assertIn(
+            'ERROR:root:Unable to load oci package: fake oci load failure',
+            log.output
+        )
 
+        # Check actionnable RPM and OCI package test() method has not been
+        # called.
+        mock_act_arch_pkg_rpm.test.assert_not_called()
+        mock_act_arch_pkg_oci.test.assert_not_called()
+
+    @patch('rift.package._project.PackageOCI', autospec=PackageOCI)
     @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
-    def test_action_test_failure(self, mock_pkg_rpm):
+    def test_action_test_failure(self, mock_pkg_rpm, mock_pkg_oci):
 
         # Declare supported archs.
         self.config.set('arch', ['x86_64', 'aarch64'])
@@ -815,36 +927,54 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        # Get PackageRPM instances mock
+        # Get Package{RPM,OCI} instances mock
         mock_pkg_rpm_objs = mock_pkg_rpm.return_value
-        # Initialize PackageRPM object attributes
+        mock_pkg_oci_objs = mock_pkg_oci.return_value
+        # Initialize Package{RPM,OCI} object attributes
         PackageRPM.__init__(
             mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
-        # Mock ActionableArchPackageRPM objects
+        PackageOCI.__init__(
+            mock_pkg_oci_objs, 'pkg', self.config, self.staff, self.modules)
+
+        # Make Package{RPM,OCI}.supports_arch() return True for all archs
+        mock_pkg_rpm_objs.supports_arch.return_value = True
+        mock_pkg_oci_objs.supports_arch.return_value = True
+
+        # Mock ActionableArchPackage{RPM,OCI} objects
         mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_act_arch_pkg_oci = Mock(spec=ActionableArchPackageOCI)
         mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
-        # Make ActionableArchPackageRPM.test() return results with one failure.
+        mock_pkg_oci_objs.for_arch.return_value = mock_act_arch_pkg_oci
+
+        # Make ActionableArchPackage{RPM,OCI}.test() return results with one
+        # failure.
         test_results = TestResults()
         test_results.add_failure(
             TestCase('fake', 'pkg', 'x86_64', 'rpm'), 0, None, None)
         mock_act_arch_pkg_rpm.test.return_value = test_results
+        mock_act_arch_pkg_oci.test.return_value = test_results
 
         # Run test on package and check main returns non-zero exit code
         self.assertEqual(main(['test', 'pkg']), 2)
 
-        # Check RPM package supports_arch() method is called for all supported
-        # archs.
+        # Check RPM and OCI package supports_arch() method is called for all
+        # supported archs.
         for arch in self.config.get('arch'):
             mock_pkg_rpm_objs.supports_arch.assert_any_call(arch)
+            mock_pkg_oci_objs.supports_arch.assert_any_call(arch)
 
-        # Check actionnable RPM package test() method is called for all
+        # Check actionnable RPM and OCI package test() method is called for all
         # supported arch (ie. twice).
         mock_act_arch_pkg_rpm.test.assert_has_calls(
             [call(noauto=False, noquit=False),
              call(noauto=False, noquit=False)])
+        mock_act_arch_pkg_oci.test.assert_has_calls(
+            [call(noauto=False, noquit=False),
+             call(noauto=False, noquit=False)])
 
+    @patch('rift.package._project.PackageOCI', autospec=PackageOCI)
     @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
-    def test_action_test_skip_unsupported_arch(self, mock_pkg_rpm):
+    def test_action_test_skip_unsupported_arch(self, mock_pkg_rpm, mock_pkg_oci):
 
         # Declare multiple supported archs.
         self.config.set('arch', ['x86_64', 'aarch64'])
@@ -853,39 +983,59 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        # Get PackageRPM instances mock
+        # Get Package{RPM,OCI} instances mock
         mock_pkg_rpm_objs = mock_pkg_rpm.return_value
-        # Initialize PackageRPM object attributes
+        mock_pkg_oci_objs = mock_pkg_oci.return_value
+        # Initialize Package{RPM,OCI} object attributes
         PackageRPM.__init__(
             mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
+        PackageOCI.__init__(
+            mock_pkg_oci_objs, 'pkg', self.config, self.staff, self.modules)
 
-        # Mock ActionableArchPackageRPM objects
+        # Mock ActionableArchPackage{RPM,OCI} objects
         mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_act_arch_pkg_oci = Mock(spec=ActionableArchPackageOCI)
         mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
-        # Make ActionableArchPackageRPM.test() return empty but successful test
-        # results.
-        mock_act_arch_pkg_rpm.test.return_value = TestResults()
+        mock_pkg_oci_objs.for_arch.return_value = mock_act_arch_pkg_oci
 
-        # Run build with PackageRPM.supports_arch() that returns True only for
-        # x86_64.
+        # Make ActionableArchPackage{RPM,OCI}.test() return empty but successful
+        # test results.
+        mock_act_arch_pkg_rpm.test.return_value = TestResults()
+        mock_act_arch_pkg_oci.test.return_value = TestResults()
+
+        # Run test with PackageRPM.supports_arch() that returns True only for
+        # x86_64 and PackageOCI.supports_arch() that returns True only for
+        # aarch64.
         with patch.object(
-            mock_pkg_rpm_objs, "supports_arch", new=lambda arch: arch == 'x86_64'):
-            with self.assertLogs(level='INFO') as log:
-                self.assertEqual(main(['test', 'pkg']), 0)
+            mock_pkg_rpm_objs, "supports_arch",
+            new=lambda arch: arch == 'x86_64'):
+            with patch.object(
+                mock_pkg_oci_objs, "supports_arch",
+                new=lambda arch: arch == 'aarch64'):
+                with self.assertLogs(level='INFO') as log:
+                    self.assertEqual(main(['test', 'pkg']), 0)
         # Check skipping arch info in logs.
         self.assertIn(
             'INFO:root:Skipping test on architecture aarch64 not supported by '
             'rpm package pkg',
             log.output
         )
+        self.assertIn(
+            'INFO:root:Skipping test on architecture x86_64 not supported by '
+            'oci package pkg',
+            log.output
+        )
 
-        # Check actionnable RPM package test() has been called only once (for
-        # x86_64).
+        # Check actionnable RPM and OCI package test() has been called only once
+        # (for x86_64).
         mock_act_arch_pkg_rpm.test.assert_has_calls(
             [call(noauto=False, noquit=False)])
+        mock_act_arch_pkg_oci.test.assert_has_calls(
+            [call(noauto=False, noquit=False)])
 
+    @patch('rift.package._project.PackageOCI', autospec=PackageOCI)
     @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
-    def test_action_validate(self, mock_pkg_rpm):
+    def test_action_validate(self, mock_pkg_rpm, mock_pkg_oci):
 
         # Declare supported archs.
         self.config.set('arch', ['x86_64', 'aarch64'])
@@ -894,19 +1044,29 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        # Get PackageRPM instances mock
+        # Get Package{RPM,OCI} instances mock
         mock_pkg_rpm_objs = mock_pkg_rpm.return_value
-        # Initialize PackageRPM object attributes
+        mock_pkg_oci_objs = mock_pkg_oci.return_value
+        # Initialize Package{RPM,OCI} object attributes
         PackageRPM.__init__(
             mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
-        # Make PackageRPM.supports_arch() return True for all archs
+        PackageOCI.__init__(
+            mock_pkg_oci_objs, 'pkg', self.config, self.staff, self.modules)
+
+        # Make Package{RPM,OCI}.supports_arch() return True for all archs
         mock_pkg_rpm_objs.supports_arch.return_value = True
-        # Mock ActionableArchPackageRPM objects
+        mock_pkg_oci_objs.supports_arch.return_value = True
+
+        # Mock ActionableArchPackage{RPM,OCI} objects
         mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_act_arch_pkg_oci = Mock(spec=ActionableArchPackageOCI)
         mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
-        # MakeActionableArchPackageRPM.test() return empty but successful test
-        # results.
+        mock_pkg_oci_objs.for_arch.return_value = mock_act_arch_pkg_oci
+
+        # Make ActionableArchPackage{RPM,OCI}.test() return empty but successful
+        # test results.
         mock_act_arch_pkg_rpm.test.return_value = TestResults()
+        mock_act_arch_pkg_oci.test.return_value = TestResults()
 
         # Run validate on pkg
         self.assertEqual(main(['validate', 'pkg']), 0)
@@ -915,59 +1075,90 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # archs.
         for arch in self.config.get('arch'):
             mock_pkg_rpm_objs.supports_arch.assert_any_call(arch)
+            mock_pkg_oci_objs.supports_arch.assert_any_call(arch)
 
-        # Check RPM package check() method is called for all supported arch
-        # (ie. twice).
+        # Check RPM and OCI package check() method is called for all supported
+        # arch (ie. twice).
         mock_pkg_rpm_objs.check.assert_has_calls([call(), call()])
+        mock_pkg_oci_objs.check.assert_has_calls([call(), call()])
 
-        # Check actionnable RPM package build(), publish(staging), test() and
-        # clean() methods are called for all supported arch (ie. twice).
+        # Check actionnable RPM and OCI package build(), publish(staging),
+        # test() and clean() methods are called for all supported arch (ie.
+        # twice).
         mock_act_arch_pkg_rpm.build.assert_has_calls(
             [call(sign=False), call(sign=False)])
+        mock_act_arch_pkg_oci.build.assert_has_calls(
+            [call(sign=False), call(sign=False)])
         mock_act_arch_pkg_rpm.publish.assert_has_calls(
+            [call(staging=True), call(staging=True)])
+        mock_act_arch_pkg_oci.publish.assert_has_calls(
             [call(staging=True), call(staging=True)])
         mock_act_arch_pkg_rpm.test.assert_has_calls(
             [call(noauto=False, staging=True, noquit=False),
              call(noauto=False, staging=True, noquit=False)])
+        mock_act_arch_pkg_oci.test.assert_has_calls(
+            [call(noauto=False, staging=True, noquit=False),
+             call(noauto=False, staging=True, noquit=False)])
         mock_act_arch_pkg_rpm.clean.assert_has_calls(
             [call(noquit=False), call(noquit=False)])
+        mock_act_arch_pkg_oci.clean.assert_has_calls(
+            [call(noquit=False), call(noquit=False)])
 
+    @patch('rift.package._project.PackageOCI', autospec=PackageOCI)
     @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
-    def test_action_validate_load_failure(self, mock_pkg_rpm):
+    def test_action_validate_load_failure(self, mock_pkg_rpm, mock_pkg_oci):
 
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        # Get PackageRPM instances mock
+        # Get Package{RPM,OCI} instances mock
         mock_pkg_rpm_objs = mock_pkg_rpm.return_value
-        # Initialize PackageRPM object attributes
+        mock_pkg_oci_objs = mock_pkg_oci.return_value
+        # Initialize Package{RPM,OCI} object attributes
         PackageRPM.__init__(
             mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
-        # Make PackageRPM.load() raise RiftError
-        mock_pkg_rpm_objs.load.side_effect = RiftError("fake load failure")
-        # Mock ActionableArchPackageRPM objects
+        PackageOCI.__init__(
+            mock_pkg_oci_objs, 'pkg', self.config, self.staff, self.modules)
+
+        # Make Package{RPM,OCI}.load() raise RiftError
+        mock_pkg_rpm_objs.load.side_effect = RiftError("fake rpm load failure")
+        mock_pkg_oci_objs.load.side_effect = RiftError("fake oci load failure")
+
+        # Mock ActionableArchPackage{RPM,OCI} objects
         mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_act_arch_pkg_oci = Mock(spec=ActionableArchPackageOCI)
         mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
+        mock_pkg_oci_objs.for_arch.return_value = mock_act_arch_pkg_oci
 
         with self.assertLogs(level='ERROR') as log:
             self.assertEqual(main(['validate', 'pkg']), 2)
         self.assertIn(
-            'ERROR:root:Unable to load rpm package: fake load failure',
+            'ERROR:root:Unable to load rpm package: fake rpm load failure',
+            log.output
+        )
+        self.assertIn(
+            'ERROR:root:Unable to load oci package: fake oci load failure',
             log.output
         )
 
-        # Check RPM package check() method has not been called.
+        # Check RPM and OCI package check() method has not been called.
         mock_pkg_rpm_objs.check.assert_not_called()
+        mock_pkg_oci_objs.check.assert_not_called()
 
-        # Check actionnable RPM package build(), publish(), test() and clean()
-        # have not been called.
+        # Check actionnable RPM and OCI package build(), publish(), test() and
+        # clean() have not been called.
         mock_act_arch_pkg_rpm.build.assert_not_called()
+        mock_act_arch_pkg_oci.build.assert_not_called()
         mock_act_arch_pkg_rpm.publish.assert_not_called()
+        mock_act_arch_pkg_oci.publish.assert_not_called()
         mock_act_arch_pkg_rpm.test.assert_not_called()
+        mock_act_arch_pkg_oci.test.assert_not_called()
         mock_act_arch_pkg_rpm.clean.assert_not_called()
+        mock_act_arch_pkg_oci.clean.assert_not_called()
 
+    @patch('rift.package._project.PackageOCI', autospec=PackageOCI)
     @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
-    def test_action_validate_check_failure(self, mock_pkg_rpm):
+    def test_action_validate_check_failure(self, mock_pkg_rpm, mock_pkg_oci):
 
         # Declare multiple supported archs.
         self.config.set('arch', ['x86_64', 'aarch64'])
@@ -976,40 +1167,61 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        # Get PackageRPM instances mock
+        # Get Package{RPM,OCI} instances mock
         mock_pkg_rpm_objs = mock_pkg_rpm.return_value
-        # Initialize PackageRPM object attributes
+        mock_pkg_oci_objs = mock_pkg_oci.return_value
+        # Initialize Package{RPM,OCI} object attributes
         PackageRPM.__init__(
             mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
-        # Make PackageRPM.supports_arch() return True for all archs
+        PackageOCI.__init__(
+            mock_pkg_oci_objs, 'pkg', self.config, self.staff, self.modules)
+
+        # Make Package{RPM,OCI}.supports_arch() return True for all archs
         mock_pkg_rpm_objs.supports_arch.return_value = True
-        # Make PackageRPM.check() raise RiftError
-        mock_pkg_rpm_objs.check.side_effect = RiftError("fake check failure")
-        # Mock ActionableArchPackageRPM objects
+        mock_pkg_oci_objs.supports_arch.return_value = True
+
+        # Make Package{RPM,OCI}.check() raise RiftError
+        mock_pkg_rpm_objs.check.side_effect = RiftError("fake rpm check failure")
+        mock_pkg_oci_objs.check.side_effect = RiftError("fake oci check failure")
+
+        # Mock ActionableArchPackage{RPM,OCI} objects
         mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_act_arch_pkg_oci = Mock(spec=ActionableArchPackageOCI)
         mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
+        mock_pkg_oci_objs.for_arch.return_value = mock_act_arch_pkg_oci
 
         with self.assertLogs(level='ERROR') as log:
             self.assertEqual(main(['validate', 'pkg']), 2)
         self.assertIn(
-            'ERROR:root:Static analysis of rpm package failed: fake check failure',
+            'ERROR:root:Static analysis of rpm package failed: fake rpm check failure',
+            log.output
+        )
+        self.assertIn(
+            'ERROR:root:Static analysis of oci package failed: fake oci check failure',
             log.output
         )
 
-        # Check RPM package load() and check() methods are called for all
-        # supported arch (ie. twice).
+        # Check RPM and OCI package load() and check() methods are called for
+        # all supported arch (ie. twice).
         mock_pkg_rpm_objs.load.assert_has_calls([call(), call()])
+        mock_pkg_oci_objs.load.assert_has_calls([call(), call()])
         mock_pkg_rpm_objs.check.assert_has_calls([call(), call()])
+        mock_pkg_oci_objs.check.assert_has_calls([call(), call()])
 
-        # Check actionnable RPM package build(), publish(), test() and clean()
-        # have not been called.
+        # Check actionnable RPM and OCI package build(), publish(), test() and
+        # clean() have not been called.
         mock_act_arch_pkg_rpm.build.assert_not_called()
+        mock_act_arch_pkg_oci.build.assert_not_called()
         mock_act_arch_pkg_rpm.publish.assert_not_called()
+        mock_act_arch_pkg_oci.publish.assert_not_called()
         mock_act_arch_pkg_rpm.test.assert_not_called()
+        mock_act_arch_pkg_oci.test.assert_not_called()
         mock_act_arch_pkg_rpm.clean.assert_not_called()
+        mock_act_arch_pkg_oci.clean.assert_not_called()
 
+    @patch('rift.package._project.PackageOCI', autospec=PackageOCI)
     @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
-    def test_action_validate_build_failure(self, mock_pkg_rpm):
+    def test_action_validate_build_failure(self, mock_pkg_rpm, mock_pkg_oci):
 
         # Declare multiple supported archs.
         self.config.set('arch', ['x86_64', 'aarch64'])
@@ -1018,19 +1230,28 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        # Get PackageRPM instances mock
+        # Get Package{RPM,OCI} instances mock
         mock_pkg_rpm_objs = mock_pkg_rpm.return_value
-        # Initialize PackageRPM object attributes
+        mock_pkg_oci_objs = mock_pkg_oci.return_value
+        # Initialize Package{RPM,OCI} object attributes
         PackageRPM.__init__(
             mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
-        # Make PackageRPM.supports_arch() return True for all archs
-        mock_pkg_rpm_objs.supports_arch.return_value = True
+        PackageOCI.__init__(
+            mock_pkg_oci_objs, 'pkg', self.config, self.staff, self.modules)
 
-        # Mock ActionableArchPackageRPM objects
+        # Make Package{RPM,OCI}.supports_arch() return True for all archs
+        mock_pkg_rpm_objs.supports_arch.return_value = True
+        mock_pkg_oci_objs.supports_arch.return_value = True
+
+        # Mock ActionableArchPackage{RPM,OCI} objects
         mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_act_arch_pkg_oci = Mock(spec=ActionableArchPackageOCI)
         mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
-        mock_act_arch_pkg_rpm.build.side_effect = RiftError(
-            "fake build failure")
+        mock_pkg_oci_objs.for_arch.return_value = mock_act_arch_pkg_oci
+
+        # Make ActionableArchPackage{RPM,OCI}.build() raise RiftError
+        mock_act_arch_pkg_rpm.build.side_effect = RiftError("fake rpm build failure")
+        mock_act_arch_pkg_oci.build.side_effect = RiftError("fake oci build failure")
 
         with self.assertLogs(level='ERROR') as log:
             # Check main returns non-zero exit code
@@ -1038,28 +1259,40 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
 
         # Check build failure error in logs.
         self.assertIn(
-            'ERROR:root:rpm build failure: fake build failure',
+            'ERROR:root:rpm build failure: fake rpm build failure',
+            log.output
+        )
+        self.assertIn(
+            'ERROR:root:oci build failure: fake oci build failure',
             log.output
         )
 
-        # Check RPM package load() and check() methods are called for all
-        # supported arch (ie. twice).
+        # Check RPM and OCI package load() and check() methods are called for
+        # all supported arch (ie. twice).
         mock_pkg_rpm_objs.load.assert_has_calls([call(), call()])
+        mock_pkg_oci_objs.load.assert_has_calls([call(), call()])
         mock_pkg_rpm_objs.check.assert_has_calls([call(), call()])
+        mock_pkg_oci_objs.check.assert_has_calls([call(), call()])
 
-        # Check actionnable RPM package build() has been called for all
+        # Check actionnable RPM and OCI package build() has been called for all
         # supported arch (ie. twice).
         mock_act_arch_pkg_rpm.build.assert_has_calls(
             [call(sign=False), call(sign=False),])
+        mock_act_arch_pkg_oci.build.assert_has_calls(
+            [call(sign=False), call(sign=False),])
 
-        # Check actionnable RPM package publish(), test() and clean() have not
-        # been called.
+        # Check actionnable RPM and OCI package publish(), test() and clean()
+        # have not been called.
         mock_act_arch_pkg_rpm.publish.assert_not_called()
+        mock_act_arch_pkg_oci.publish.assert_not_called()
         mock_act_arch_pkg_rpm.test.assert_not_called()
+        mock_act_arch_pkg_oci.test.assert_not_called()
         mock_act_arch_pkg_rpm.clean.assert_not_called()
+        mock_act_arch_pkg_oci.clean.assert_not_called()
 
+    @patch('rift.package._project.PackageOCI', autospec=PackageOCI)
     @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
-    def test_action_validate_test_failure(self, mock_pkg_rpm):
+    def test_action_validate_test_failure(self, mock_pkg_rpm, mock_pkg_oci):
 
         # Declare supported archs.
         self.config.set('arch', ['x86_64', 'aarch64'])
@@ -1068,48 +1301,72 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        # Get PackageRPM instances mock
+        # Get Package{RPM,OCI} instances mock
         mock_pkg_rpm_objs = mock_pkg_rpm.return_value
-        # Initialize PackageRPM object attributes
+        mock_pkg_oci_objs = mock_pkg_oci.return_value
+        # Initialize Package{RPM,OCI} object attributes
         PackageRPM.__init__(
             mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
-        # Make PackageRPM.supports_arch() return True for all archs
+        PackageOCI.__init__(
+            mock_pkg_oci_objs, 'pkg', self.config, self.staff, self.modules)
+
+        # Make Package{RPM,OCI}.supports_arch() return True for all archs
         mock_pkg_rpm_objs.supports_arch.return_value = True
-        # Mock ActionableArchPackageRPM objects
+        mock_pkg_oci_objs.supports_arch.return_value = True
+
+        # Mock ActionableArchPackage{RPM,OCI} objects
         mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_act_arch_pkg_oci = Mock(spec=ActionableArchPackageOCI)
         mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
-        # Make ActionableArchPackageRPM.test() return results with one failure.
+        mock_pkg_oci_objs.for_arch.return_value = mock_act_arch_pkg_oci
+
+        # Make ActionableArchPackage{RPM,OCI}.test() return results with one
+        # failure.
         test_results = TestResults()
         test_results.add_failure(
             TestCase('fake', 'pkg', 'x86_64', 'rpm'), 0, None, None)
         mock_act_arch_pkg_rpm.test.return_value = test_results
+        mock_act_arch_pkg_oci.test.return_value = test_results
 
         # Run validate on package and check main returns non-zero exit code
         self.assertEqual(main(['validate', 'pkg']), 2)
 
-        # Check RPM package supports_arch() method is called for all supported
-        # archs.
+        # Check RPM and OCI package supports_arch() method is called for all
+        # supported archs.
         for arch in self.config.get('arch'):
             mock_pkg_rpm_objs.supports_arch.assert_any_call(arch)
+            mock_pkg_oci_objs.supports_arch.assert_any_call(arch)
 
-        # Check RPM package check() method is called for all supported arch
-        # (ie. twice).
+        # Check RPM and OCI package check() method is called for all supported
+        # arch (ie. twice).
         mock_pkg_rpm_objs.check.assert_has_calls([call(), call()])
+        mock_pkg_oci_objs.check.assert_has_calls([call(), call()])
 
-        # Check actionnable RPM package build(), publish(staging), test() and
-        # clean() methods are called for all supported arch (ie. twice).
+        # Check actionnable RPM and OCI package build(), publish(staging),
+        # test() and clean() methods are called for all supported arch (ie.
+        # twice).
         mock_act_arch_pkg_rpm.build.assert_has_calls(
             [call(sign=False), call(sign=False)])
+        mock_act_arch_pkg_oci.build.assert_has_calls(
+            [call(sign=False), call(sign=False)])
         mock_act_arch_pkg_rpm.publish.assert_has_calls(
+            [call(staging=True), call(staging=True)])
+        mock_act_arch_pkg_oci.publish.assert_has_calls(
             [call(staging=True), call(staging=True)])
         mock_act_arch_pkg_rpm.test.assert_has_calls(
             [call(noauto=False, staging=True, noquit=False),
              call(noauto=False, staging=True, noquit=False)])
+        mock_act_arch_pkg_oci.test.assert_has_calls(
+            [call(noauto=False, staging=True, noquit=False),
+             call(noauto=False, staging=True, noquit=False)])
         mock_act_arch_pkg_rpm.clean.assert_has_calls(
             [call(noquit=False), call(noquit=False)])
+        mock_act_arch_pkg_oci.clean.assert_has_calls(
+            [call(noquit=False), call(noquit=False)])
 
+    @patch('rift.package._project.PackageOCI', autospec=PackageOCI)
     @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
-    def test_action_validate_skip_unsupported_arch(self, mock_pkg_rpm):
+    def test_action_validate_skip_unsupported_arch(self, mock_pkg_rpm, mock_pkg_oci):
 
         # Declare multiple supported archs.
         self.config.set('arch', ['x86_64', 'aarch64'])
@@ -1118,46 +1375,70 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        # Get PackageRPM instances mock
+        # Get Package{RPM,OCI} instances mock
         mock_pkg_rpm_objs = mock_pkg_rpm.return_value
-        # Initialize PackageRPM object attributes
+        mock_pkg_oci_objs = mock_pkg_oci.return_value
+        # Initialize Package{RPM,OCI} object attributes
         PackageRPM.__init__(
             mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
+        PackageOCI.__init__(
+            mock_pkg_oci_objs, 'pkg', self.config, self.staff, self.modules)
 
-        # Mock ActionableArchPackageRPM objects
+        # Mock ActionableArchPackage{RPM,OCI} objects
         mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_act_arch_pkg_oci = Mock(spec=ActionableArchPackageOCI)
         mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
-        # Make ActionableArchPackageRPM.test() return empty but successful test
-        # results.
-        mock_act_arch_pkg_rpm.test.return_value = TestResults()
+        mock_pkg_oci_objs.for_arch.return_value = mock_act_arch_pkg_oci
 
-        # Run build with PackageRPM.supports_arch() that returns True only for
-        # x86_64.
+        # Make ActionableArchPackage{RPM,OCI}.test() return empty but successful
+        # test results.
+        mock_act_arch_pkg_rpm.test.return_value = TestResults()
+        mock_act_arch_pkg_oci.test.return_value = TestResults()
+
+        # Run validate with PackageRPM.supports_arch() that returns True only for
+        # x86_64 and PackageOCI.supports_arch() that returns True only for
+        # aarch64.
         with patch.object(
-            mock_pkg_rpm_objs, "supports_arch", new=lambda arch: arch == 'x86_64'):
-            with self.assertLogs(level='INFO') as log:
-                self.assertEqual(main(['validate', 'pkg']), 0)
+            mock_pkg_rpm_objs, "supports_arch",
+            new=lambda arch: arch == 'x86_64'):
+            with patch.object(
+                mock_pkg_oci_objs, "supports_arch",
+                new=lambda arch: arch == 'aarch64'):
+                with self.assertLogs(level='INFO') as log:
+                    self.assertEqual(main(['validate', 'pkg']), 0)
         # Check skipping arch info in logs.
         self.assertIn(
             'INFO:root:Skipping validation on architecture aarch64 not '
             'supported by rpm package pkg',
             log.output
         )
+        self.assertIn(
+            'INFO:root:Skipping validation on architecture x86_64 not '
+            'supported by oci package pkg',
+            log.output
+        )
 
-        # Check RPM package check() method has been called only once (for
-        # x86_64).
+        # Check RPM and OCI package check() method has been called only once
+        # (for x86_64).
         mock_pkg_rpm_objs.check.assert_has_calls([call()])
+        mock_pkg_oci_objs.check.assert_has_calls([call()])
 
-        # Check actionnable RPM package build(), publish(staging), test() and
-        # clean() methods have been called only once (for x86_64).
+        # Check actionnable RPM and pOCI ackage build(), publish(staging),
+        # test() and clean() methods have been called only once (for x86_64).
         mock_act_arch_pkg_rpm.build.assert_has_calls([call(sign=False)])
+        mock_act_arch_pkg_oci.build.assert_has_calls([call(sign=False)])
         mock_act_arch_pkg_rpm.publish.assert_has_calls([call(staging=True)])
+        mock_act_arch_pkg_oci.publish.assert_has_calls([call(staging=True)])
         mock_act_arch_pkg_rpm.test.assert_has_calls(
             [call(noauto=False, staging=True, noquit=False)])
+        mock_act_arch_pkg_oci.test.assert_has_calls(
+            [call(noauto=False, staging=True, noquit=False)])
         mock_act_arch_pkg_rpm.clean.assert_has_calls([call(noquit=False)])
+        mock_act_arch_pkg_oci.clean.assert_has_calls([call(noquit=False)])
 
+    @patch('rift.package._project.PackageOCI', autospec=PackageOCI)
     @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
-    def test_action_validate_publish(self, mock_pkg_rpm):
+    def test_action_validate_publish(self, mock_pkg_rpm, mock_pkg_oci):
 
         # Declare supported archs.
         self.config.set('arch', ['x86_64', 'aarch64'])
@@ -1172,34 +1453,47 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        # Get PackageRPM instances mock
+        # Get Package{RPM,OCI} instances mock
         mock_pkg_rpm_objs = mock_pkg_rpm.return_value
-        # Initialize PackageRPM object attributes
+        mock_pkg_oci_objs = mock_pkg_oci.return_value
+        # Initialize Package{RPM,OCI} object attributes
         PackageRPM.__init__(
             mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
-        # Make PackageRPM.supports_arch() return True for all archs
+        PackageOCI.__init__(
+            mock_pkg_oci_objs, 'pkg', self.config, self.staff, self.modules)
+
+        # Make Package{RPM,OCI}.supports_arch() return True for all archs
         mock_pkg_rpm_objs.supports_arch.return_value = True
-        # Mock ActionableArchPackageRPM objects
+        mock_pkg_oci_objs.supports_arch.return_value = True
+
+        # Mock ActionableArchPackage{RPM,OCI} objects
         mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_act_arch_pkg_oci = Mock(spec=ActionableArchPackageOCI)
         mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
-        # MakeActionableArchPackageRPM.test() return empty but successful test
-        # results.
+        mock_pkg_oci_objs.for_arch.return_value = mock_act_arch_pkg_oci
+
+        # Make ActionableArchPackage{RPM,OCI}.test() return empty but successful
+        # test results.
         mock_act_arch_pkg_rpm.test.return_value = TestResults()
+        mock_act_arch_pkg_oci.test.return_value = TestResults()
 
         # Run validate on pkg
         self.assertEqual(main(['validate', 'pkg', '--publish']), 0)
 
-        # Check actionnable RPM package publish(staging) and
+        # Check actionnable RPM and OCI package publish(staging) and
         # publish(working_dir) are called for all supported arch (ie. twice).
         mock_act_arch_pkg_rpm.publish.assert_has_calls(
+            [call(staging=True), call(), call(staging=True), call()])
+        mock_act_arch_pkg_oci.publish.assert_has_calls(
             [call(staging=True), call(), call(staging=True), call()])
 
         # Remove temporary working repo and unregister its deletion at exit
         shutil.rmtree(working_repo)
         atexit.unregister(shutil.rmtree)
 
+    @patch('rift.package._project.PackageOCI', autospec=PackageOCI)
     @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
-    def test_action_validate_publish_test_failure(self, mock_pkg_rpm):
+    def test_action_validate_publish_test_failure(self, mock_pkg_rpm, mock_pkg_oci):
 
         # Declare supported archs.
         self.config.set('arch', ['x86_64', 'aarch64'])
@@ -1214,29 +1508,43 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        # Get PackageRPM instances mock
+
+        # Get Package{RPM,OCI} instances mock
         mock_pkg_rpm_objs = mock_pkg_rpm.return_value
-        # Initialize PackageRPM object attributes
+        mock_pkg_oci_objs = mock_pkg_oci.return_value
+        # Initialize Package{RPM,OCI} object attributes
         PackageRPM.__init__(
             mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
-        # Make PackageRPM.supports_arch() return True for all archs
+        PackageOCI.__init__(
+            mock_pkg_oci_objs, 'pkg', self.config, self.staff, self.modules)
+
+        # Make Package{RPM,OCI}.supports_arch() return True for all archs
         mock_pkg_rpm_objs.supports_arch.return_value = True
-        # Mock ActionableArchPackageRPM objects
+        mock_pkg_oci_objs.supports_arch.return_value = True
+
+        # Mock ActionableArchPackage{RPM,OCI} objects
         mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_act_arch_pkg_oci = Mock(spec=ActionableArchPackageOCI)
         mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
-        # Make ActionableArchPackageRPM.test() return results with one failure.
+        mock_pkg_oci_objs.for_arch.return_value = mock_act_arch_pkg_oci
+
+        # Make ActionableArchPackage{RPM,OCI}.test() return results with one
+        # failure.
         test_results = TestResults()
         test_results.add_failure(
             TestCase('fake', 'pkg', 'x86_64', 'rpm'), 0, None, None)
         mock_act_arch_pkg_rpm.test.return_value = test_results
+        mock_act_arch_pkg_oci.test.return_value = test_results
 
         # Run validate on package and check main returns non-zero exit code
         self.assertEqual(main(['validate', 'pkg', '--publish']), 2)
 
-        # Check actionnable RPM package publish is called for staging repository
-        # only (before running tests) but not for working directory despite
-        # --publish.
+        # Check actionnable RPM and OCI package publish is called for staging
+        # repository only (before running tests) but not for working directory
+        # despite --publish.
         mock_act_arch_pkg_rpm.publish.assert_has_calls(
+            [call(staging=True), call(staging=True)])
+        mock_act_arch_pkg_oci.publish.assert_has_calls(
             [call(staging=True), call(staging=True)])
 
         # Remove temporary working repo and unregister its deletion at exit

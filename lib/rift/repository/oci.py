@@ -30,47 +30,31 @@
 # knowledge of the CeCILL license and that you accept its terms.
 #
 
-"""Module to manage repositories in projects."""
+import os
+import logging
 
-from rift import RiftError
-from rift.repository.rpm import ArchRepositoriesRPM
-from rift.repository.oci import ArchRepositoriesOCI
+from rift.repository._base import ArchRepositoriesBase
 
-class ProjectArchRepositories:
+class ArchRepositoriesOCI(ArchRepositoriesBase):
     """
-    Intermediate class to manage repositories in a project for multiple packages
-    formats.
+    Manipulate repositories defined in a project for a particular architecture.
     """
+    def __init__(self, config, working_dir, arch):
+        super().__init__(working_dir, arch)
+        self.path = None
+        if working_dir:
+            self.path = os.path.join(working_dir, "oci")
 
-    FORMAT_CLASSES = {
-        'rpm': ArchRepositoriesRPM,
-        'oci': ArchRepositoriesOCI
-    }
-
-    def __init__(self, config, arch):
-        self.config = config
-        self.arch = arch
-        self.working_dir = config.get('working_repo', arch=arch)
-
-    def can_publish(self):
-        """
-        Return True if it is possible to publish packages in project
-        repositories, ie. if working repository is defined.
-        """
-        return self.working_dir is not None
+    def ensure_created(self):
+        if not self.path:
+            return
+        if not os.path.exists(self.working_dir):
+            logging.debug("Creating working directory %s", self.working_dir)
+            os.mkdir(self.working_dir)
+        if not os.path.exists(self.path):
+            logging.debug("Creating oci repository directory %s", self.path)
+            os.mkdir(self.path)
 
     def delete_matching(self, package):
-        """
-        For all supported repositories formats, delete package matching provided
-        name.
-        """
-        for _format in self.FORMAT_CLASSES:
-            repos = self.for_format(_format)
-            repos.delete_matching(package)
-
-    def for_format(self, _format):
-        """Get concrete repository object for the provided format."""
-        if _format not in ProjectArchRepositories.FORMAT_CLASSES:
-            raise RiftError(f"Unsupport repository format {_format}")
-        return self.FORMAT_CLASSES[_format](
-            self.config, self.working_dir, self.arch)
+        pass
+        # FIXME

@@ -64,7 +64,7 @@ class Package():
         self._modules = modules
         self.name = name
         # check package format
-        if _format not in ['_virtual', 'rpm']:
+        if _format not in ['_virtual', 'rpm', 'oci']:
             raise RiftError(f"Unsupported package format {_format}")
         self.format = _format
 

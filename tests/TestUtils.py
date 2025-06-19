@@ -231,12 +231,12 @@ class RiftProjectTestCase(RiftTestCase):
         requires=['another-package'],
         subpackages=[],
     ):
-        # By default, make package in RPM format
+        # By default, make package in all supported formats
         if formats is None:
-            formats = ['rpm']
+            formats = ['rpm', 'oci']
         # Check provide package formats are supported
         for _format in formats:
-            assert(_format in ['rpm'])
+            assert(_format in ['rpm', 'oci'])
         # ./packages/pkg
         self.pkgdirs[name] = os.path.join(self.packagesdir, name)
         os.mkdir(self.pkgdirs[name])
@@ -261,6 +261,10 @@ class RiftProjectTestCase(RiftTestCase):
                     metadata.get('reason', 'Missing feature')
                 )
             )
+            if 'oci' in formats:
+                nfo.write("    oci:\n")
+                nfo.write(f"        version: '{version}'\n")
+                nfo.write(f"        release: '{release}'\n")
 
         # ./packages/pkg/pkg.spec
         if 'rpm' in formats:
@@ -299,6 +303,13 @@ class RiftProjectTestCase(RiftTestCase):
                 spec.write("* Tue Feb 26 2019 Myself <buddy@somewhere.org>"
                            " - {0}-{1}\n".format(version, release))
                 spec.write("- Update to {0} release\n".format(version))
+            self.buildfiles.append(buildfile)
+
+        # ./packages/pkg/Containerfile
+        if 'oci' in formats:
+            buildfile = os.path.join(self.pkgdirs[name], 'Containerfile')
+            with open(buildfile, "w") as fh:
+                fh.write('FROM debian:stable')
             self.buildfiles.append(buildfile)
 
         # ./packages/pkg/sources

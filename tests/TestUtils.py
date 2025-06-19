@@ -301,12 +301,12 @@ class RiftProjectTestCase(RiftTestCase):
         src_top_dir=None,
         tests=None,
     ):
-        # By default, make package in RPM format
+        # By default, make package in all supported formats
         if formats is None:
-            formats = ['rpm']
+            formats = ['rpm', 'oci']
         # Check provide package formats are supported
         for _format in formats:
-            assert(_format in ['rpm'])
+            assert(_format in ['rpm', 'oci'])
         # Set default source top dir name
         if src_top_dir is None:
             src_top_dir = f"{name}-{version}"
@@ -344,6 +344,10 @@ class RiftProjectTestCase(RiftTestCase):
                 nfo.write("    variants:\n")
                 for variant in variants:
                     nfo.write(f"    - {variant}\n")
+            if 'oci' in formats:
+                nfo.write("    oci:\n")
+                nfo.write(f"        version: '{version}'\n")
+                nfo.write(f"        release: '{release}'\n")
 
         # ./packages/pkg/pkg.spec
         if 'rpm' in formats:
@@ -362,6 +366,13 @@ class RiftProjectTestCase(RiftTestCase):
                     )
                 )
             self.buildfiles[f"{name}:rpm"] = buildfile
+
+        # ./packages/pkg/Containerfile
+        if 'oci' in formats:
+            buildfile = os.path.join(self.pkgdirs[name], 'Containerfile')
+            with open(buildfile, "w") as fh:
+                fh.write('FROM debian:stable')
+            self.buildfiles.append(buildfile)
 
         # ./packages/pkg/sources
         srcdir = os.path.join(self.pkgdirs[name], 'sources')

@@ -61,7 +61,7 @@ from rift.utils import message, banner
 
 
 # Rift supported package formats
-RIFT_SUPPORTED_FORMATS = ('rpm',)
+RIFT_SUPPORTED_FORMATS = ('rpm', 'oci')
 
 
 def make_parser():

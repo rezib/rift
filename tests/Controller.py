@@ -76,7 +76,9 @@ class ControllerProjectActionQueryTest(RiftProjectTestCase):
         self.assertIn(textwrap.dedent("""
             ---- ------       ----------- ------ ------- ------- -------------
             pkg1 Great module Myself      rpm    1.0     1       buddy@somewhere.org
+            pkg1 Great module Myself      oci    1.0     1       buddy@somewhere.org
             pkg2 Great module Myself      rpm    2.1     3       buddy@somewhere.org
+            pkg2 Great module Myself      oci    2.1     3       buddy@somewhere.org
             """),
             mock_stdout.getvalue())
 
@@ -98,7 +100,9 @@ class ControllerProjectActionQueryTest(RiftProjectTestCase):
         self.assertIn(textwrap.dedent("""
             ---- ------       ------ ------          ------ ----- ------- ----   ------- -------------                        ------------- ----------- -------------       -------------
             pkg1 Great module Vendor Missing feature rpm    0     1.0     noarch 1       Myself <buddy@somewhere.org> - 1.0-1 2019-02-26    Myself      buddy@somewhere.org br-package
+            pkg1 Great module Vendor Missing feature oci    0     1.0            1                                            2025-07-24    Myself      buddy@somewhere.org
             pkg2 Great module Vendor Missing feature rpm    0     2.1     noarch 3       Myself <buddy@somewhere.org> - 2.1-3 2019-02-26    Myself      buddy@somewhere.org br-package
+            pkg2 Great module Vendor Missing feature oci    0     2.1            3                                            2025-07-24    Myself      buddy@somewhere.org
             """),
             mock_stdout.getvalue())
 
@@ -158,6 +162,13 @@ class ControllerProjectActionChangelogTest(RiftProjectTestCase):
         self.make_pkg()
         with self.assertRaises(TypeError):
             main(['changelog', 'pkg', '-c', 'basic change', '-t', 'Fail'])
+
+    def test_action_changelog_unsupported_format(self):
+        """changelog with unsupported format"""
+        self.make_pkg(formats=['oci'])
+        self.assertEqual(
+            main(['changelog', 'pkg', '-c', 'basic change', '-t', 'Myself', '--bump']),
+            1)
 
 
 class ControllerProjectActionCreateTest(RiftProjectTestCase):

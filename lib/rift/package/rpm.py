@@ -42,7 +42,7 @@ import logging
 from rift import RiftError
 from rift.package._base import Package, ActionableArchPackage, Test
 from rift.Annex import Annex
-from rift.Repository import ProjectArchRepositories, LocalRepository
+from rift.repository.rpm import ArchRepositoriesRPM
 from rift.Mock import Mock
 from rift.RPM import Spec
 from rift.TestResults import TestCase, TestResults
@@ -154,7 +154,7 @@ class ActionableArchPackageRPM(ActionableArchPackage):
     def __init__(self, package, arch):
         super().__init__(package, arch)
         self.mock = Mock(self.config, arch, self.config.get('version'))
-        self.repos = ProjectArchRepositories(self.config, self.arch)
+        self.repos = ArchRepositoriesRPM(self.config, self.arch)
 
     def build(self, **kwargs):
         message(f"Building package '{self.name}' on architecture {self.arch}")

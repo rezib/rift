@@ -44,6 +44,7 @@ from rift import RiftError
 from rift.Annex import Annex
 from rift.Config import OrderedLoader
 from rift.utils import message
+from rift.repository import ProjectArchRepositories
 
 _META_FILE = 'info.yaml'
 _SOURCES_DIR = 'sources'
@@ -252,6 +253,7 @@ class ActionableArchPackage:
         self.config = package._config
         self.package = package
         self.arch = arch
+        self.repos = ProjectArchRepositories(self.config, self.arch).for_format(self.package.format)
 
     def build(self, **kwargs):
         """Build package. Must be overriden in concrete format classes."""

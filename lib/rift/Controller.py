@@ -47,7 +47,7 @@ from rift.Annex import Annex, is_binary
 from rift.Config import Config, Staff, Modules
 from rift.Gerrit import Review
 from rift.package import ProjectPackages
-from rift.Repository import ProjectArchRepositories
+from rift.repository import ProjectArchRepositories
 from rift.RPM import RPM, Spec
 from rift.TestResults import TestCase, TestResults
 from rift.TextTable import TextTable
@@ -484,12 +484,8 @@ def remove_packages(config, args, pkgs_to_remove, arch):
         return
 
     for pkg in pkgs_to_remove:
-        found_pkgs = repos.working.search(pkg.name)
-        for found_pkg in found_pkgs:
-            repos.working.delete(found_pkg)
+        repos.delete_matching(pkg.name)
 
-    # Update repository metadata
-    repos.working.update()
 
 def action_vm(args, config):
     """Action for 'vm' sub-commands."""

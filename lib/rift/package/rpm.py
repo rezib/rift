@@ -42,7 +42,7 @@ import logging
 from rift import RiftError
 from rift.package._base import Package, ActionableArchPackage, Test
 from rift.Annex import Annex
-from rift.Repository import ProjectArchRepositories, LocalRepository
+from rift.repository.rpm import LocalRepository
 from rift.Mock import Mock
 from rift.RPM import Spec
 from rift.TestResults import TestCase, TestResults
@@ -154,7 +154,6 @@ class ActionableArchPackageRPM(ActionableArchPackage):
     def __init__(self, package, arch):
         super().__init__(package, arch)
         self.mock = Mock(self.config, arch, self.config.get('version'))
-        self.repos = ProjectArchRepositories(self.config, self.arch)
         self.staging = None
         self.stagedir = None
 

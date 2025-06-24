@@ -29,42 +29,28 @@
 # The fact that you are presently reading this means that you have had
 # knowledge of the CeCILL license and that you accept its terms.
 #
+"""Manage virtual packages."""
 
-"""Module to get list or individual project packages."""
+from rift.package._base import Package
+from rift import RiftError
 
-import os
 
-from rift.package._virtual import PackageVirtual
-from rift.package.rpm import PackageRPM
-
-class ProjectPackages:
+class PackageVirtual(Package):
     """
-    Factory to get list of projects packages objects with their supported
-    formats.
+    Handle Rift virtual project package. Virtual packages are packages do not
+    exist in Rift project packages directory, for which there is no way to
+    determine actual format.
+
+    This concept is useful to handle removed package for instance.
     """
 
-    @staticmethod
-    def list(config, staff, modules, names=None):
-        """
-        Iterate over PackageBase concrete children instances from 'names' list
-        or all packages if list is not provided.
-        """
-        if not names:
-            pkgdir = config.project_path(config.get('packages_dir'))
-            names = [path for path in os.listdir(pkgdir)
-                     if os.path.isdir(os.path.join(pkgdir, path))]
+    def __init__(self, name, config, staff, modules):
+        super().__init__(name, config, staff, modules, '_virtual', None)
 
-        for name in names:
-            yield ProjectPackages.get(name, config, staff, modules)
+    def add_changelog_entry(self, maintainer, comment, bump):
+        """Must not be called on virtual package."""
+        raise RiftError("Unable to add changelog entry on virtual package")
 
-    @staticmethod
-    def get(name, config, staff, modules):
-        """
-        Return PackageBase child object corresponding to the given package name.
-        If package directory does not exist, return PackageVirtual object, else
-        return PackageRPM object.
-        """
-        pkgdir = os.path.join(config.project_path(config.get('packages_dir')), name)
-        if not os.path.isdir(pkgdir):
-            return PackageVirtual(name, config, staff, modules)
-        return PackageRPM(name, config, staff, modules)
+    def analyze(self, review, configdir):
+        """Must not be called on virtual package."""
+        raise RiftError("Unable to analyze a virtual package")

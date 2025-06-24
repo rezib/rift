@@ -6,6 +6,7 @@ import os
 
 #from rift import RiftError
 from rift.Config import Config#, Staff, Modules
+from rift.package._virtual import PackageVirtual
 from rift.package.rpm import PackageRPM
 from rift.package import ProjectPackages
 from .base import RiftPackageTestCase
@@ -53,13 +54,23 @@ class ProjectPackagesTest(RiftPackageTestCase):
         list_names = ['bar', 'baz']
         self.fill_project_dir(packages_names)
         packages = list(ProjectPackages.list(self.config, self.staff, self.modules, list_names))
-        for package in packages:
-            self.assertIsInstance(package, PackageRPM)
-            self.assertIn(package.name, list_names)
         self.assertEqual(len(packages), 2)
+        for package in packages:
+            self.assertIn(package.name, list_names)
+            if package.name == 'bar':
+                self.assertIsInstance(package, PackageRPM)
+            else:
+                self.assertIsInstance(package, PackageVirtual)
 
-    def test_get(self):
-        """ Test ProjectPackages get() """
+    def test_get_virtual(self):
+        """ Test ProjectPackages get() virtual package"""
+        package = ProjectPackages.get("pkg", self.config, self.staff, self.modules)
+        self.assertIsInstance(package, PackageVirtual)
+        self.assertEqual(package.name, "pkg")
+
+    def test_get_rpm(self):
+        """ Test ProjectPackages get() RPM package"""
+        self.fill_project_dir(['pkg'])
         package = ProjectPackages.get("pkg", self.config, self.staff, self.modules)
         self.assertIsInstance(package, PackageRPM)
         self.assertEqual(package.name, "pkg")

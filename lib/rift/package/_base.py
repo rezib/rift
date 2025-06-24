@@ -61,7 +61,7 @@ class Package():
         self._modules = modules
         self.name = name
         # check package format
-        if _format != 'rpm':
+        if _format not in ['_virtual', 'rpm']:
             raise RiftError(f"Unsupported package format {_format}")
         self.format = _format
 
@@ -79,7 +79,9 @@ class Package():
         self.sourcesdir = os.path.join(self.dir, _SOURCES_DIR)
         self.testsdir = os.path.join(self.dir, _TESTS_DIR)
         self.metafile = os.path.join(self.dir, _META_FILE)
-        self.buildfile = os.path.join(self.dir, buildfile)
+        self.buildfile = None
+        if buildfile:
+            self.buildfile = os.path.join(self.dir, buildfile)
         self.docfiles = []
         for doc in _DOC_FILES:
             self.docfiles.append(os.path.join(self.dir, doc))

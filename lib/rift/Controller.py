@@ -303,7 +303,9 @@ def action_check(args, config):
         if args.file is None:
             raise RiftError("You must specifiy a file path (-f)")
 
-        pkg = ProjectPackages.get('dummy', config, staff, modules)
+        # If the package supports multiple format, check only the first as
+        # the info file is the name for all formats.
+        pkg = ProjectPackages.get('dummy', config, staff, modules)[0]
         pkg.sourcesdir = '/'
         pkg._load_info(args.file)
         logging.info('Info file is OK.')
@@ -708,7 +710,7 @@ def action_validdiff(args, config):
     # Re-validate all updated packages for all architectures supported by the
     # project.
     for arch in config.get('arch'):
-        validate_pkgs(config, args, results, updated.values(), arch)
+        validate_pkgs(config, args, results, updated, arch)
 
 
     if getattr(args, 'junit', False):
@@ -728,7 +730,7 @@ def action_validdiff(args, config):
     # Remove from working repository packages detected as removed in patch for
     # all architectures supported by the project.
     for arch in config.get('arch'):
-        remove_packages(config, args, removed.values(), arch)
+        remove_packages(config, args, removed, arch)
 
     return rc
 
@@ -819,28 +821,30 @@ def action_create_import(args, config):
     if args.maintainer is None:
         raise RiftError("You must specify a maintainer")
 
-    pkg = ProjectPackages.get(pkgname, config, *staff_modules(config))
-    if args.command == 'reimport':
-        pkg.load()
+    pkgs = ProjectPackages.get(pkgname, config, *staff_modules(config))
 
-    if args.module:
-        pkg.module = args.module
-    if args.maintainer not in pkg.maintainers:
-        pkg.maintainers.append(args.maintainer)
-    if args.reason:
-        pkg.reason = args.reason
-    if args.origin:
-        pkg.origin = args.origin
+    for pkg in pkgs:
+        if args.command == 'reimport':
+            pkg.load()
 
-    pkg.check_info()
-    pkg.write()
+        if args.module:
+            pkg.module = args.module
+        if args.maintainer not in pkg.maintainers:
+            pkg.maintainers.append(args.maintainer)
+        if args.reason:
+            pkg.reason = args.reason
+        if args.origin:
+            pkg.origin = args.origin
 
-    if args.command in ('create', 'import'):
-        message(f"Package '{pkg.name}' has been created")
+        pkg.check_info()
+        pkg.write()
 
-    if args.command in ('import', 'reimport'):
-        rpm.extract_srpm(pkg.dir, pkg.sourcesdir)
-        message(f"Package '{pkg.name}' has been {args.command}ed")
+        if args.command in ('create', 'import'):
+            message(f"Package '{pkg.name}' has been created")
+
+        if args.command in ('import', 'reimport'):
+            rpm.extract_srpm(pkg.dir, pkg.sourcesdir)
+            message(f"Package '{pkg.name}' has been {args.command}ed")
 
     return 0
 
@@ -899,13 +903,21 @@ def action_changelog(args, config):
     if args.maintainer is None:
         raise RiftError("You must specify a maintainer")
 
-    pkg = ProjectPackages.get(args.package, config, staff, modules)
-    pkg.load()
-    try:
-        pkg.add_changelog_entry(args.maintainer, args.comment, args.bump)
-    except NotImplemented:
-        logging.info("Skipping package format %s which does not support "
-                        "changelog", pkg.format)
+    pkgs = ProjectPackages.get(args.package, config, staff, modules)
+    package_found = False
+    for pkg in pkgs:
+        pkg.load()
+        try:
+            pkg.add_changelog_entry(args.maintainer, args.comment, args.bump)
+            package_found = True
+        except NotImplementedError:
+            logging.info("Skipping package format %s which does not support "
+                         "changelog", pkg.format)
+
+    if not package_found:
+        logging.error("Unable to find package %s with changelog to update",
+                      args.package)
+        return 1
 
     return 0
 

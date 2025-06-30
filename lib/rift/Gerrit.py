@@ -59,7 +59,7 @@ class Review():
         self.stats.setdefault(label, 0)
         self.stats[label] += 1
 
-        msg = "(%s) %s" % (self.labels[label], message)
+        msg = f"({self.labels[label]}) {message}"
         comment = {
             'message': msg,
         }
@@ -70,8 +70,8 @@ class Review():
     def _message(self):
         stats = ((cnt, self.labels[code])
                  for code, cnt in list(self.stats.items()))
-        msg = ", ".join("%d %s(s)" % (cnt, label) for cnt, label in stats)
-        return "%s: %s" % (self.msg_header, msg)
+        msg = ", ".join(f"{cnt} {label}(s)" for cnt, label in stats)
+        return f"{self.msg_header}: {msg}"
 
     def invalidate(self):
         """Review is considered as invalide, checked commit is not approved"""
@@ -95,10 +95,10 @@ class Review():
         if password is None:
             raise RiftError("Gerrit password is not defined")
         if auth_method not in auth_methods:
-            raise RiftError("Gerrit auth_method is not correct (supported %s)" % auth_methods)
+            raise RiftError(f"Gerrit auth_method is not correct (supported {auth_methods})")
 
         # Set a default url if only gerrit_server was defined
-        url = config.get('gerrit_url', 'https://{}'.format(server))
+        url = config.get('gerrit_url', f"https://{server}")
 
         # FIXME: Don't check certificate
         ctx = ssl.create_default_context()
@@ -107,8 +107,7 @@ class Review():
         #https_sslv3_handler = urllib.HTTPSHandler(context=ssl.SSLContext(ssl.PROTOCOL_SSLv3))
         https_sslv3_handler = urllib.HTTPSHandler(context=ctx)
 
-        api_url = "%s/gerrit/a/changes/%s/revisions/%s/review" % \
-                                                      (url, changeid, revid)
+        api_url = f"{url}/gerrit/a/changes/{changeid}/revisions/{revid}/review"
         if auth_method == 'digest':
             authhandler = urllib.HTTPDigestAuthHandler()
             authhandler.add_password(realm, server, username, password)

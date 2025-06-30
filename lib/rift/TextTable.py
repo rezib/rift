@@ -131,7 +131,7 @@ class TextTable():
                 value = getter(key) or ""
             except KeyError as ex:
                 if self.ignore_bad_keys:
-                    value = "%%%s" % key
+                    value = f"%{key}"
                     length = len(value)
                 elif len(self) == 0:
                     value = key
@@ -146,10 +146,10 @@ class TextTable():
             # If the value is too long, cut it
             if len(value) > length:
                 length = max(4, length)
-                value = "%s..." % value[:length - 3]
+                value = f"{value[:length - 3]}..."
             if matchobj.group(1):
-                return "%*s" % (length, value)
-            return "%-*s" % (length, value)
+                return f"{value:>{length}}"
+            return f"{value:{length}}"
 
         replacement = re.sub(self.RE_PATTERN, replacer, self.fmt)
 
@@ -160,9 +160,9 @@ class TextTable():
         headline = self._str_common(self._header).upper().rstrip()
         underline = re.sub("[^ ]", '-', headline)
         if self.color:
-            headline = "%s%s%s" % (COLORS['header'], headline, COLORS['stop'])
+            headline = f"{COLORS['header']}{headline}{COLORS['stop']}"
         if underline:
-            headline = "%s\n%s" % (headline, underline)
+            headline = f"{headline}\n{underline}"
         return headline
 
     def _str_row(self, row):
@@ -172,12 +172,12 @@ class TextTable():
     def _str_title(self):
         """Build a title string"""
         width = len(self._str_common(self._header).rstrip())
-        title = " %s " % self.title
+        title = f" {self.title} "
         right = max((width - len(title)) / 2, 1)
         left = max(width - len(title) - right, 1)
         if self.color:
-            title = "%s%s%s" % (COLORS['header'], title, COLORS['stop'])
-        title = "%s%s%s" % ('=' * left, title, '=' * right)
+            title = f"{COLORS['header']}{title}{COLORS['stop']}"
+        title = f"{'=' * left}{title}{'=' * right}"
         return title
 
     def __str__(self):

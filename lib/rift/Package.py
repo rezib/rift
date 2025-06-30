@@ -77,7 +77,7 @@ class Package():
         self.sourcesdir = os.path.join(self.dir, _SOURCES_DIR)
         self.testsdir = os.path.join(self.dir, _TESTS_DIR)
         self.metafile = os.path.join(self.dir, _META_FILE)
-        self.specfile = os.path.join(self.dir, '%s.spec' % self.name)
+        self.specfile = os.path.join(self.dir, f"{self.name}.spec")
         self.docfiles = []
         for doc in _DOC_FILES:
             self.docfiles.append(os.path.join(self.dir, doc))
@@ -96,13 +96,13 @@ class Package():
             raise RiftError("Maintainers are missing")
         for maintainer in self.maintainers:
             if maintainer not in self._staff:
-                raise RiftError("Maintainer '%s' is not defined" % maintainer)
+                raise RiftError(f"Maintainer '{maintainer}' is not defined")
 
         # Check module
         if not self.module:
             raise RiftError("Module is missing")
         if self.module not in self._modules:
-            raise RiftError("Module '%s' is not defined" % self.module)
+            raise RiftError(f"Module '{self.module}' is not defined")
 
         # Check reason
         if self.reason is None:
@@ -141,7 +141,7 @@ class Package():
 
         if infopath is None:
             if not os.path.exists(self.dir):
-                msg = "Package '%s' directory does not exist" % self.name
+                msg = f"Package '{self.name}' directory does not exist"
                 raise RiftError(msg)
             infopath = self.metafile
 

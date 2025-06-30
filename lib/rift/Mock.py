@@ -62,9 +62,9 @@ class Mock():
         self._config = config
         self._arch = arch
         self._tmpdir = None
-        self._mockname = 'rift-%s-%s' % (self._arch, getpass.getuser())
+        self._mockname = f"rift-{self._arch}-{getpass.getuser()}"
         if proj_vers:
-            self._mockname = '%s-%s' % (self._mockname, proj_vers)
+            self._mockname = f"{self._mockname}-{proj_vers}"
         logging.debug(self._mockname)
 
     def _build_template_ctx(self, repolist):
@@ -76,7 +76,7 @@ class Mock():
             assert repo.url is not None
             prio = repo.priority or (prio - 1)
             repo_ctx = {
-                'name': repo.name or 'repo%s' % idx,
+                'name': repo.name or f"repo{idx}",
                 'priority': prio,
                 'url': repo.generic_url(self._arch),
                 }
@@ -136,8 +136,8 @@ class Mock():
     def _mock_base(self):
         """Return base argument to launch mock"""
         if logging.getLogger().isEnabledFor(logging.INFO):
-            return ['mock', '--configdir=%s' % self._tmpdir.path]
-        return ['mock', '-q', '--configdir=%s' % self._tmpdir.path]
+            return ['mock', f"--configdir={self._tmpdir.path}"]
+        return ['mock', '-q', f"--configdir={self._tmpdir.path}"]
 
     def _exec(self, cmd):
         """

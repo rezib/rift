@@ -102,13 +102,13 @@ def gen_virtiofs_args(socket_path, directory, qemu=False, virtiofsd=_DEFAULT_VIR
     the correct arguments for the two versions.
     """
     if qemu:
-        return ['sudo', '%s' % virtiofsd,
-                '--socket-path=%s' % socket_path,
-                '-o', 'source=%s' % directory,
+        return ['sudo', virtiofsd,
+                f"--socket-path={socket_path}",
+                '-o', f"source={directory}",
                 '-o', 'cache=auto', '--syslog', '--daemonize']
-    return ['%s' % virtiofsd,
-            '--socket-path', '%s' % socket_path,
-            '--sandbox=none', '--shared-dir', '%s' % directory,
+    return [virtiofsd,
+            '--socket-path', socket_path,
+            '--sandbox=none', '--shared-dir', directory,
             '--cache', 'auto']
 
 class VM():
@@ -150,8 +150,7 @@ class VM():
         self.virtiofsd = config.get('virtiofsd', _DEFAULT_VIRTIOFSD)
         self.shared_fs_type = config.get('shared_fs_type', '9p')
         if self.shared_fs_type not in self.SUPPORTED_FS:
-            raise RiftError('{} not supported to share filesystems'.format(
-                self.shared_fs_type))
+            raise RiftError(f"{self.shared_fs_type} not supported to share filesystems")
         ##
 
 
@@ -160,7 +159,7 @@ class VM():
         self._vm = None
         self._helpers = []
         self._tmpimg = None
-        self.consolesock = '/tmp/rift-vm-console-{0}.sock'.format(self.vmid)
+        self.consolesock = f"/tmp/rift-vm-console-{self.vmid}.sock"
         self.proxy = config.get('proxy')
         self.no_proxy = config.get('no_proxy')
         self.additional_rpms = config.get('vm_additional_rpms')
@@ -208,12 +207,12 @@ class VM():
         if self.copymode:
             # Copy qcow image for VM, based on temp file
             cmd = ['dd', 'status=progress', 'conv=sparse', 'bs=1M']
-            cmd += ['if=%s' % os.path.realpath(self._image)]
-            cmd += ['of=%s' % self._tmpimg.name]
+            cmd += [f"if={os.path.realpath(self._image)}"]
+            cmd += [f"of={self._tmpimg.name}"]
         else:
             # Create qcow image for VM, based on temp file
             cmd = ['qemu-img', 'create', '-f', 'qcow2', '-F', 'qcow2']
-            cmd += ['-o', 'backing_file=%s' % os.path.realpath(self._image)]
+            cmd += ['-o', f"backing_file={os.path.realpath(self._image)}"]
             cmd += [self._tmpimg.name]
 
         logging.debug("Creating VM image file: %s", ' '.join(cmd))
@@ -226,8 +225,8 @@ class VM():
         cmd = []
         helper_cmd = []
         if self.shared_fs_type == '9p':
-            cmd += ['-virtfs', 'local,id=project,path=%s,mount_tag=project,'
-                    'security_model=none' % self._project_dir]
+            cmd += ['-virtfs', f"local,id=project,path={self._project_dir},"
+                    'mount_tag=project,security_model=none']
             for repo in self._repos:
                 if repo.is_file():
                     if not repo.exists():
@@ -236,8 +235,8 @@ class VM():
                             "start VM"
                         )
                     cmd += ['-virtfs',
-                            'local,id=%s,path=%s,mount_tag=%s,security_model=none' %
-                            (repo.name, repo.path, repo.name)]
+                            f"local,id={repo.name},path={repo.path},"
+                            f"mount_tag={repo.name},security_model=none"]
         elif self.shared_fs_type == 'virtiofs':
             # Add a shared memory object to allow virtiofsd shares
             cmd += ['-object',
@@ -267,12 +266,13 @@ class VM():
                             f"Repository {repo.path} does not exist, unable to "
                             "start VM"
                         )
-                    cmd += ['-chardev', 'socket,id=%s,path=/tmp/.virtio_fs_%s' % ((repo.name,) * 2),
-                            '-device', 'vhost-user-fs-pci,queue-size=1024,chardev=%s,tag=%s'
-                            % ((repo.name,) * 2)]
+                    cmd += ['-chardev',
+                            f"socket,id={repo.name},path=/tmp/.virtio_fs_{repo.name}",
+                            '-device',
+                            f"vhost-user-fs-pci,queue-size=1024,chardev={repo.name},tag={repo.name}"]
                     helper_cmd.append(
                         gen_virtiofs_args(
-                            socket_path='/tmp/.virtio_fs_%s' % repo.name,
+                            socket_path=f"/tmp/.virtio_fs_{repo.name}",
                             directory=repo.path,
                             qemu=qemu_version,
                             virtiofsd=self.virtiofsd
@@ -289,7 +289,7 @@ class VM():
             sockets = ['/tmp/.virtio_fs_project']
             for repo in self._repos:
                 if repo.is_file():
-                    sockets.append('/tmp/.virtio_fs_%s' % (repo.name))
+                    sockets.append(f"/tmp/.virtio_fs_{repo.name}")
             Popen(['sudo', '/bin/chmod', '777'] + sockets).wait()
 
     def _gen_qemu_args(self, image_file, seed):
@@ -318,12 +318,11 @@ class VM():
 
         # Drive
         # TODO: switch to --device syntax
-        cmd += ['-drive', 'file=%s,if=virtio,format=qcow2,cache=unsafe'
-                % image_file]
+        cmd += ['-drive', f"file={image_file},if=virtio,format=qcow2,cache=unsafe"]
 
         # Console
-        cmd += ['-chardev', 'socket,id=charserial0,path=%s,server=on,wait=off'
-                % (self.consolesock)]
+        cmd += ['-chardev', f"socket,id=charserial0,path={self.consolesock},"
+                "server=on,wait=off"]
         # aarch64 platform need specific serial configuration
         if self.arch == 'aarch64':
             cmd += ['-device', 'virtio-serial,id=ser0,max_ports=8']
@@ -333,8 +332,8 @@ class VM():
 
 
         # NIC
-        cmd += ['-netdev', 'user,id=hostnet0,hostname=%s,hostfwd=tcp::%d-:22'
-                % (self.NAME, self.port)]
+        cmd += ['-netdev', f"user,id=hostnet0,hostname={self.NAME},"
+                f"hostfwd=tcp::{self.port}-:22"]
         # aarch64 platform don't support PCI
         if self.arch == 'aarch64':
             cmd += ['-device', 'virtio-net-device,netdev=hostnet0']
@@ -386,7 +385,7 @@ class VM():
         # Be sure current user/group exists in VM
         userline = ':'.join([str(item) for item in pwd.getpwuid(os.getuid())])
         (g_name, g_passwd, g_gid, g_mem) = grp.getgrgid(os.getgid())
-        groupline = '%s:%s:%s:%s' % (g_name, g_passwd, g_gid, ','.join(g_mem))
+        groupline = f"{g_name}:{g_passwd}:{g_gid}:{','.join(g_mem)}"
 
         if self.shared_fs_type == '9p':
             options = 'trans=virtio,version=9p2000.L,msize=131096'
@@ -396,50 +395,59 @@ class VM():
             #options = 'defaults'
         # Build shared mount point info.
         mkdirs = [self._PROJ_MOUNTPOINT]
-        fstab = ['project %s %s %s,ro 0 0' % (self._PROJ_MOUNTPOINT, self.shared_fs_type, options)]
+        fstab = [f"project {self._PROJ_MOUNTPOINT} {self.shared_fs_type} {options},ro 0 0"]
         repos = []
         prio = 1000
         for repo in self._repos:
             if repo.is_file():
-                mkdirs.append('/rift.%s' % repo.name)
-                fstab.append('%s /rift.%s %s %s 0 0' %
-                             (repo.name, repo.name, self.shared_fs_type, options))
-                url = 'file:///rift.%s/' % repo.name
+                mkdirs.append(f"/rift.{repo.name}")
+                fstab.append(f"{repo.name} /rift.{repo.name} {self.shared_fs_type} "
+                             "{options} 0 0")
+                url = f"file:///rift.{repo.name}/"
             else:
                 url = repo.url
             prio = repo.priority or (prio - 1)
-            repos.append(textwrap.dedent("""\
-                [%s]
-                name=%s
-                baseurl=%s
+            repos.append(textwrap.dedent(f"""\
+                [{repo.name}]
+                name={repo.name}
+                baseurl={url}
                 gpgcheck=0
-                priority=%s
-                """) % (repo.name, repo.name, url, prio))
+                priority={prio}
+                """))
             if repo.excludepkgs:
-                repos.append("excludepkgs={}\n".format(repo.excludepkgs))
+                repos.append(f"excludepkgs={repo.excludepkgs}\n")
             if repo.module_hotfixes:
-                repos.append("module_hotfixes={}\n".format(repo.module_hotfixes))
+                repos.append(f"module_hotfixes={repo.module_hotfixes}\n")
             if repo.proxy:
-                repos.append("proxy={}\n".format(repo.proxy))
+                repos.append(f"proxy={repo.proxy}\n")
 
         # Build the full command line
-        cmd = textwrap.dedent("""\
+
+        def joinl(items):
+            """
+            Join list of strings with new line character. This inner function is
+            used as a workaround for f-string limitation which lack support of
+            new line character.
+            """
+            return "\n".join(items)
+
+        cmd = textwrap.dedent(f"""
             # Static host resolution
-            echo '%s %s'  >> /etc/hosts
+            echo '{self.address} {self.NAME}'  >> /etc/hosts
 
-            echo '%s' >> /etc/passwd
-            echo '%s' >> /etc/group
+            echo '{userline}' >> /etc/passwd
+            echo '{groupline}' >> /etc/group
 
-            mkdir %s
+            mkdir {' '.join(mkdirs)}
             cat <<__EOF__ >>/etc/fstab
-            %s
+            {joinl(fstab)}
             __EOF__
-            mount -t %s -a
+            mount -t {self.shared_fs_type} -a
 
             /bin/rm -f /etc/yum.repos.d/*.repo
 
             cat <<__EOC__ >/etc/yum.repos.d/rift.repo
-            %s
+            {joinl(repos)}
             __EOC__
 
             if [ -x /usr/bin/dnf ] ; then
@@ -448,9 +456,7 @@ class VM():
                 yum -d1 makecache fast
             fi
 
-            """) % (self.address, self.NAME, userline, groupline,
-                    ' '.join(mkdirs), "\n".join(fstab),
-                    self.shared_fs_type, "\n".join(repos))
+            """)
         self.cmd(cmd)
 
     def cmd(self, command=None, options=('-T',), stderr=None, stdin=None):
@@ -524,7 +530,7 @@ class VM():
             if console_socket in rdy[0]:
                 msg_len = console_socket.recv_into(output, 32)
                 # Write to bytes array converted into strings
-                sys.stdout.write(''.join(['%c' % m for m in output[:msg_len]]))
+                sys.stdout.write(''.join([f"{m:c}" for m in output[:msg_len]]))
                 sys.stdout.flush()
 
         # Restore terminal now to let user interrupt the wait if needed
@@ -540,9 +546,10 @@ class VM():
         VM.
         """
         funcs = {}
-        funcs['vm_cmd'] = 'ssh %s -T -p %d root@127.0.0.1 "$@"' \
-                 % ('-oUserKnownHostsFile=/dev/null -oStrictHostKeyChecking=no '
-                    '-oLogLevel=ERROR', self.port)
+        funcs['vm_cmd'] = (
+            "ssh -oUserKnownHostsFile=/dev/null -oStrictHostKeyChecking=no "
+            f"-oLogLevel=ERROR -T -p {self.port} root@127.0.0.1 \"$@\""
+        )
         funcs['vm_wait'] = textwrap.dedent("""\
             rc=1
             for i in {1..7}
@@ -561,12 +568,12 @@ class VM():
                 testcmd = test.command[len(self._project_dir) + 1:]
             else:
                 testcmd = test.command
-            cmd = "cd %s; %s" % (self._PROJ_MOUNTPOINT, testcmd)
+            cmd = f"cd {self._PROJ_MOUNTPOINT}; {testcmd}"
             return self.cmd(cmd)
 
         cmd = ''
         for func, code in funcs.items():
-            cmd += '%s() { %s;}; export -f %s; ' % (func, code, func)
+            cmd += f"{func}() {{ {code}; }}; export -f {func}; "
         cmd += shlex.quote(test.command)
 
         logging.debug("Running command outside VM: %s", cmd)
@@ -591,8 +598,7 @@ class VM():
         for _ in range(1, 5):
             # Check if Qemu process is really running
             if self._vm.poll() is not None:
-                raise RiftError("Unable to get VM running {}".format(
-                    self._vm.stderr.read().decode()))
+                raise RiftError(f"Unable to get VM running {self._vm.stderr.read().decode()}")
             time.sleep(sleeping_time)
             if self.running():
                 return True
@@ -650,7 +656,7 @@ class VM():
         """
         logging.info("Restarting VM")
         if not self.running():
-            raise RiftError(f"Unable to restart unreachable VM")
+            raise RiftError("Unable to restart unreachable VM")
         self.cmd("reboot")
         time.sleep(5)  # let 5 seconds for the VM to stop properly
         # wait for the VM to restart or fail after timeout

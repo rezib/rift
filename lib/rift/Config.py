@@ -409,7 +409,7 @@ class Config():
             except IOError as exp:
                 if exp.errno == errno.ENOENT:
                     if not self.ALLOW_MISSING:
-                        raise DeclError("Could not find '%s'" % filepath)
+                        raise DeclError(f"Could not find '{filepath}'")
                 else:
                     raise DeclError(str(exp))
 
@@ -438,7 +438,7 @@ class Config():
 
         # Check key is known.
         if key not in self.SYNTAX:
-            raise DeclError("Unknown '%s' key" % key)
+            raise DeclError(f"Unknown '{key}' key")
 
         options = self._arch_options(arch)
         value = self._key_value(
@@ -595,7 +595,7 @@ class Config():
                             for arch in self.get('arch')
                         ])
                     ):
-                    raise DeclError("'%s' is not defined" % key)
+                    raise DeclError(f"'{key}' is not defined")
 
 
 class Staff():
@@ -641,15 +641,14 @@ class Staff():
             self._check()
 
         except AttributeError as exp:
-            raise DeclError("Bad data format in %s file" % self.DATA_NAME)
+            raise DeclError(f"Bad data format in {self.DATA_NAME} file")
         except KeyError as exp:
-            raise DeclError("Missing %s at top level in %s file" %
-                            (exp, self.DATA_NAME))
+            raise DeclError(f"Missing {exp} at top level in {self.DATA_NAME} file")
         except yaml.error.YAMLError as exp:
             raise DeclError(str(exp))
         except IOError as exp:
             if exp.errno == errno.ENOENT:
-                raise DeclError("Could not find '%s'" % filepath)
+                raise DeclError(f"Could not find '{filepath}'")
             raise DeclError(str(exp))
 
     def _check(self):
@@ -662,14 +661,14 @@ class Staff():
             # Missing elements
             missing = set(self.ITEMS_KEYS) - set(data.keys())
             if missing:
-                items = ', '.join(["'%s'" % item for item in missing])
-                raise DeclError("Missing %s item(s) for %s" % (items, people))
+                items = ', '.join([f"'{item}'" for item in missing])
+                raise DeclError(f"Missing {items} item(s) for {people}")
 
             # Unnecessary elements
             not_needed = set(data.keys()) - set(self.ITEMS_KEYS)
             if not_needed:
-                items = ', '.join(sorted(["'%s'" % item for item in not_needed]))
-                raise DeclError("Unknown %s item(s) for %s" % (items, people))
+                items = ', '.join(sorted([f"'{item}'" for item in not_needed]))
+                raise DeclError(f"Unknown {items} item(s) for {people}")
 
 
 class Modules(Staff):
@@ -702,5 +701,5 @@ class Modules(Staff):
                 module['manager'] = [module['manager']]
             for mngr in module['manager']:
                 if mngr not in self.staff:
-                    msg = "Manager '%s' does not exist in staff list" % mngr
+                    msg = f"Manager '{mngr}' does not exist in staff list"
                     raise DeclError(msg)

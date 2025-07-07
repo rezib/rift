@@ -57,7 +57,7 @@ _INFOSUFFIX = '.info'
 
 def get_digest_from_path(path):
     """Get file id from the givent path"""
-    return open(path).read()
+    return open(path, encoding='utf-8').read()
 
 
 def get_info_from_digest(digest):
@@ -124,7 +124,7 @@ class Annex():
         """
         meta = os.stat(filepath)
         if meta.st_size == 32:
-            with open(filepath) as fh:
+            with open(filepath, encoding='utf-8') as fh:
                 identifier = fh.read(32)
             return all(byte in string.hexdigits for byte in identifier)
         return False
@@ -205,7 +205,7 @@ class Annex():
         metadata = {}
         # Read current metadata if present
         if os.path.exists(metapath):
-            with open(metapath) as fyaml:
+            with open(metapath, encoding='utf-8') as fyaml:
                 metadata = yaml.load(fyaml, Loader=OrderedLoader) or {}
                 # Protect against empty file
         return metadata
@@ -213,7 +213,7 @@ class Annex():
     def _save_metadata(self, digest, metadata):
         """Write metadata file for specified digest and data."""
         metapath = os.path.join(self.path, get_info_from_digest(digest))
-        with open(metapath, 'w') as fyaml:
+        with open(metapath, 'w', encoding='utf-8') as fyaml:
             yaml.dump(metadata, fyaml, default_flow_style=False)
         os.chmod(metapath, self.WMODE)
 
@@ -274,7 +274,7 @@ class Annex():
         os.chmod(filepath, self.RMODE)
 
         # Create fake pointer file
-        with open(filepath, 'w') as fakefile:
+        with open(filepath, 'w', encoding='utf-8') as fakefile:
             fakefile.write(digest)
 
 

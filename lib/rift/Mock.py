@@ -94,10 +94,10 @@ class Mock():
         """Create 'default.cfg' config file based on a template."""
         # Read template
         tplfile = self._config.project_path(self.MOCK_TEMPLATE)
-        with open(tplfile) as fh:
+        with open(tplfile, encoding='utf-8') as fh:
             tpl = Template(fh.read())
         # Write file content
-        with open(dstpath, 'w') as fmock:
+        with open(dstpath, 'w', encoding='utf-8') as fmock:
             fmock.write(tpl.render(self._build_template_ctx(repolist)))
         # We have to keep template timestamp to avoid being detected as a new
         # one each time.

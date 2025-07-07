@@ -287,7 +287,7 @@ class Spec():
         self.dist = rpm.expandMacro('%dist')
         self.update_evr()
 
-        with open(self.filepath, 'r') as fspec:
+        with open(self.filepath, 'r', encoding='utf-8') as fspec:
             self.lines = fspec.readlines()
 
         self._parse_vars()
@@ -395,7 +395,7 @@ class Spec():
             self.lines.append("%changelog\n")
             self.lines.append(newchangelogentry)
 
-        with open(self.filepath, 'w') as fspec:
+        with open(self.filepath, 'w', encoding='utf-8') as fspec:
             fspec.writelines(self.lines)
 
         # Reload

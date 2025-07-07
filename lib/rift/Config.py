@@ -590,10 +590,10 @@ class Config():
                 # specific options.
                 if (
                         key not in self.options and
-                        not all([
+                        not all(
                             arch in self.options and key in self.options[arch]
                             for arch in self.get('arch')
-                        ])
+                        )
                     ):
                     raise DeclError(f"'{key}' is not defined")
 

@@ -1329,7 +1329,7 @@ def main(args=None):
     args = make_parser().parse_args(args)
 
     logging.basicConfig(format="%(levelname)-8s %(message)s",
-                        level=(logging.WARNING - args.verbose * 10))
+                        level=logging.WARNING - args.verbose * 10)
 
     try:
         # Load configuration

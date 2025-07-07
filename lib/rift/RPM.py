@@ -262,7 +262,7 @@ class Spec():
             self._set_macros()
             spec = rpm.TransactionSet().parseSpec(self.filepath)
         except ValueError as exp:
-            raise RiftError(f"{self.filepath}: {exp}")
+            raise RiftError(f"{self.filepath}: {exp}") from exp
         self.pkgnames = [_header_values(pkg.header['name']) for pkg in spec.packages]
         hdr = spec.sourceHeader
         self.srpmname = hdr.sprintf('%{NAME}-%{VERSION}-%{RELEASE}.src.rpm')

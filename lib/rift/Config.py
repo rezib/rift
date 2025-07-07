@@ -405,13 +405,13 @@ class Config():
                     self.update(data)
 
             except yaml.error.YAMLError as exp:
-                raise DeclError(str(exp))
+                raise DeclError(str(exp)) from exp
             except IOError as exp:
                 if exp.errno == errno.ENOENT:
                     if not self.ALLOW_MISSING:
-                        raise DeclError(f"Could not find '{filepath}'")
+                        raise DeclError(f"Could not find '{filepath}'") from exp
                 else:
-                    raise DeclError(str(exp))
+                    raise DeclError(str(exp)) from exp
 
         self._check()
 
@@ -641,15 +641,15 @@ class Staff():
             self._check()
 
         except AttributeError as exp:
-            raise DeclError(f"Bad data format in {self.DATA_NAME} file")
+            raise DeclError(f"Bad data format in {self.DATA_NAME} file") from exp
         except KeyError as exp:
-            raise DeclError(f"Missing {exp} at top level in {self.DATA_NAME} file")
+            raise DeclError(f"Missing {exp} at top level in {self.DATA_NAME} file") from exp
         except yaml.error.YAMLError as exp:
-            raise DeclError(str(exp))
+            raise DeclError(str(exp)) from exp
         except IOError as exp:
             if exp.errno == errno.ENOENT:
-                raise DeclError(f"Could not find '{filepath}'")
-            raise DeclError(str(exp))
+                raise DeclError(f"Could not find '{filepath}'") from exp
+            raise DeclError(str(exp)) from exp
 
     def _check(self):
         """

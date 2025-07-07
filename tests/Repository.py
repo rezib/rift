@@ -88,7 +88,7 @@ class LocalRepositoryTest(RiftTestCase):
     def test_create(self, mock_popen):
         """ Test LocalRepository create """
         # Emulate successful createrepo execution
-        mock_popen.return_value.returncode = 0
+        mock_popen.return_value.__enter__.return_value.returncode = 0
         arch = 'x86_64'
         _config = { 'arch': [arch] }
         repo_name = 'nowhere'
@@ -103,8 +103,8 @@ class LocalRepositoryTest(RiftTestCase):
     def test_create_failure(self, mock_popen):
         """ Test LocalRepository create failure """
         # Emulate createrepo execution failure
-        mock_popen.return_value.returncode = 1
-        mock_popen.return_value.communicate.return_value = ["output"]
+        mock_popen.return_value.__enter__.return_value.returncode = 1
+        mock_popen.return_value.__enter__.return_value.communicate.return_value = ["output"]
         arch = 'x86_64'
         _config = { 'arch': [arch] }
         repo_name = 'nowhere'
@@ -118,7 +118,7 @@ class LocalRepositoryTest(RiftTestCase):
     def test_update(self, mock_popen):
         """ Test LocalRepository update """
         # Emulate successful createrepo execution
-        mock_popen.return_value.returncode = 0
+        mock_popen.return_value.__enter__.return_value.returncode = 0
         arch = 'x86_64'
         _config = { 'arch': [arch] }
         repo_name = 'nowhere'
@@ -138,15 +138,15 @@ class LocalRepositoryTest(RiftTestCase):
     def test_update_failure(self, mock_popen):
         """ Test LocalRepository update failure """
         # Emulate createrepo execution failure
-        mock_popen.return_value.returncode = 0
+        mock_popen.return_value.__enter__.return_value.returncode = 0
         arch = 'x86_64'
         _config = { 'arch': [arch] }
         repo_name = 'nowhere'
         local_repo_path = make_temp_dir()
         repo = LocalRepository(local_repo_path, _config)
         repo.create()
-        mock_popen.return_value.returncode = 1
-        mock_popen.return_value.communicate.return_value = ["output"]
+        mock_popen.return_value.__enter__.return_value.returncode = 1
+        mock_popen.return_value.__enter__.return_value.communicate.return_value = ["output"]
         with self.assertRaisesRegex(RiftError, '^output$'):
             repo.update()
         shutil.rmtree(local_repo_path)

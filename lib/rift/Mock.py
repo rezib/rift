@@ -94,7 +94,8 @@ class Mock():
         """Create 'default.cfg' config file based on a template."""
         # Read template
         tplfile = self._config.project_path(self.MOCK_TEMPLATE)
-        tpl = Template(open(tplfile).read())
+        with open(tplfile) as fh:
+            tpl = Template(fh.read())
         # Write file content
         with open(dstpath, 'w') as fmock:
             fmock.write(tpl.render(self._build_template_ctx(repolist)))
@@ -146,10 +147,10 @@ class Mock():
         """
         cmd = self._mock_base() + cmd
         logging.debug('Running mock: %s', ' '.join(cmd))
-        popen = Popen(cmd, stdout=PIPE, cwd='/', universal_newlines=True)
-        stdout = popen.communicate()[0]
-        if popen.returncode != 0:
-            raise RiftError(stdout)
+        with Popen(cmd, stdout=PIPE, cwd='/', universal_newlines=True) as popen:
+            stdout = popen.communicate()[0]
+            if popen.returncode != 0:
+                raise RiftError(stdout)
 
     def init(self, repolist):
         """

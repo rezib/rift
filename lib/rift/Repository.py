@@ -151,15 +151,15 @@ class LocalRepository:
         architectures RPMS repositories.
         """
         def run_update(path):
-            popen = Popen(
+            with Popen(
                 [self.createrepo, '-q', '--update', path],
                 stdout=PIPE,
                 stderr=STDOUT,
                 universal_newlines=True,
-            )
-            stdout = popen.communicate()[0]
-            if popen.returncode != 0:
-                raise RiftError(stdout)
+            ) as popen:
+                stdout = popen.communicate()[0]
+                if popen.returncode != 0:
+                    raise RiftError(stdout)
 
         run_update(self.srpms_dir)
         for arch in self.config.get('arch'):

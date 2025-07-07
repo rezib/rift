@@ -124,7 +124,8 @@ class Annex():
         """
         meta = os.stat(filepath)
         if meta.st_size == 32:
-            identifier = open(filepath).read(32)
+            with open(filepath) as fh:
+                identifier = fh.read(32)
             return all(byte in string.hexdigits for byte in identifier)
         return False
 

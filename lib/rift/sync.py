@@ -295,22 +295,19 @@ class RepoSyncEpel(RepoSyncIndexed):
     def _run(self):
         """Run EPEL repository synchronization."""
         # Download EPEL files index in temporary file
-        tmp_file = tempfile.NamedTemporaryFile(
+        with tempfile.NamedTemporaryFile(
             mode='r', prefix='rift-epel-filelist-'
-        )
-        filelist_url = f"{self.pub_url}/fullfiletimelist-epel"
-        logging.debug("Downloading EPEL files index %s", filelist_url)
-        download_file(filelist_url, tmp_file.name)
+        ) as tmp_file:
+            filelist_url = f"{self.pub_url}/fullfiletimelist-epel"
+            logging.debug("Downloading EPEL files index %s", filelist_url)
+            download_file(filelist_url, tmp_file.name)
 
-        # Open synchronization log file
-        logging.debug("Creating synchronization log file %s", self.logfile)
+            # Open synchronization log file
+            logging.debug("Creating synchronization log file %s", self.logfile)
 
-        # Process all lines in index file
-        for line in tmp_file:
-            self._process_line(line.strip())
-
-        # Close and delete temporary file
-        tmp_file.close()
+            # Process all lines in index file
+            for line in tmp_file:
+                self._process_line(line.strip())
 
         # Remove unindexed files and empty dirs
         self._clean_output()

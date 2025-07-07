@@ -133,10 +133,10 @@ class RPM():
         cmd += ['--define', f"_sourcedir {srcdir}"]
         cmd += ['--define', f"_specdir {os.path.realpath(specdir)}"]
         cmd += [self.filepath]
-        popen = Popen(cmd, stdout=PIPE, stderr=STDOUT, universal_newlines=True)
-        stdout = popen.communicate()[0]
-        if popen.returncode != 0:
-            raise RiftError(stdout)
+        with Popen(cmd, stdout=PIPE, stderr=STDOUT, universal_newlines=True) as popen:
+            stdout = popen.communicate()[0]
+            if popen.returncode != 0:
+                raise RiftError(stdout)
 
         # Backup original spec file
         specfile = os.path.join(specdir, f"{self.name}.spec")
@@ -412,10 +412,10 @@ class Spec():
         cmd += ['--define', f"_srcrpmdir {destdir}"]
         cmd += [self.filepath]
 
-        popen = Popen(cmd, stdout=PIPE, stderr=STDOUT, universal_newlines=True)
-        stdout = popen.communicate()[0]
-        if popen.returncode != 0:
-            raise RiftError(stdout)
+        with Popen(cmd, stdout=PIPE, stderr=STDOUT, universal_newlines=True) as popen:
+            stdout = popen.communicate()[0]
+            if popen.returncode != 0:
+                raise RiftError(stdout)
 
         return RPM(os.path.join(destdir, self.srpmname))
 
@@ -464,18 +464,18 @@ class Spec():
                 raise RiftError(msg)
 
         cmd, env = self._check(configdir)
-        popen = Popen(cmd, stderr=PIPE, env=env, universal_newlines=True)
-        stderr = popen.communicate()[1]
-        if popen.returncode != 0:
-            raise RiftError(stderr or 'rpmlint reported errors')
+        with Popen(cmd, stderr=PIPE, env=env, universal_newlines=True) as popen:
+            stderr = popen.communicate()[1]
+            if popen.returncode != 0:
+                raise RiftError(stderr or 'rpmlint reported errors')
 
     def analyze(self, review, configdir=None):
         """Run `rpmlint' for this specfile and fill provided `review'."""
         cmd, env = self._check(configdir)
-        popen = Popen(cmd, stdout=PIPE, stderr=PIPE, env=env, universal_newlines=True)
-        stdout, stderr = popen.communicate()
-        if popen.returncode not in (0, 64, 66):
-            raise RiftError(stderr or f"rpmlint returned {popen.returncode}")
+        with Popen(cmd, stdout=PIPE, stderr=PIPE, env=env, universal_newlines=True) as popen:
+            stdout, stderr = popen.communicate()
+            if popen.returncode not in (0, 64, 66):
+                raise RiftError(stderr or f"rpmlint returned {popen.returncode}")
 
         for line in stdout.splitlines():
             if line.startswith(self.filepath + ':'):

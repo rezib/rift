@@ -731,7 +731,7 @@ class VM():
         )
         # Generate cloud-init meta_data file
         meta_data_file = os.path.join(tmp_seed_dir.path, "meta-data")
-        with open(meta_data_file, 'w') as fh_meta:
+        with open(meta_data_file, 'w', encoding='utf-8') as fh_meta:
             fh_meta.write(
                 f"instance-id: {uuid.uuid4()}\nlocal-hostname: rift\n"
             )
@@ -740,14 +740,14 @@ class VM():
         user_data_file = os.path.join(tmp_seed_dir.path, "user-data")
 
         try:
-            with open(self.cloud_init_tpl) as fh:
+            with open(self.cloud_init_tpl, encoding='utf-8') as fh:
                 tpl = Template(fh.read())
         except FileNotFoundError as err:
             raise RiftError(
                 "Unable to find cloud-init template file "
                 f"{self.cloud_init_tpl}"
             ) from err
-        with open(user_data_file, 'w') as fh_user:
+        with open(user_data_file, 'w', encoding='utf-8') as fh_user:
             fh_user.write(
                 tpl.render(
                     proxy=self.proxy,
@@ -792,7 +792,7 @@ class VM():
             f"RIFT_ADDITIONAL_RPMS={':'.join(rpm_basenames)} "
             f"RIFT_REPOS={':'.join([repo.name for repo in self._repos])}"
         )
-        with open(self.build_post_script) as fh:
+        with open(self.build_post_script, encoding='utf-8') as fh:
             if self.cmd(
                     f"{env_str} bash -",
                     stderr=STDOUT,

@@ -133,7 +133,7 @@ class Package():
         if self.ignore_rpms:
             data['ignore_rpms'] = self.ignore_rpms
 
-        with open(self.metafile, 'w') as fyaml:
+        with open(self.metafile, 'w', encoding='utf-8') as fyaml:
             yaml.dump({'package': data}, fyaml, default_flow_style=False)
 
     def load(self, infopath=None):
@@ -145,7 +145,7 @@ class Package():
                 raise RiftError(msg)
             infopath = self.metafile
 
-        with open(infopath) as fyaml:
+        with open(infopath, encoding='utf-8') as fyaml:
             data = yaml.load(fyaml, Loader=OrderedLoader)
 
         data = data.pop('package') or {}
@@ -244,7 +244,7 @@ class Test():
         Look for special LOCAL PATTERN in file header and flag the file
         accordingly.
         """
-        with open(self.command, 'rt') as ftest:
+        with open(self.command, 'rt', encoding='utf-8') as ftest:
             data = ftest.read(blocksize)
             if self._LOCAL_PATTERN in data:
                 logging.debug("Test '%s' detected as local", self.name)

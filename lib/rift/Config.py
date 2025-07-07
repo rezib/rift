@@ -398,7 +398,7 @@ class Config():
                 if self.project_dir is None:
                     self.find_project_dir(filepath)
 
-                with open(self.project_path(filepath)) as fyaml:
+                with open(self.project_path(filepath), encoding='utf-8') as fyaml:
                     data = yaml.load(fyaml, Loader=OrderedLoader)
 
                 if data:
@@ -633,7 +633,7 @@ class Staff():
             filepath = self.DEFAULT_PATH
 
         try:
-            with open(self._config.project_path(filepath)) as fyaml:
+            with open(self._config.project_path(filepath), encoding='utf-8') as fyaml:
                 data = yaml.load(fyaml, Loader=OrderedLoader)
 
             self._data = data.pop(self.ITEMS_HEADER) or {}

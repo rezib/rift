@@ -95,7 +95,7 @@ class RepoSyncBase:
         raise NotImplementedError
 
     def _log_open(self):
-        self._logfh = open(self.logfile, 'w+')
+        self._logfh = open(self.logfile, 'w+', encoding='utf-8')
 
     def log_write(self, entry):
         """Add entry message in synchronizer log file."""

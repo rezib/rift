@@ -269,7 +269,8 @@ class VM():
                     cmd += ['-chardev',
                             f"socket,id={repo.name},path=/tmp/.virtio_fs_{repo.name}",
                             '-device',
-                            f"vhost-user-fs-pci,queue-size=1024,chardev={repo.name},tag={repo.name}"]
+                            "vhost-user-fs-pci,queue-size=1024,"
+                            f"chardev={repo.name},tag={repo.name}"]
                     helper_cmd.append(
                         gen_virtiofs_args(
                             socket_path=f"/tmp/.virtio_fs_{repo.name}",

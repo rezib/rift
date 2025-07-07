@@ -188,10 +188,10 @@ class VM():
         """
         try:
             assert port_range['max'] > port_range['min']
-        except AssertionError:
+        except AssertionError as exc:
             raise RiftError(
                 "VM port range maximum must be greater than the minimum"
-            )
+            ) from exc
         return (
             int(self.vmid, 16) % (port_range['max'] - port_range['min'])
         ) + port_range['min']

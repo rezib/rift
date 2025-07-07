@@ -407,8 +407,8 @@ class BasicTest(Test):
         try:
             for name in pkg.ignore_rpms:
                 rpmnames.remove(name)
-        except ValueError:
-            raise RiftError(f"'{name}' is not in RPMS list")
+        except ValueError as exc:
+            raise RiftError(f"'{name}' is not in RPMS list") from exc
 
         # Avoid always processing the rpm list in the same order
         random.shuffle(rpmnames)
@@ -920,12 +920,12 @@ def action_sync(args, config):
     if not os.path.exists(output):
         try:
             os.mkdir(output)
-        except FileNotFoundError:
+        except FileNotFoundError as exc:
             raise RiftError(
                 "Unable to create repositories synchronization directory "
                 f"{output}, parent directory {os.path.dirname(output)} does "
                 "not exist."
-            )
+            ) from exc
     for arch in config.get('arch'):
         for name, repo in config.get('repos', default={}, arch=arch).items():
             if args.repositories and name not in args.repositories:

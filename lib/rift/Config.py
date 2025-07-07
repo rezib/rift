@@ -581,10 +581,10 @@ class Config():
 
     def _check(self):
         """Checks for mandatory options."""
-        for key in self.SYNTAX:
+        for key, value in self.SYNTAX.items():
             if (
-                    self.SYNTAX[key].get('required', False) and
-                    not 'default' in self.SYNTAX[key]
+                    value.get('required', False) and
+                    'default' not in value
                 ):
                 # Check key is in options or defined in all supported arch
                 # specific options.

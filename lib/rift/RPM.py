@@ -375,7 +375,10 @@ class Spec():
                     # Release: %{something}%{?dist}
                     # If no variables found, increment last numeric ID from release
                     try:
-                        self.lines[i] = f"Release:{release_match.group('spaces')}{self._inc_release(release_str)}\n"
+                        self.lines[i] = (
+                            f"Release:{release_match.group('spaces')}"
+                            f"{self._inc_release(release_str)}\n"
+                        )
                     except RiftError:
                         var = self._match_var(release_str)
                         if var:

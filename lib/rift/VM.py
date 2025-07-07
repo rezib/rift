@@ -216,10 +216,10 @@ class VM():
             cmd += [self._tmpimg.name]
 
         logging.debug("Creating VM image file: %s", ' '.join(cmd))
-        popen = Popen(cmd, stdout=PIPE, stderr=STDOUT, universal_newlines=True)
-        stdout = popen.communicate()[0]
-        if popen.returncode != 0:
-            raise RiftError(stdout)
+        with Popen(cmd, stdout=PIPE, stderr=STDOUT, universal_newlines=True) as popen:
+            stdout = popen.communicate()[0]
+            if popen.returncode != 0:
+                raise RiftError(stdout)
 
     def _make_drive_cmd(self):
         cmd = []
@@ -290,7 +290,8 @@ class VM():
             for repo in self._repos:
                 if repo.is_file():
                     sockets.append(f"/tmp/.virtio_fs_{repo.name}")
-            Popen(['sudo', '/bin/chmod', '777'] + sockets).wait()
+            with Popen(['sudo', '/bin/chmod', '777'] + sockets) as popen:
+                popen.wait()
 
     def _gen_qemu_args(self, image_file, seed):
         """ Generate qemu command line arguments """
@@ -470,9 +471,9 @@ class VM():
         if command:
             cmd.append(command)
         logging.debug("Running command in VM: %s", ' '.join(cmd))
-        popen = Popen(cmd, stderr=stderr, stdin=stdin) #, stdout=PIPE, stderr=STDOUT)
-        popen.wait()
-        return popen.returncode
+        with Popen(cmd, stderr=stderr, stdin=stdin) as popen:
+            popen.wait()
+            return popen.returncode
 
     def copy(self, source, dest, stderr=None):
         """Copy files from or to VM"""
@@ -481,9 +482,9 @@ class VM():
         cmd.append(source.replace('rift:', 'root@127.0.0.1:'))
         cmd.append(dest.replace('rift:', 'root@127.0.0.1:'))
         logging.debug("Copy files with VM: %s", ' '.join(cmd))
-        popen = Popen(cmd, stderr=stderr)
-        popen.wait()
-        return popen.returncode
+        with Popen(cmd, stderr=stderr) as popen:
+            popen.wait()
+            return popen.returncode
 
 
     def console(self):
@@ -577,9 +578,9 @@ class VM():
         cmd += shlex.quote(test.command)
 
         logging.debug("Running command outside VM: %s", cmd)
-        popen = Popen(cmd, shell=True) #, stdout=PIPE, stderr=STDOUT)
-        popen.wait()
-        return popen.returncode
+        with Popen(cmd, shell=True) as popen:
+            popen.wait()
+            return popen.returncode
 
     def running(self):
         """Check if VM is already running."""
@@ -739,7 +740,8 @@ class VM():
         user_data_file = os.path.join(tmp_seed_dir.path, "user-data")
 
         try:
-            tpl = Template(open(self.cloud_init_tpl).read())
+            with open(self.cloud_init_tpl) as fh:
+                tpl = Template(fh.read())
         except FileNotFoundError as err:
             raise RiftError(
                 "Unable to find cloud-init template file "
@@ -790,13 +792,14 @@ class VM():
             f"RIFT_ADDITIONAL_RPMS={':'.join(rpm_basenames)} "
             f"RIFT_REPOS={':'.join([repo.name for repo in self._repos])}"
         )
-        if self.cmd(
-                f"{env_str} bash -",
-                stderr=STDOUT,
-                stdin=open(self.build_post_script)
-            ):
-            self.stop()
-            raise RiftError("Error while running build post script")
+        with open(self.build_post_script) as fh:
+            if self.cmd(
+                    f"{env_str} bash -",
+                    stderr=STDOUT,
+                    stdin=fh
+                ):
+                self.stop()
+                raise RiftError("Error while running build post script")
 
     def _build_write_output(self, output):
         """

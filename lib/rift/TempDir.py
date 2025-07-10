@@ -52,15 +52,15 @@ class TempDir():
 
     def create(self):
         """Create a unique temporary directory."""
-        prefix = 'rift-' + (self.name and '%s-' % self.name or '')
+        prefix = 'rift-' + (self.name and f"{self.name}-" or '')
         self.path = tempfile.mkdtemp(prefix=prefix)
-        name = ' %s' % self.name if self.name else ''
+        name = f" {self.name}" if self.name else ''
         logging.debug('Creating%s temporary directory %s', name, self.path)
 
     def delete(self):
         """Recursively delete the temporary directory."""
         if self.path:
-            name = ' %s' % self.name if self.name else ''
+            name = f" {self.name}" if self.name else ''
             logging.debug('Deleting%s temporary directory %s', name, self.path)
             shutil.rmtree(self.path)
             self.path = None

@@ -47,7 +47,8 @@ import rpm
 from rift import RiftError
 from rift.Annex import Annex, is_binary
 
-RPMLINT_CONFIG = 'rpmlint'
+RPMLINT_CONFIG_V1 = 'rpmlint'
+RPMLINT_CONFIG_V2 = 'rpmlint.toml'
 
 def _header_values(values):
     """ Convert values from header specfile to strings """
@@ -56,6 +57,19 @@ def _header_values(values):
     if isinstance(values, bytes):
         return values.decode("utf8")
     return str(values)
+
+
+def rpmlint_v2():
+    """Return True if rpmlint major version is 2."""
+    # check --version output
+    try:
+        proc = run(['rpmlint', '--version'], stdout=PIPE, check=True)
+    except CalledProcessError as err:
+        raise RiftError(
+            f"Unable to get rpmlint version: {str(err)}"
+        ) from err
+    return proc.stdout.decode().startswith("2")
+
 
 class RPM():
     """Manipulate a source or binary RPM."""
@@ -85,7 +99,20 @@ class RPM():
         self.name = _header_values(hdr[rpm.RPMTAG_NAME])
         self.arch = _header_values(hdr[rpm.RPMTAG_ARCH])
         self.source_rpm = _header_values(hdr[rpm.RPMTAG_SOURCERPM])
-        self.is_signed = hdr[rpm.RPMTAG_SIGPGP] is not None
+        # With RPM format v3, signature can be found in SIGPIP tag. Starting
+        # with RPM format v4, signature is either stored in RSAHEADER or
+        # DSAHEADER tags.
+        #
+        # For reference, see:
+        # https://github.com/rpm-software-management/rpm/blob/master/docs/manual/format_v4.md#signature
+        #
+        # In order to check presence of the signature whatever the RPM package
+        # format, we look at all three tags.
+        self.is_signed = (
+            hdr[rpm.RPMTAG_SIGPGP] is not None
+            or hdr[rpm.RPMTAG_RSAHEADER] is not None
+            or hdr[rpm.RPMTAG_DSAHEADER] is not None
+        )
         self.is_source = hdr.isSource()
         self._srcfiles.extend(_header_values(hdr[rpm.RPMTAG_SOURCE]))
         self._srcfiles.extend(_header_values(hdr[rpm.RPMTAG_PATCH]))
@@ -103,17 +130,17 @@ class RPM():
 
         # Extract (install) source file and spec file from source rpm
         cmd = ['rpm', '-iv']
-        cmd += ['--define', '_sourcedir %s' % srcdir]
-        cmd += ['--define', '_specdir %s' % os.path.realpath(specdir)]
+        cmd += ['--define', f"_sourcedir {srcdir}"]
+        cmd += ['--define', f"_specdir {os.path.realpath(specdir)}"]
         cmd += [self.filepath]
-        popen = Popen(cmd, stdout=PIPE, stderr=STDOUT, universal_newlines=True)
-        stdout = popen.communicate()[0]
-        if popen.returncode != 0:
-            raise RiftError(stdout)
+        with Popen(cmd, stdout=PIPE, stderr=STDOUT, universal_newlines=True) as popen:
+            stdout = popen.communicate()[0]
+            if popen.returncode != 0:
+                raise RiftError(stdout)
 
         # Backup original spec file
-        specfile = os.path.join(specdir, '%s.spec' % self.name)
-        shutil.copy(specfile, '%s.orig' % specfile)
+        specfile = os.path.join(specdir, f"{self.name}.spec")
+        shutil.copy(specfile, f"{specfile}.orig")
 
         # Move binary source files to Annex
         annex = annex or Annex(self._config)
@@ -229,13 +256,13 @@ class Spec():
     def load(self):
         """Extract interesting information from spec file."""
         if not os.path.exists(self.filepath):
-            raise RiftError('%s does not exist' % self.filepath)
+            raise RiftError(f"{self.filepath} does not exist")
         try:
             rpm.reloadConfig()
             self._set_macros()
             spec = rpm.TransactionSet().parseSpec(self.filepath)
         except ValueError as exp:
-            raise RiftError("%s: %s" % (self.filepath, exp))
+            raise RiftError(f"{self.filepath}: {exp}") from exp
         self.pkgnames = [_header_values(pkg.header['name']) for pkg in spec.packages]
         hdr = spec.sourceHeader
         self.srpmname = hdr.sprintf('%{NAME}-%{VERSION}-%{RELEASE}.src.rpm')
@@ -260,7 +287,7 @@ class Spec():
         self.dist = rpm.expandMacro('%dist')
         self.update_evr()
 
-        with open(self.filepath, 'r') as fspec:
+        with open(self.filepath, 'r', encoding='utf-8') as fspec:
             self.lines = fspec.readlines()
 
         self._parse_vars()
@@ -269,9 +296,7 @@ class Spec():
         """
         Update epoch:version-release
         """
-        self.evr = "{}{}-{}".format(self.epoch,
-                                    self.version,
-                                    self.release.rstrip(self.dist))
+        self.evr = f"{self.epoch}{self.version}-{self.release.rstrip(self.dist)}"
 
     def _inc_release(self, release):
         dist = self.dist
@@ -279,26 +304,26 @@ class Spec():
         dist_match = re.match(r".*(?P<dist>%{\??dist}(\s+|$))", release)
 
         if release.endswith(self.dist):
-            pattern += "({})".format(dist)
+            pattern += f"({dist})"
         elif dist_match:
             dist = dist_match.group('dist')
-            pattern += '({})'.format(dist.replace('?', r'\?'))
+            pattern += "(" + dist.replace('?', r'\?') + ")"
         else:
             dist = ''
         pattern += '$'
         release_id = re.match(pattern, release)
         if release_id is None:
-            raise RiftError('Cannot parse package release: {}'.format(release))
+            raise RiftError(f"Cannot parse package release: {release}")
         newrelease = int(release_id.group('num')) + 1
         logging.debug("New release from %s to %s", release_id.group('num'),
                       newrelease)
         baserelease = release_id.group('baserelease')
-        return "{}{}{}".format(baserelease, newrelease, dist)
+        return f"{baserelease}{newrelease}{dist}"
 
 
     def _match_var(self, expression, pattern='.*[0-9]$'):
         """ Get variable with value matching pattern in expression """
-        match = re.match(r'(?P<leftbehind>.*)%{?\??(?P<varname>[^}]*)}?', "%s" % expression)
+        match = re.match(r'(?P<leftbehind>.*)%{?\??(?P<varname>[^}]*)}?', expression)
         if match:
             name = match.group('varname')
             left = match.group('leftbehind')
@@ -337,8 +362,7 @@ class Spec():
             self.bump_release()
 
         date = time.strftime("%a %b %d %Y", time.gmtime())
-        newchangelogentry = "* %s %s - %s\n%s\n" % \
-            (date, userstring, self.evr, comment)
+        newchangelogentry = f"* {date} {userstring} - {self.evr}\n{comment}\n"
         chlg_match = None
         for i, _ in enumerate(self.lines):
             if bump:
@@ -351,8 +375,10 @@ class Spec():
                     # Release: %{something}%{?dist}
                     # If no variables found, increment last numeric ID from release
                     try:
-                        self.lines[i] = "Release:{}{}\n".format(release_match.group('spaces'),
-                                                                self._inc_release(release_str))
+                        self.lines[i] = (
+                            f"Release:{release_match.group('spaces')}"
+                            f"{self._inc_release(release_str)}\n"
+                        )
                     except RiftError:
                         var = self._match_var(release_str)
                         if var:
@@ -372,7 +398,7 @@ class Spec():
             self.lines.append("%changelog\n")
             self.lines.append(newchangelogentry)
 
-        with open(self.filepath, 'w') as fspec:
+        with open(self.filepath, 'w', encoding='utf-8') as fspec:
             fspec.writelines(self.lines)
 
         # Reload
@@ -385,14 +411,14 @@ class Spec():
         Return a RPM instance of this source RPM.
         """
         cmd = ['rpmbuild', '-bs']
-        cmd += ['--define', '_sourcedir %s' % srcdir]
-        cmd += ['--define', '_srcrpmdir %s' % destdir]
+        cmd += ['--define', f"_sourcedir {srcdir}"]
+        cmd += ['--define', f"_srcrpmdir {destdir}"]
         cmd += [self.filepath]
 
-        popen = Popen(cmd, stdout=PIPE, stderr=STDOUT, universal_newlines=True)
-        stdout = popen.communicate()[0]
-        if popen.returncode != 0:
-            raise RiftError(stdout)
+        with Popen(cmd, stdout=PIPE, stderr=STDOUT, universal_newlines=True) as popen:
+            stdout = popen.communicate()[0]
+            if popen.returncode != 0:
+                raise RiftError(stdout)
 
         return RPM(os.path.join(destdir, self.srpmname))
 
@@ -403,9 +429,16 @@ class Spec():
         else:
             env = None
 
-        cmd = ['rpmlint', '-o', 'NetworkEnabled False', '-f',
-               os.path.join(os.path.dirname(self.filepath), RPMLINT_CONFIG),
-               self.filepath]
+        if rpmlint_v2():
+            cmd = ['rpmlint', self.filepath]
+            config = os.path.join(os.path.dirname(self.filepath), RPMLINT_CONFIG_V2)
+            if os.path.exists(config):
+                cmd[1:1] = ['-c', config]
+        else:
+            # rpmlint v1. Does not fail when config file is missing.
+            cmd = ['rpmlint', '-o', 'NetworkEnabled False', '-f',
+                os.path.join(os.path.dirname(self.filepath), RPMLINT_CONFIG_V1),
+                self.filepath]
         logging.debug('Running rpmlint: %s', ' '.join(cmd))
         return cmd, env
 
@@ -418,7 +451,7 @@ class Spec():
         if pkg:
             configdir = pkg.dir
             if self.basename != pkg.name:
-                msg = "name '%s' does not match '%s' in spec file" % (pkg.name, self.basename)
+                msg = f"name '{pkg.name}' does not match '{self.basename}' in spec file"
                 raise RiftError(msg)
 
             # Changelog section is mandatory
@@ -427,25 +460,25 @@ class Spec():
 
             # Check if all sources are declared and present in package directory
             if pkg.sources - set(self.sources):
-                msg = "Unused source file(s): %s" % ' '.join(pkg.sources - set(self.sources))
+                msg = f"Unused source file(s): {' '.join(pkg.sources - set(self.sources))}"
                 raise RiftError(msg)
             if set(self.sources) - pkg.sources:
-                msg = "Missing source file(s): %s" % ' '.join(set(self.sources) - pkg.sources)
+                msg = f"Missing source file(s): {' '.join(set(self.sources) - pkg.sources)}"
                 raise RiftError(msg)
 
         cmd, env = self._check(configdir)
-        popen = Popen(cmd, stderr=PIPE, env=env, universal_newlines=True)
-        stderr = popen.communicate()[1]
-        if popen.returncode != 0:
-            raise RiftError(stderr or 'rpmlint reported errors')
+        with Popen(cmd, stderr=PIPE, env=env, universal_newlines=True) as popen:
+            stderr = popen.communicate()[1]
+            if popen.returncode != 0:
+                raise RiftError(stderr or 'rpmlint reported errors')
 
     def analyze(self, review, configdir=None):
         """Run `rpmlint' for this specfile and fill provided `review'."""
         cmd, env = self._check(configdir)
-        popen = Popen(cmd, stdout=PIPE, stderr=PIPE, env=env, universal_newlines=True)
-        stdout, stderr = popen.communicate()
-        if popen.returncode not in (0, 64, 66):
-            raise RiftError(stderr or 'rpmlint returned %d' % popen.returncode)
+        with Popen(cmd, stdout=PIPE, stderr=PIPE, env=env, universal_newlines=True) as popen:
+            stdout, stderr = popen.communicate()
+            if popen.returncode not in (0, 64, 66):
+                raise RiftError(stderr or f"rpmlint returned {popen.returncode}")
 
         for line in stdout.splitlines():
             if line.startswith(self.filepath + ':'):
@@ -488,7 +521,7 @@ class Variable():
         self.keyword = keyword
 
     def __str__(self):
-        return '{}'.format(self.value)
+        return str(self.value)
 
     def spec_output(self, buffer=None):
         """
@@ -502,7 +535,7 @@ class Variable():
             Returns:
                 define_str: String syntax to define the variable
         """
-        define_str = '%{} {} {}'.format(self.keyword, self.name, self.value)
+        define_str = f"%{self.keyword} {self.name} {self.value}"
         if buffer:
-            buffer[self.index] = '{}\n'.format(define_str)
+            buffer[self.index] = f"{define_str}\n"
         return define_str

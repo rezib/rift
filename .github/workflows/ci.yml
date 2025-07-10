@@ -62,7 +62,10 @@ jobs:
         run: |
           dnf -y install python3-pip python3-jinja2 python3-PyYAML python3-rpm python3-dnf python3-pytest python3-pytest-cov sudo rpm-sign rpmlint openssh-clients genisoimage qemu qemu-user qemu-img qemu-virtiofsd mock createrepo_c
 
-      # On Almalinux, install vendored qemu-user static binaries and setup binfmt.
+      # On Almalinux, install vendored qemu-user static binaries and setup
+      # binfmt. The value in /etc/binfmt.d/qemu-static.conf is essentially a raw
+      # copy of Qemu uptream script:
+      # https://github.com/qemu/qemu/blob/master/scripts/qemu-binfmt-conf.sh
       - name: Install and setup binfmt for multi-arch (Almalinux 8)
         if: ${{ startsWith(matrix.envs.container, 'almalinux') }}
         run: |

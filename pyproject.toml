@@ -24,4 +24,8 @@ py-version = "3.6"
 # --enable=similarities". If you want to run only the classes checker, but have
 # no Warning level messages displayed, use "--disable=all --enable=classes
 # --disable=W".
+#
+# Currently disabled checkers are:
+# E1101: Used when a variable is accessed for a nonexistent member.
+# W0511: Used when a warning note as FIXME or XXX is detected.
 disable = ["E1101", "W0511"]

@@ -191,7 +191,7 @@ class RiftProjectTestCase(RiftTestCase):
         os.chdir(self.projdir)
         # Dict of created packages
         self.pkgdirs = {}
-        self.pkgspecs = {}
+        self.buildfiles = []
         self.pkgsrc = {}
         # Load project/staff/modules
         self.config = Config()
@@ -212,8 +212,8 @@ class RiftProjectTestCase(RiftTestCase):
         os.unlink(self.modulespath)
         os.unlink(self.mocktpl)
         os.rmdir(self.annexdir)
-        for spec in self.pkgspecs.values():
-            os.unlink(spec)
+        for buildfile in self.buildfiles:
+            os.unlink(buildfile)
         for src in self.pkgsrc.values():
             os.unlink(src)
         for pkgdir in self.pkgdirs.values():
@@ -252,6 +252,7 @@ class RiftProjectTestCase(RiftTestCase):
     def make_pkg(
         self,
         name='pkg',
+        formats=None,
         version='1.0',
         release='1',
         metadata=None,
@@ -259,6 +260,12 @@ class RiftProjectTestCase(RiftTestCase):
         requires=['another-package'],
         subpackages=[],
     ):
+        # By default, make package in RPM format
+        if formats is None:
+            formats = ['rpm']
+        # Check provide package formats are supported
+        for _format in formats:
+            assert(_format in ['rpm'])
         # ./packages/pkg
         self.pkgdirs[name] = os.path.join(self.packagesdir, name)
         os.mkdir(self.pkgdirs[name])
@@ -291,13 +298,15 @@ class RiftProjectTestCase(RiftTestCase):
                 )
 
         # ./packages/pkg/pkg.spec
-        self.pkgspecs[name] = os.path.join(self.pkgdirs[name],
-                                           "{0}.spec".format(name))
-        with open(self.pkgspecs[name], "w") as spec:
-            spec.write(
-                gen_rpm_spec(name=name, version=version, release=release,
-                             build_requires=build_requires, requires=requires,
-                             arch='noarch', subpackages=subpackages))
+        if 'rpm' in formats:
+            buildfile = os.path.join(self.pkgdirs[name], "{0}.spec".format(name))
+            with open(buildfile, "w") as spec:
+                spec.write(
+                    gen_rpm_spec(name=name, version=version, release=release,
+                                 build_requires=build_requires, requires=requires,
+                                 arch='noarch', subpackages=subpackages))
+            self.buildfiles.append(buildfile)
+
         # ./packages/pkg/sources
         srcdir = os.path.join(self.pkgdirs[name], 'sources')
         os.mkdir(srcdir)

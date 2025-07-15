@@ -135,7 +135,7 @@ class ControllerProjectActionChangelogTest(RiftProjectTestCase):
         self.make_pkg()
         self.assertEqual(
             main(['changelog', 'pkg', '-c', 'basic change', '-t', 'Myself']), 0)
-        spec = Spec(filepath=self.pkgspecs['pkg'])
+        spec = Spec(filepath=self.buildfiles[0])
         spec.load()
         self.assertEqual(spec.changelog_name, 'Myself <buddy@somewhere.org> - 1.0-1')
         self.assertEqual(spec.version, '1.0')
@@ -147,7 +147,7 @@ class ControllerProjectActionChangelogTest(RiftProjectTestCase):
         self.assertEqual(
             main(['changelog', 'pkg', '-c', 'basic change', '-t', 'Myself', '--bump']),
             0)
-        spec = Spec(filepath=self.pkgspecs['pkg'])
+        spec = Spec(filepath=self.buildfiles[0])
         spec.load()
         self.assertEqual(spec.changelog_name, 'Myself <buddy@somewhere.org> - 1.0-2')
         self.assertEqual(spec.version, '1.0')
@@ -373,7 +373,7 @@ class ControllerProjectActionCheckTest(RiftProjectTestCase):
         self.make_pkg()
         with self.assertLogs(level='INFO') as log:
             main(
-                ['check', 'spec', '-f', self.pkgspecs['pkg']]
+                ['check', 'spec', '-f', self.buildfiles[0]]
             )
         self.assertIn(
             'INFO:root:Spec file is OK.',
@@ -430,7 +430,7 @@ class ControllerProjectActionGerritTest(RiftProjectTestCase):
         # Make package and inject rpmlint error ($RPM_BUILD_ROOT in buildsteps)
         # in RPM spec file.
         self.make_pkg()
-        with open(self.pkgspecs['pkg'], "w") as spec:
+        with open(self.buildfiles[0], "w") as spec:
             spec.write(
                 gen_rpm_spec(
                     name='pkg',

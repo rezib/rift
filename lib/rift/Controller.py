@@ -52,7 +52,7 @@ from rift.Gerrit import Review
 from rift.Mock import Mock
 from rift.Package import Package, Test
 from rift.Repository import LocalRepository, ProjectArchRepositories
-from rift.RPM import RPM, Spec, RPMLINT_CONFIG
+from rift.RPM import RPM, Spec, RPMLINT_CONFIG_V1, RPMLINT_CONFIG_V2
 from rift.TempDir import TempDir
 from rift.TestResults import TestCase, TestResults
 from rift.TextTable import TextTable
@@ -64,13 +64,13 @@ def message(msg):
     """
     helper function to print a log message
     """
-    print("> %s" % msg)
+    print(f"> {msg}")
 
 def banner(title):
     """
     helper function to print a banner
     """
-    print("** %s **" % title)
+    print(f"** {title} **")
 
 def make_parser():
     """Create command line parser"""
@@ -80,7 +80,7 @@ def make_parser():
     parser.add_argument('-v', '--verbose', action='count', default=0,
                         help="increase output verbosity (twice for debug)")
     parser.add_argument('--version', action='version',
-                        version='%%(prog)s %s' % __version__)
+                        version=f"%%(prog)s {__version__}")
 
     subparsers = parser.add_subparsers(dest='command', metavar='COMMAND')
 
@@ -348,28 +348,28 @@ def action_annex(args, config, staff, modules):
     elif args.annex_cmd == 'push':
         for srcfile in args.files:
             if Annex.is_pointer(srcfile):
-                message('%s: already pointing to annex' % srcfile)
+                message(f"{srcfile}: already pointing to annex")
             elif is_binary(srcfile):
                 annex.push(srcfile)
-                message('%s: moved and replaced' % srcfile)
+                message(f"{srcfile}: moved and replaced")
             else:
-                message('%s: not binary, ignoring' % srcfile)
+                message(f"{srcfile}: not binary, ignoring")
 
     elif args.annex_cmd == 'restore':
         for srcfile in args.files:
             if Annex.is_pointer(srcfile):
                 annex.get_by_path(srcfile, srcfile)
-                message('%s: fetched from annex' % srcfile)
+                message(f"{srcfile}: fetched from annex")
             else:
-                message('%s: not an annex pointer, ignoring' % srcfile)
+                message(f"{srcfile}: not an annex pointer, ignoring")
 
     elif args.annex_cmd == 'delete':
         annex.delete(args.id)
-        message('%s has been deleted' % args.id)
+        message(f"{args.id} has been deleted")
 
     elif args.annex_cmd == 'get':
         annex.get(args.id, args.dest)
-        message('%s has been created' % args.dest)
+        message(f"{args.dest} has been created")
 
     elif args.annex_cmd == 'backup':
         message("Annex backup in progress...")
@@ -407,35 +407,35 @@ class BasicTest(Test):
         try:
             for name in pkg.ignore_rpms:
                 rpmnames.remove(name)
-        except ValueError:
-            raise RiftError("'%s' is not in RPMS list" % name)
+        except ValueError as exc:
+            raise RiftError(f"'{name}' is not in RPMS list") from exc
 
         # Avoid always processing the rpm list in the same order
         random.shuffle(rpmnames)
 
-        cmd = textwrap.dedent("""
+        cmd = textwrap.dedent(f"""
         if [ -x /usr/bin/dnf ] ; then
             YUM="dnf"
         else
             YUM="yum"
         fi
         i=0
-        for pkg in %s; do
+        for pkg in {' '.join(rpmnames)}; do
             i=$(( $i + 1 ))
-            echo -e "[Testing '${pkg}' (${i}/%d)]"
-            rm -rf /var/lib/${YUM}/history*
+            echo -e "[Testing '${{pkg}}' (${{i}}/{len(rpmnames)})]"
+            rm -rf /var/lib/${{YUM}}/history*
             if rpm -q --quiet $pkg; then
-              ${YUM} -y -d1 upgrade $pkg || exit 1
+              ${{YUM}} -y -d1 upgrade $pkg || exit 1
             else
-              ${YUM} -y -d1 install $pkg || exit 1
+              ${{YUM}} -y -d1 install $pkg || exit 1
             fi
-            if [ -n "$(${YUM} history | tail -n +3)" ]; then
+            if [ -n "$(${{YUM}} history | tail -n +3)" ]; then
                 echo '> Cleanup last transaction'
-                ${YUM} -y -d1 history undo last || exit 1
+                ${{YUM}} -y -d1 history undo last || exit 1
             else
                 echo '> Warning: package already installed and up to date !'
             fi
-        done""" % (' '.join(rpmnames), len(rpmnames)))
+        done""")
         Test.__init__(self, cmd, "basic_install")
         self.local = False
 
@@ -487,7 +487,7 @@ def test_one_pkg(config, args, pkg, vm, arch, repos, results):
         disablestr = '--disablerepo=working'
     else:
         disablestr = ''
-    vm.cmd('yum -y -d0 %s update' % disablestr)
+    vm.cmd(f"yum -y -d0 {disablestr} update")
 
     banner(f"Starting tests of package {pkg.name} on architecture {arch}")
 
@@ -499,14 +499,14 @@ def test_one_pkg(config, args, pkg, vm, arch, repos, results):
     for test in tests:
         case = TestCase(test.name, pkg.name, arch)
         now = time.time()
-        message("Running test '%s' on architecture '%s'" % (case.fullname, arch))
+        message(f"Running test '{case.fullname}' on architecture '{arch}'")
         if vm.run_test(test) == 0:
             results.add_success(case, time.time() - now)
-            message("Test '%s' on architecture %s: OK" % (case.fullname, arch))
+            message(f"Test '{case.fullname}' on architecture {arch}: OK")
         else:
             rc = 1
             results.add_failure(case, time.time() - now)
-            message("Test '%s' on architecture %s: ERROR" % (case.fullname, arch))
+            message(f"Test '{case.fullname}' on architecture {arch}: ERROR")
 
     if not getattr(args, 'noquit', False):
         message(f"Cleaning {arch} test environment")
@@ -920,12 +920,12 @@ def action_sync(args, config):
     if not os.path.exists(output):
         try:
             os.mkdir(output)
-        except FileNotFoundError:
+        except FileNotFoundError as exc:
             raise RiftError(
                 "Unable to create repositories synchronization directory "
                 f"{output}, parent directory {os.path.dirname(output)} does "
                 "not exist."
-            )
+            ) from exc
     for arch in config.get('arch'):
         for name, repo in config.get('repos', default={}, arch=arch).items():
             if args.repositories and name not in args.repositories:
@@ -1057,7 +1057,7 @@ def action(config, args):
         elif args.command in ('import', 'reimport'):
             rpm = RPM(args.file, config)
             if not rpm.is_source:
-                raise RiftError("%s is not a source RPM" % args.file)
+                raise RiftError(f"{args.file} is not a source RPM")
             pkgname = rpm.name
 
         if args.maintainer is None:
@@ -1080,11 +1080,11 @@ def action(config, args):
         pkg.write()
 
         if args.command in ('create', 'import'):
-            message("Package '%s' has been created" % pkg.name)
+            message(f"Package '{pkg.name}' has been created")
 
         if args.command in ('import', 'reimport'):
             rpm.extract_srpm(pkg.dir, pkg.sourcesdir)
-            message("Package '%s' has been %sed" % (pkg.name, args.command))
+            message(f"Package '{pkg.name}' has been {args.command}ed")
 
     # BUILD
     elif args.command == 'build':
@@ -1124,9 +1124,8 @@ def action(config, args):
                               'buildrequires'))
         diff_keys = set(tbl.pattern_fields()) - supported_keys
         if diff_keys:
-            raise RiftError('Unknown placeholder(s): %s '\
-                            '(supported keys are: %s)' % (', '.join(diff_keys),
-                                                          ', '.join(supported_keys)))
+            raise RiftError(f"Unknown placeholder(s): {', '.join(diff_keys)} "
+                            f"(supported keys are: {', '.join(supported_keys)})")
 
         for pkg in pkglist:
             logging.debug('Loading package %s', pkg.name)
@@ -1166,7 +1165,7 @@ def action(config, args):
         pkg = Package(args.package, config, staff, modules)
         pkg.load()
 
-        author = '%s <%s>' % (args.maintainer, staff.get(args.maintainer)['email'])
+        author = f"{args.maintainer} <{staff.get(args.maintainer)['email']}>"
 
         # Format comment.
         # Grab bullet, insert one if not found.
@@ -1233,10 +1232,10 @@ def _validate_patched_file(patched_file, config, modules, staff):
         return False
 
     if patched_file.binary:
-        raise RiftError("Binary file detected: %s" % filepath)
+        raise RiftError(f"Binary file detected: {filepath}")
 
     if names[0] != config.get('packages_dir'):
-        raise RiftError("Unknown file pattern: %s" % filepath)
+        raise RiftError(f"Unknown file pattern: {filepath}")
 
     return True
 
@@ -1276,7 +1275,7 @@ def _patched_file_updated_package(patched_file, config, modules, staff):
         return None
 
     # backup specfile
-    if fullpath == '%s.orig' % pkg.specfile:
+    if fullpath == f"{pkg.specfile}.orig":
         logging.debug('Ignoring backup specfile')
         return None
 
@@ -1285,7 +1284,7 @@ def _patched_file_updated_package(patched_file, config, modules, staff):
         logging.info('Detected spec file')
 
     # rpmlint config file
-    elif names == [RPMLINT_CONFIG]:
+    elif names in [RPMLINT_CONFIG_V1, RPMLINT_CONFIG_V2]:
         logging.debug('Detecting rpmlint config file')
 
     # sources/
@@ -1298,7 +1297,7 @@ def _patched_file_updated_package(patched_file, config, modules, staff):
 
     else:
         raise RiftError(
-            "Unknown file pattern in '%s' directory: %s" % (pkg.name, filepath)
+            f"Unknown file pattern in '{pkg.name}' directory: {filepath}"
         )
 
     return pkg
@@ -1330,7 +1329,7 @@ def main(args=None):
     args = make_parser().parse_args(args)
 
     logging.basicConfig(format="%(levelname)-8s %(message)s",
-                        level=(logging.WARNING - args.verbose * 10))
+                        level=logging.WARNING - args.verbose * 10)
 
     try:
         # Load configuration

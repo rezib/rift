@@ -62,9 +62,9 @@ class Mock():
         self._config = config
         self._arch = arch
         self._tmpdir = None
-        self._mockname = 'rift-%s-%s' % (self._arch, getpass.getuser())
+        self._mockname = f"rift-{self._arch}-{getpass.getuser()}"
         if proj_vers:
-            self._mockname = '%s-%s' % (self._mockname, proj_vers)
+            self._mockname = f"{self._mockname}-{proj_vers}"
         logging.debug(self._mockname)
 
     def _build_template_ctx(self, repolist):
@@ -76,9 +76,9 @@ class Mock():
             assert repo.url is not None
             prio = repo.priority or (prio - 1)
             repo_ctx = {
-                'name': repo.name or 'repo%s' % idx,
+                'name': repo.name or f"repo{idx}",
                 'priority': prio,
-                'url': repo.url,
+                'url': repo.generic_url(self._arch),
                 }
             if repo.module_hotfixes:
                 repo_ctx['module_hotfixes'] = repo.module_hotfixes
@@ -94,9 +94,10 @@ class Mock():
         """Create 'default.cfg' config file based on a template."""
         # Read template
         tplfile = self._config.project_path(self.MOCK_TEMPLATE)
-        tpl = Template(open(tplfile).read())
+        with open(tplfile, encoding='utf-8') as fh:
+            tpl = Template(fh.read())
         # Write file content
-        with open(dstpath, 'w') as fmock:
+        with open(dstpath, 'w', encoding='utf-8') as fmock:
             fmock.write(tpl.render(self._build_template_ctx(repolist)))
         # We have to keep template timestamp to avoid being detected as a new
         # one each time.
@@ -136,8 +137,8 @@ class Mock():
     def _mock_base(self):
         """Return base argument to launch mock"""
         if logging.getLogger().isEnabledFor(logging.INFO):
-            return ['mock', '--configdir=%s' % self._tmpdir.path]
-        return ['mock', '-q', '--configdir=%s' % self._tmpdir.path]
+            return ['mock', f"--configdir={self._tmpdir.path}"]
+        return ['mock', '-q', f"--configdir={self._tmpdir.path}"]
 
     def _exec(self, cmd):
         """
@@ -146,10 +147,10 @@ class Mock():
         """
         cmd = self._mock_base() + cmd
         logging.debug('Running mock: %s', ' '.join(cmd))
-        popen = Popen(cmd, stdout=PIPE, cwd='/', universal_newlines=True)
-        stdout = popen.communicate()[0]
-        if popen.returncode != 0:
-            raise RiftError(stdout)
+        with Popen(cmd, stdout=PIPE, cwd='/', universal_newlines=True) as popen:
+            stdout = popen.communicate()[0]
+            if popen.returncode != 0:
+                raise RiftError(stdout)
 
     def init(self, repolist):
         """

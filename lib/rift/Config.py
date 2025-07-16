@@ -522,8 +522,8 @@ class Config():
             raise DeclError(f"Unknown {key} keys: {', '.join(unknown_keys)}")
 
         # Iterate over the keys defined in syntax. If the subvalue or default
-        # value is defined, set it or raise error if required.
-        for subkey, subkey_format in syntax.items():
+        # value is defined, set it.
+        for subkey in syntax.keys():
             subkey_value = value.get(subkey,
                                      Config._syntax_default(syntax, subkey))
             if subkey_value is not None:
@@ -533,12 +533,7 @@ class Config():
                     subkey_value,
                     syntax[subkey].get('check', 'string')
                 )
-            elif subkey_format.get('required', False):
-                raise DeclError(
-                    f"Key {subkey} is required in dict parameter {key}"
-                )
 
-        # Set the key in options dict eventually.
         return result
 
     def _record_value(self, syntax, value):
@@ -585,22 +580,45 @@ class Config():
                     self.set(key, value, arch=arch)
 
     def _check(self):
-        """Checks for mandatory options."""
-        for key, value in self.SYNTAX.items():
+        """Checks for required options in main syntax recursively."""
+        self._check_syntax(self.SYNTAX, self.options)
+
+    def _check_syntax(self, syntax, options, param='__main__'):
+        """Checks for mandatory options regarding the provided syntax recursively."""
+        for key in syntax:
             if (
-                    value.get('required', False) and
-                    'default' not in value
+                    syntax[key].get('required', False) and
+                    'default' not in syntax[key]
                 ):
                 # Check key is in options or defined in all supported arch
                 # specific options.
                 if (
-                        key not in self.options and
+                        key not in options and
                         not all(
-                            arch in self.options and key in self.options[arch]
+                            arch in options and key in options[arch]
                             for arch in self.get('arch')
                         )
                     ):
-                    raise DeclError(f"'{key}' is not defined")
+                    if param == '__main__':
+                        raise DeclError(f"'{key}' is not defined")
+                    raise DeclError(
+                        f"Key {key} is required in dict parameter {param}"
+                    )
+            # If the parameter is a dict with a syntax, check the value.
+            if (
+                    syntax[key].get('check') == 'dict' and
+                    syntax[key].get('syntax') is not None and key in options
+                ):
+                self._check_syntax(syntax[key]['syntax'], options[key], key)
+            # If the parameter is a record with dict values and a syntax, check
+            # all values.
+            if (
+                    syntax[key].get('check') == 'record' and
+                    syntax[key].get('content') == 'dict' and
+                    syntax[key].get('syntax') is not None and key in options
+                ):
+                for value in options[key].values():
+                    self._check_syntax(syntax[key]['syntax'], value, key)
 
 
 class Staff():

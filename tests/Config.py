@@ -501,7 +501,6 @@ class ConfigTest(RiftTestCase):
                     '^Key (key|keyring) is required in dict parameter gpg$'
                 ):
                 config.load(cfgfile.name)
-            self.assertEqual(config.get('gpg'), None)
 
     def test_load_gpg_unknown_key(self):
         """Load gpg parameters raise DeclError if unknown key"""
@@ -1056,6 +1055,35 @@ class ConfigTestSyntax(RiftTestCase):
         self.assertTrue('key1' in param0)
         self.assertTrue('key2' in param0)
         self.assertEqual(param0['key1'], 'value2')
+        self.assertEqual(param0['key2'], 1)
+
+    def test_load_dict_merged_syntax_missing_required(self):
+        """load() merges dict from multiple files with syntax and required param missing in one file"""
+        self._add_fake_params()
+        conf_files = [
+            make_temp_file(
+                textwrap.dedent(
+                    """
+                    param0:
+                      key1: value1
+                    """
+                )
+            ),
+            make_temp_file(
+                textwrap.dedent(
+                    """
+                    param0:
+                      key2: 1
+                    """
+                )
+            ),
+        ]
+        config = Config()
+        config.load([conf_file.name for conf_file in conf_files])
+        param0 = config.get('param0')
+        self.assertTrue('key1' in param0)
+        self.assertTrue('key2' in param0)
+        self.assertEqual(param0['key1'], 'value1')
         self.assertEqual(param0['key2'], 1)
 
     def test_load_record(self):

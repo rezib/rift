@@ -42,7 +42,7 @@ class MockTest(RiftProjectTestCase):
         repos_ctx = context['repos'][0]
         self.assertEqual(repos_ctx['name'], 'tmp')
         self.assertEqual(repos_ctx['priority'], 999)
-        self.assertEqual(repos_ctx['url'], 'file:///tmp/{}'.format(arch))
+        self.assertEqual(repos_ctx['url'], 'file:///tmp/$basearch')
         self.assertEqual(repos_ctx['module_hotfixes'], True)
         self.assertEqual(repos_ctx['excludepkgs'], 'somepkg')
         self.assertEqual(repos_ctx['proxy'], 'myproxy')
@@ -51,7 +51,7 @@ class MockTest(RiftProjectTestCase):
     def test_init(self, mock_popen):
         """ Test Mock init creates all files required by mock """
         # Emulate successful mock execution
-        mock_popen.return_value.returncode = 0
+        mock_popen.return_value.__enter__.return_value.returncode = 0
         mock = Mock(config=self.config, arch='x86_64', proj_vers=1.0)
         mock.init([])
         self.assertTrue(
@@ -67,8 +67,8 @@ class MockTest(RiftProjectTestCase):
     def test_init_mock_failure(self, mock_popen):
         """ Test Mock init raise error on mock command failure """
         # Emulate mock execution failure
-        mock_popen.return_value.returncode = 1
-        mock_popen.return_value.communicate.return_value = ["output"]
+        mock_popen.return_value.__enter__.return_value.returncode = 1
+        mock_popen.return_value.__enter__.return_value.communicate.return_value = ["output"]
         mock = Mock(config=self.config, arch='x86_64', proj_vers=1.0)
         with self.assertRaisesRegex(RiftError, "^output$"):
             mock.init([])

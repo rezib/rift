@@ -56,7 +56,7 @@ class TestCase():
         return the TestCase fullname
         """
         if self.classname:
-            return '%s.%s' % (self.classname, self.name)
+            return f"{self.classname}.{self.name}"
         return self.name
 
 
@@ -117,9 +117,9 @@ class TestResults():
         for result in self.results:
             sub = ET.SubElement(suite, 'testcase', name=result.case.name)
             if result.case.classname:
-                sub.set('classname', 'rift.%s' % result.case.classname)
+                sub.set('classname', f"rift.{result.case.classname}")
             if result.time:
-                sub.set('time', '%.2f' % result.time)
+                sub.set('time', f"{result.time:.2f}")
             if result.value == 'Failure':
                 failure = ET.SubElement(sub, 'failure')
                 failure.text = result.output
@@ -137,7 +137,7 @@ class TestResults():
                 {
                     'name': result.case.fullname,
                     'arch': result.case.arch,
-                    'duration': '%.0fs' % result.time,
+                    'duration': f"{result.time:.0f}s",
                     'result': (
                         result.value.upper()
                         if result.value == 'Failure'

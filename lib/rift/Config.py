@@ -398,20 +398,20 @@ class Config():
                 if self.project_dir is None:
                     self.find_project_dir(filepath)
 
-                with open(self.project_path(filepath)) as fyaml:
+                with open(self.project_path(filepath), encoding='utf-8') as fyaml:
                     data = yaml.load(fyaml, Loader=OrderedLoader)
 
                 if data:
                     self.update(data)
 
             except yaml.error.YAMLError as exp:
-                raise DeclError(str(exp))
+                raise DeclError(str(exp)) from exp
             except IOError as exp:
                 if exp.errno == errno.ENOENT:
                     if not self.ALLOW_MISSING:
-                        raise DeclError("Could not find '%s'" % filepath)
+                        raise DeclError(f"Could not find '{filepath}'") from exp
                 else:
-                    raise DeclError(str(exp))
+                    raise DeclError(str(exp)) from exp
 
         self._check()
 
@@ -438,7 +438,7 @@ class Config():
 
         # Check key is known.
         if key not in self.SYNTAX:
-            raise DeclError("Unknown '%s' key" % key)
+            raise DeclError(f"Unknown '{key}' key")
 
         options = self._arch_options(arch)
         value = self._key_value(
@@ -581,21 +581,21 @@ class Config():
 
     def _check(self):
         """Checks for mandatory options."""
-        for key in self.SYNTAX:
+        for key, value in self.SYNTAX.items():
             if (
-                    self.SYNTAX[key].get('required', False) and
-                    not 'default' in self.SYNTAX[key]
+                    value.get('required', False) and
+                    'default' not in value
                 ):
                 # Check key is in options or defined in all supported arch
                 # specific options.
                 if (
                         key not in self.options and
-                        not all([
+                        not all(
                             arch in self.options and key in self.options[arch]
                             for arch in self.get('arch')
-                        ])
+                        )
                     ):
-                    raise DeclError("'%s' is not defined" % key)
+                    raise DeclError(f"'{key}' is not defined")
 
 
 class Staff():
@@ -633,7 +633,7 @@ class Staff():
             filepath = self.DEFAULT_PATH
 
         try:
-            with open(self._config.project_path(filepath)) as fyaml:
+            with open(self._config.project_path(filepath), encoding='utf-8') as fyaml:
                 data = yaml.load(fyaml, Loader=OrderedLoader)
 
             self._data = data.pop(self.ITEMS_HEADER) or {}
@@ -641,16 +641,15 @@ class Staff():
             self._check()
 
         except AttributeError as exp:
-            raise DeclError("Bad data format in %s file" % self.DATA_NAME)
+            raise DeclError(f"Bad data format in {self.DATA_NAME} file") from exp
         except KeyError as exp:
-            raise DeclError("Missing %s at top level in %s file" %
-                            (exp, self.DATA_NAME))
+            raise DeclError(f"Missing {exp} at top level in {self.DATA_NAME} file") from exp
         except yaml.error.YAMLError as exp:
-            raise DeclError(str(exp))
+            raise DeclError(str(exp)) from exp
         except IOError as exp:
             if exp.errno == errno.ENOENT:
-                raise DeclError("Could not find '%s'" % filepath)
-            raise DeclError(str(exp))
+                raise DeclError(f"Could not find '{filepath}'") from exp
+            raise DeclError(str(exp)) from exp
 
     def _check(self):
         """
@@ -662,14 +661,14 @@ class Staff():
             # Missing elements
             missing = set(self.ITEMS_KEYS) - set(data.keys())
             if missing:
-                items = ', '.join(["'%s'" % item for item in missing])
-                raise DeclError("Missing %s item(s) for %s" % (items, people))
+                items = ', '.join([f"'{item}'" for item in missing])
+                raise DeclError(f"Missing {items} item(s) for {people}")
 
             # Unnecessary elements
             not_needed = set(data.keys()) - set(self.ITEMS_KEYS)
             if not_needed:
-                items = ', '.join(sorted(["'%s'" % item for item in not_needed]))
-                raise DeclError("Unknown %s item(s) for %s" % (items, people))
+                items = ', '.join(sorted([f"'{item}'" for item in not_needed]))
+                raise DeclError(f"Unknown {items} item(s) for {people}")
 
 
 class Modules(Staff):
@@ -702,5 +701,5 @@ class Modules(Staff):
                 module['manager'] = [module['manager']]
             for mngr in module['manager']:
                 if mngr not in self.staff:
-                    msg = "Manager '%s' does not exist in staff list" % mngr
+                    msg = f"Manager '{mngr}' does not exist in staff list"
                     raise DeclError(msg)

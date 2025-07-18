@@ -41,6 +41,7 @@ import shutil
 from subprocess import Popen, PIPE, STDOUT, run, CalledProcessError
 import time
 import locale
+import datetime
 
 import rpm
 
@@ -261,7 +262,15 @@ class Spec():
         try:
             rpm.reloadConfig()
             self._set_macros()
-            spec = rpm.TransactionSet().parseSpec(self.filepath)
+            ts = rpm.TransactionSet()
+            # Get current timezone, so it can be restored after parsing.
+            current_timezone = str(datetime.datetime.now(datetime.timezone.utc).astimezone().tzinfo)
+            spec = ts.parseSpec(self.filepath)
+            # As a workaround for https://github.com/rpm-software-management/rpm/issues/1821,
+            # restore timezone after it has been changed in rpm library to parse changelog.
+            # This is fixed in RPM >= 4.19.
+            os.environ['TZ'] = str(current_timezone)
+            time.tzset()
         except ValueError as exp:
             raise RiftError(f"{self.filepath}: {exp}") from exp
         self.pkgnames = [_header_values(pkg.header['name']) for pkg in spec.packages]

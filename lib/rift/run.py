@@ -100,7 +100,9 @@ def run_command(
         # Initialize string buffers to store process output in memory
         buf_out = io.StringIO()
         buf_err = None
-        if not merge_out_err:
+        if merge_out_err:
+            buf_err = buf_out
+        else:
             buf_err = io.StringIO()
 
         # Process output lines handlers
@@ -111,10 +113,7 @@ def run_command(
                 sys.stdout.write(line)
         def handle_stderr(stream):
             line = stream.readline()
-            if merge_out_err:
-                buf_out.write(line)
-            else:
-                buf_err.write(line)
+            buf_err.write(line)
             if live_output:
                 sys.stderr.write(line)
 
@@ -133,10 +132,7 @@ def run_command(
             if live_output:
                 sys.stdout.write(line)
         for line in process.stderr:
-            if merge_out_err:
-                buf_out.write(line)
-            else:
-                buf_err.write(line)
+            buf_err.write(line)
             if live_output:
                 sys.stdout.write(line)
 

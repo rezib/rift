@@ -59,14 +59,14 @@ def run_command(
         cmd,
         live_output=True,
         capture_output=False,
-        merged_capture=False,
+        merge_out_err=False,
         **kwargs
     ):
     """
     Run a command and return a RunResult named tuple. When live_output is True,
     command stdout/stderr are redirected to current process stdout/stderr. When
     capture_output is True, command stdout/stderr are available in out/err
-    attributes of RunResult namedtuple. When merged_capture is True as well,
+    attributes of RunResult namedtuple. When merge_out_err is True as well,
     command stderr is merged with stdout in out attribute of RunResult named
     tuple. In this case, err attribute is None.
 
@@ -100,7 +100,7 @@ def run_command(
         # Initialize string buffers to store process output in memory
         buf_out = io.StringIO()
         buf_err = None
-        if not merged_capture:
+        if not merge_out_err:
             buf_err = io.StringIO()
 
         # Process output lines handlers
@@ -111,7 +111,7 @@ def run_command(
                 sys.stdout.write(line)
         def handle_stderr(stream):
             line = stream.readline()
-            if merged_capture:
+            if merge_out_err:
                 buf_out.write(line)
             else:
                 buf_err.write(line)
@@ -133,7 +133,7 @@ def run_command(
             if live_output:
                 sys.stdout.write(line)
         for line in process.stderr:
-            if merged_capture:
+            if merge_out_err:
                 buf_out.write(line)
             else:
                 buf_err.write(line)
@@ -148,7 +148,7 @@ def run_command(
 
     out = buf_out.getvalue()
     buf_out.close()
-    if merged_capture:
+    if merge_out_err:
         err = None
     else:
         err = buf_err.getvalue()

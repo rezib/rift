@@ -83,67 +83,69 @@ def run_command(
     # Launch the command
     # bufsize = 1 means output is line buffered
     # universal_newlines = True is required for line buffering
-    process = subprocess.Popen(
+    with subprocess.Popen(
         cmd,
         bufsize=1,
         stdout=channel,
         stderr=channel,
         universal_newlines=True,
         **kwargs
-    )
+    ) as process:
 
-    # If capture is disabled, just return the command result with the return
-    # code and None values for output.
-    if not capture_output:
-        return RunResult(process.wait(), None, None)
+        # If capture is disabled, just return the command result with the return
+        # code and None values for output.
+        if not capture_output:
+            return RunResult(process.wait(), None, None)
 
-    # Initialize string buffers to store process output in memory
-    buf_out = io.StringIO()
-    if not merged_capture:
-        buf_err = io.StringIO()
+        # Initialize string buffers to store process output in memory
+        buf_out = io.StringIO()
+        buf_err = None
+        if not merged_capture:
+            buf_err = io.StringIO()
 
-    # Process output lines handlers
-    def handle_stdout(stream):
-        line = stream.readline()
-        buf_out.write(line)
-        if live_output:
-            sys.stdout.write(line)
-    def handle_stderr(stream):
-        line = stream.readline()
-        if merged_capture:
+        # Process output lines handlers
+        def handle_stdout(stream):
+            line = stream.readline()
             buf_out.write(line)
-        else:
-            buf_err.write(line)
-        if live_output:
-            sys.stderr.write(line)
+            if live_output:
+                sys.stdout.write(line)
+        def handle_stderr(stream):
+            line = stream.readline()
+            if merged_capture:
+                buf_out.write(line)
+            else:
+                buf_err.write(line)
+            if live_output:
+                sys.stderr.write(line)
 
-    # Register callback for read events from subprocess stdout/stderr streams
-    selector = selectors.DefaultSelector()
-    selector.register(process.stdout, selectors.EVENT_READ, handle_stdout)
-    selector.register(process.stderr, selectors.EVENT_READ, handle_stderr)
+        # Register callback for read events from subprocess stdout/stderr streams
+        selector = selectors.DefaultSelector()
+        selector.register(process.stdout, selectors.EVENT_READ, handle_stdout)
+        selector.register(process.stderr, selectors.EVENT_READ, handle_stderr)
 
-    # Handle process output with registered selectors
-    _handle_process_output(process, selector)
+        # Handle process output with registered selectors
+        _handle_process_output(process, selector)
 
-    # _handle_process_output stops processing output as soon as the process is
-    # terminated. However, there may still be buffered output to flush.
-    for line in process.stdout:
-        buf_out.write(line)
-        if live_output:
-            sys.stdout.write(line)
-    for line in process.stderr:
-        if merged_capture:
+        # _handle_process_output stops processing output as soon as the process
+        # is terminated. However, there may still be buffered output to flush.
+        for line in process.stdout:
             buf_out.write(line)
-        else:
-            buf_err.write(line)
-        if live_output:
-            sys.stdout.write(line)
+            if live_output:
+                sys.stdout.write(line)
+        for line in process.stderr:
+            if merged_capture:
+                buf_out.write(line)
+            else:
+                buf_err.write(line)
+            if live_output:
+                sys.stdout.write(line)
 
-    # Ensure process is terminated
-    process.wait()
+        # Ensure process is terminated
+        process.wait()
 
-    # Store buffered output
-    selector.close()
+        # Store buffered output
+        selector.close()
+
     out = buf_out.getvalue()
     buf_out.close()
     if merged_capture:

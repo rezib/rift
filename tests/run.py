@@ -55,8 +55,8 @@ class RunTest(RiftTestCase):
     @patch('sys.stderr', new_callable=StringIO)
     def test_run_command_capture_stderr_merged(self, mock_stderr):
         """ Test run_command() with merged error output capture. """
-        proc = run_command("/bin/echo error_data 1>&2",
-                capture_output=True, merged_capture=True, shell=True)
+        proc = run_command("/bin/echo error_data 1>&2", capture_output=True,
+                merge_out_err=True, shell=True)
         # With merged_capture, standard err must be available in out attribute
         # of RunResult named tuple, and err attribute must be None.
         self.assertEqual(proc.out, "error_data\n")
@@ -68,7 +68,7 @@ class RunTest(RiftTestCase):
     def test_run_command_capture_both_merged(self, mock_stderr):
         """ Test run_command() with merged error and standard output capture. """
         proc = run_command("/bin/echo error_data 1>&2 && /bin/echo output_data",
-                capture_output=True, merged_capture=True, shell=True)
+                capture_output=True, merge_out_err=True, shell=True)
         # With merge_out_err, standard err must be available in out attribute
         # of RunResult named tuple, and err attribute must be None.
         self.assertEqual(proc.out, "error_data\noutput_data\n")

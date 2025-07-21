@@ -45,8 +45,30 @@ RunResult = collections.namedtuple(
     'RunResult', ['returncode', 'out', 'err']
 )
 
-def _handle_process_output(process, selector):
-    """Handle process output events with registered selectors."""
+def _handle_process_output(process, live_output, buf_out, buf_err):
+    """Handle process output until it is terminated."""
+
+    # Process output lines handlers
+    def handle_stdout_line(line):
+        buf_out.write(line)
+        if live_output:
+            sys.stdout.write(line)
+    def handle_stderr_line(line):
+        buf_err.write(line)
+        if live_output:
+            sys.stderr.write(line)
+
+    # Process output event handlers
+    def handle_stdout_event(stream):
+        handle_stdout_line(stream.readline())
+    def handle_stderr_event(stream):
+        handle_stderr_line(stream.readline())
+
+    # Register callback for read events from subprocess stdout/stderr streams
+    selector = selectors.DefaultSelector()
+    selector.register(process.stdout, selectors.EVENT_READ, handle_stdout_event)
+    selector.register(process.stderr, selectors.EVENT_READ, handle_stderr_event)
+
     # Loop until subprocess is terminated
     while process.poll() is None:
         # Wait for events and handle them with their registered callbacks
@@ -54,6 +76,19 @@ def _handle_process_output(process, selector):
         for key, _ in events:
             callback = key.data
             callback(key.fileobj)
+
+    # Close selector
+    selector.close()
+
+    # The loop above stops processing output as soon as the process is
+    # terminated. However, there may still be buffered output to flush.
+    for line in process.stdout:
+        handle_stdout_line(line)
+    for line in process.stderr:
+        handle_stderr_line(line)
+
+    # Ensure process is terminated
+    process.wait()
 
 def run_command(
         cmd,
@@ -105,43 +140,10 @@ def run_command(
         else:
             buf_err = io.StringIO()
 
-        # Process output lines handlers
-        def handle_stdout(stream):
-            line = stream.readline()
-            buf_out.write(line)
-            if live_output:
-                sys.stdout.write(line)
-        def handle_stderr(stream):
-            line = stream.readline()
-            buf_err.write(line)
-            if live_output:
-                sys.stderr.write(line)
+        # Handle process output
+        _handle_process_output(process, live_output, buf_out, buf_err)
 
-        # Register callback for read events from subprocess stdout/stderr streams
-        selector = selectors.DefaultSelector()
-        selector.register(process.stdout, selectors.EVENT_READ, handle_stdout)
-        selector.register(process.stderr, selectors.EVENT_READ, handle_stderr)
-
-        # Handle process output with registered selectors
-        _handle_process_output(process, selector)
-
-        # _handle_process_output stops processing output as soon as the process
-        # is terminated. However, there may still be buffered output to flush.
-        for line in process.stdout:
-            buf_out.write(line)
-            if live_output:
-                sys.stdout.write(line)
-        for line in process.stderr:
-            buf_err.write(line)
-            if live_output:
-                sys.stdout.write(line)
-
-        # Ensure process is terminated
-        process.wait()
-
-        # Store buffered output
-        selector.close()
-
+    # Get values for out/err buffers and close them
     out = buf_out.getvalue()
     buf_out.close()
     if merge_out_err:

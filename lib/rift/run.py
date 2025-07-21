@@ -63,9 +63,9 @@ def run_command(
         **kwargs
     ):
     """
-    Run a command and return RunResult named tuple. When live_output is True,
-    command stdout/stderr are streamed in live in current process stdout/stderr.
-    When capture_output is True, command stdout/stderr are available in out/err
+    Run a command and return a RunResult named tuple. When live_output is True,
+    command stdout/stderr are redirected to current process stdout/stderr. When
+    capture_output is True, command stdout/stderr are available in out/err
     attributes of RunResult namedtuple. When merged_capture is True as well,
     command stderr is merged with stdout in out attribute of RunResult named
     tuple. In this case, err attribute is None.

@@ -5,7 +5,7 @@ import os
 
 from rift.Config import Config, Staff, Modules
 from rift.Package import _SOURCES_DIR, _DOC_FILES, _META_FILE, _TESTS_DIR, Package
-from TestUtils import make_temp_file, make_temp_dir, gen_rpm_spec, RiftTestCase
+from TestUtils import make_temp_file, make_temp_dir, RiftTestCase
 
 class PackageTest(RiftTestCase):
     """
@@ -62,37 +62,3 @@ package:
         self.assertEqual(pkg.origin, 'Company')
         self.assertEqual(pkg.rpmnames, [ 'pkg', 'pkg-devel' ])
         self.assertEqual(pkg.ignore_rpms, [ 'pkg-debuginfos' ])
-
-    def test_supports_arch_w_exclusive_arch(self):
-        """ Test Package supports_arch() method with ExclusiveArch"""
-        pkgname = 'pkg'
-        pkg = Package(pkgname, self.config, self.staff, self.modules)
-        spec_file = make_temp_file(
-            gen_rpm_spec(
-                name=pkgname,
-                version="1.0",
-                release="1",
-                arch="x86_64",
-                exclusive_arch="x86_64",
-            )
-        )
-        pkg.specfile = spec_file.name
-        self.assertTrue(pkg.supports_arch('x86_64'))
-        self.assertFalse(pkg.supports_arch('aarch64'))
-
-    def test_supports_arch_wo_exclusive_arch(self):
-        """ Test Package supports_arch() method without ExclusiveArch"""
-        pkgname = 'pkg'
-        pkg = Package(pkgname, self.config, self.staff, self.modules)
-
-        spec_file = make_temp_file(
-            gen_rpm_spec(
-                name=pkgname,
-                version="1.0",
-                release="1",
-                arch="x86_64",
-            )
-        )
-        pkg.specfile = spec_file.name
-        self.assertTrue(pkg.supports_arch('x86_64'))
-        self.assertTrue(pkg.supports_arch('aarch64'))

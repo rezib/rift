@@ -143,7 +143,7 @@ class TestResults():
 
         When result out property is defined, test outputs (out and err) are
         reported in <system-out/> and <system-err/> tags. When only result err
-        property is defined, it is reported in <failure/> tag onyl when test is
+        property is defined, it is reported in <failure/> tag only when test is
         failed.
         """
 

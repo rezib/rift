@@ -174,6 +174,8 @@ def make_parser():
                         help='do not run auto tests')
     subprs.add_argument('--notest', dest='test', action='store_false', default=True,
                         help='do not run ANY tests')
+    subprs.add_argument('--junit', metavar='FILENAME',
+                        help='write junit result file')
     subprs.add_argument('-p', '--publish', action='store_true',
                         help='publish build RPMS to repository')
 
@@ -189,6 +191,8 @@ def make_parser():
                         help='do not run auto tests')
     subprs.add_argument('--notest', dest='test', action='store_false', default=True,
                         help='do not run ANY tests')
+    subprs.add_argument('--junit', metavar='FILENAME',
+                        help='write junit result file')
     subprs.add_argument('-p', '--publish', action='store_true',
                         help='publish build RPMS to repository')
 
@@ -500,12 +504,13 @@ def test_one_pkg(config, args, pkg, vm, arch, repos, results):
         case = TestCase(test.name, pkg.name, arch)
         now = time.time()
         message(f"Running test '{case.fullname}' on architecture '{arch}'")
-        if vm.run_test(test) == 0:
-            results.add_success(case, time.time() - now)
+        proc = vm.run_test(test)
+        if proc.returncode == 0:
+            results.add_success(case, time.time() - now, out=proc.out, err=proc.err)
             message(f"Test '{case.fullname}' on architecture {arch}: OK")
         else:
             rc = 1
-            results.add_failure(case, time.time() - now)
+            results.add_failure(case, time.time() - now, out=proc.out, err=proc.err)
             message(f"Test '{case.fullname}' on architecture {arch}: ERROR")
 
     if not getattr(args, 'noquit', False):
@@ -531,9 +536,20 @@ def test_pkgs(config, args, results, pkgs, arch, extra_repos=None):
     rc = 0
 
     for pkg in pkgs:
-        pkg.load()
 
-        if not pkg.supports_arch(arch):
+        now = time.time()
+        try:
+            spec = Spec(pkg.specfile, config=config)
+        except RiftError as ex:
+            # Create a dummy parse test case to report specifically the spec
+            # parsing error. When parsing succeed, this test case is not
+            # reported in test results.
+            case = TestCase("parse", pkg.name, arch)
+            logging.error("Unable to load spec file: %s", str(ex))
+            results.add_failure(case, time.time() - now, err=str(ex))
+            continue
+
+        if not spec.supports_arch(arch):
             logging.info(
                 "Skipping test on architecture %s not supported by "
                 "package %s",
@@ -542,6 +558,7 @@ def test_pkgs(config, args, results, pkgs, arch, extra_repos=None):
             )
             continue
 
+        pkg.load()
         rc += test_one_pkg(config, args, pkg, vm, arch, repos, results)
 
     if getattr(args, 'noquit', False):
@@ -565,7 +582,17 @@ def validate_pkgs(config, args, results, pkgs, arch):
 
     for pkg in pkgs:
 
-        if not pkg.supports_arch(arch):
+        case = TestCase('build', pkg.name, arch)
+        now = time.time()
+
+        try:
+            spec = Spec(pkg.specfile, config=config)
+        except RiftError as ex:
+            logging.error("Unable to load spec file: %s", str(ex))
+            results.add_failure(case, time.time() - now, err=str(ex))
+            continue  # skip current package
+
+        if not spec.supports_arch(arch):
             logging.info(
                 "Skipping validation on architecture %s not supported by "
                 "package %s",
@@ -583,7 +610,6 @@ def validate_pkgs(config, args, results, pkgs, arch):
 
         # Check spec
         message('Validate specfile...')
-        spec = Spec(pkg.specfile, config=config)
         spec.check(pkg)
 
         (staging, stagedir) = create_staging_repo(config)
@@ -600,11 +626,10 @@ def validate_pkgs(config, args, results, pkgs, arch):
 
             # Check build RPMS
             message('Validate RPMS build...')
-            case = TestCase('build', pkg.name, arch)
             pkg.build_rpms(mock, srpm, args.sign)
         except RiftError as ex:
             logging.error("Build failure: %s", str(ex))
-            results.add_failure(case, time.time() - now, str(ex))
+            results.add_failure(case, time.time() - now, err=str(ex))
             continue  # skip current package
         else:
             results.add_success(case, time.time() - now)
@@ -699,11 +724,11 @@ def action_vm(args, config):
         raise RiftError(f"Project does not support architecture '{args.arch}'")
     vm = VM(config, args.arch)
     if args.vm_cmd == 'connect':
-        ret = vm.cmd(options=None)
+        ret = vm.cmd(options=None).returncode
     elif args.vm_cmd == 'console':
         ret = vm.console()
     elif args.vm_cmd == 'cmd':
-        ret = vm.cmd(' '.join(args.commandline), options=None)
+        ret = vm.cmd(' '.join(args.commandline), options=None).returncode
     elif args.vm_cmd == 'copy':
         ret = vm.copy(args.source, args.dest)
     elif args.vm_cmd == 'start':
@@ -712,7 +737,7 @@ def action_vm(args, config):
             message("VM started. Use: rift vm connect")
             ret = 0
     elif args.vm_cmd == 'stop':
-        ret = vm.cmd('poweroff')
+        ret = vm.cmd('poweroff').returncode
     elif args.vm_cmd == 'build':
         ret = vm_build(vm, args, config)
     return ret
@@ -738,8 +763,16 @@ def action_build(args, config):
 
         for pkg in Package.list(config, staff, modules, args.packages):
 
-            pkg.load()
-            if not pkg.supports_arch(arch):
+            case = TestCase('build', pkg.name, arch)
+            now = time.time()
+            try:
+                spec = Spec(pkg.specfile, config=config)
+            except RiftError as ex:
+                logging.error("Unable to load spec file: %s", str(ex))
+                results.add_failure(case, time.time() - now, err=str(ex))
+                continue  # skip current package
+
+            if not spec.supports_arch(arch):
                 logging.info(
                     "Skipping build on architecture %s not supported by "
                     "package %s",
@@ -751,11 +784,11 @@ def action_build(args, config):
             banner(f"Building package '{pkg.name}' for architecture {arch}")
             now = time.time()
             try:
-                case = TestCase('build', pkg.name, arch)
+                pkg.load()
                 build_pkg(config, args, pkg, arch)
             except RiftError as ex:
                 logging.error("Build failure: %s", str(ex))
-                results.add_failure(case, time.time() - now, str(ex))
+                results.add_failure(case, time.time() - now, err=str(ex))
             else:
                 results.add_success(case, time.time() - now)
 

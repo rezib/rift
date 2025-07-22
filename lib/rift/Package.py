@@ -42,7 +42,6 @@ import yaml
 
 from rift import RiftError
 from rift.Annex import Annex
-from rift.RPM import Spec
 from rift.Config import OrderedLoader
 
 _META_FILE = 'info.yaml'
@@ -197,14 +196,6 @@ class Package():
         requires.
         """
         return mock.build_rpms(srpm, sign)
-
-    def supports_arch(self, arch):
-        """
-        Returns True is package spec file does not restrict ExclusiveArch or if
-        the arch in argument is explicitely set in package ExclusiveArch.
-        """
-        spec = Spec(self.specfile, self._config)
-        return not spec.exclusive_archs or arch in spec.exclusive_archs
 
     @classmethod
     def list(cls, config, staff, modules, names=None):

@@ -196,7 +196,6 @@ class ControllerProjectActionQueryTest(RiftProjectTestCase):
         """simple 'rift query' is ok """
         self.assertEqual(main(['query']), 0)
 
-
     def test_action_query_on_pkg(self):
         """ Test query on one package """
         self.make_pkg()
@@ -247,22 +246,10 @@ class ControllerProjectActionQueryTest(RiftProjectTestCase):
             mock_stdout.getvalue())
 
 
-class ControllerProjectTest(RiftProjectTestCase):
+class ControllerProjectActionValiddiffTest(RiftProjectTestCase):
     """
-    Tests class for Controller
+    Tests class for Controller action validdiff
     """
-
-    def _check_qemuuserstatic(self):
-        """Skip the test if none qemu-$arch-static executable is found for all
-        architectures declared in project configuration."""
-        if not any(
-            [
-                os.path.exists(f"/usr/bin/qemu-{arch}-static")
-                for arch in self.config.get('arch')
-            ]
-        ):
-            self.skipTest("qemu-user-static is not available")
-
     @patch('rift.Controller.remove_packages')
     @patch('rift.Controller.validate_pkgs')
     @patch('rift.Controller.get_packages_from_patch')
@@ -339,6 +326,22 @@ class ControllerProjectTest(RiftProjectTestCase):
         mock_parepository_class.assert_called_once()
         mock_parepository_class.working.assert_not_called()
 
+
+class ControllerProjectActionBuildTest(RiftProjectTestCase):
+    """
+    Tests class for Controller actions build and validate
+    """
+    def _check_qemuuserstatic(self):
+        """Skip the test if none qemu-$arch-static executable is found for all
+        architectures declared in project configuration."""
+        if not any(
+            [
+                os.path.exists(f"/usr/bin/qemu-{arch}-static")
+                for arch in self.config.get('arch')
+            ]
+        ):
+            self.skipTest("qemu-user-static is not available")
+
     @patch('rift.Controller.VM')
     def test_action_build_test(self, mock_vm_class):
 
@@ -414,6 +417,11 @@ class ControllerProjectTest(RiftProjectTestCase):
         # Remove mock build environments
         self.clean_mock_environments()
 
+
+class ControllerProjectActionVMTest(RiftProjectTestCase):
+    """
+    Tests class for Controller action vm
+    """
     @patch('rift.Controller.VM')
     def test_vm_arch_option(self, mock_vm_class):
         """Test vm --arch option required with multiple supported archs."""
@@ -550,6 +558,11 @@ class ControllerProjectTest(RiftProjectTestCase):
         # Remove mock build environments
         self.clean_mock_environments()
 
+
+class ControllerProjectActionSignTest(RiftProjectTestCase):
+    """
+    Tests class for Controller action sign
+    """
     def test_action_sign(self):
         """ Test sign package """
         gpg_home = os.path.join(self.projdir, '.gnupg')
@@ -631,6 +644,10 @@ class ControllerProjectTest(RiftProjectTestCase):
         # Remove temporary GPG home with generated key
         shutil.rmtree(gpg_home)
 
+class ControllerProjectActionSyncTest(RiftProjectTestCase):
+    """
+    Tests class for Controller action sync
+    """
     @patch('rift.sync.RepoSyncBase.run')
     @patch('sys.stdout', new_callable=StringIO)
     def test_action_sync_skip_repo_wo_params(self, mock_stdout, mock_reposyncbase_run):

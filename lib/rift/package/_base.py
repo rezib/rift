@@ -222,6 +222,10 @@ class Package():
         for testpath in glob.glob(testspattern):
             yield Test(testpath)
 
+    def add_changelog_entry(self, maintainer, comment, bump):
+        """Must be implemented in concrete children classes when supported."""
+        raise NotImplementedError
+
 
 class ActionableArchPackage:
     """

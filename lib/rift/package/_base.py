@@ -234,12 +234,17 @@ class Package():
         for testpath in glob.glob(testspattern):
             yield Test(testpath)
 
+    def add_changelog_entry(self, maintainer, comment, bump):
+        """Must be implemented in concrete children classes when supported."""
+        raise NotImplementedError
+
     def supports_arch(self, arch):
         """
         Return True if package does not exclude any architecture or the given
         arch is not listed in excluded architectures.
         """
         return not self.exclude_archs or arch not in self.exclude_archs
+
 
 class ActionableArchPackage:
     """

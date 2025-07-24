@@ -36,6 +36,7 @@ import shutil
 import random
 import textwrap
 import time
+import re
 import logging
 
 from rift import RiftError
@@ -96,6 +97,30 @@ class PackageRPM(Package):
         assert self.spec is not None
         message('Validate specfile...')
         self.spec.check(self)
+
+    def add_changelog_entry(self, maintainer, comment, bump):
+        """Add entry in RPM spec changelog."""
+        # Check spec is already loaded
+        assert self.spec is not None
+
+        author = f"{maintainer} <{self._staff.get(maintainer)['email']}>"
+        # Format comment.
+        # Grab bullet, insert one if not found.
+        bullet = "-"
+        match = re.search(r'^([^\s\w])\s', comment, re.UNICODE)
+        if match:
+            bullet = match.group(1)
+        else:
+            comment = bullet + " " + comment
+
+        if comment.find("\n") == -1:
+            wrapopts = {"subsequent_indent": (len(bullet) + 1) * " ",
+                        "break_long_words": False,
+                        "break_on_hyphens": False}
+            comment = textwrap.fill(comment, 80, **wrapopts)
+
+        logging.info("Adding changelog record for '%s'", author)
+        self.spec.add_changelog_entry(author, comment, bump)
 
     def supports_arch(self, arch):
         """

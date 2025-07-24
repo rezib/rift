@@ -8,6 +8,7 @@ import atexit
 from unittest.mock import patch, Mock
 import subprocess
 from io import StringIO
+import textwrap
 
 from TestUtils import (
     make_temp_dir, RiftTestCase, RiftProjectTestCase
@@ -63,6 +64,43 @@ class ControllerProjectActionQueryTest(RiftProjectTestCase):
         ## A package with no name should be wrong but the command should not fail
         self.make_pkg(name='pkg2', metadata={})
         self.assertEqual(main(['query']), 0)
+
+    @patch('sys.stdout', new_callable=StringIO)
+    def test_action_query_output_default(self, mock_stdout):
+        self.make_pkg(name="pkg1")
+        self.make_pkg(name="pkg2", version='2.1', release='3')
+        self.assertEqual(main(['query']), 0)
+        self.assertIn(
+            "NAME MODULE       MAINTAINERS VERSION RELEASE MODULEMANAGER",
+            mock_stdout.getvalue())
+        self.assertIn(textwrap.dedent("""
+            ---- ------       ----------- ------- ------- -------------
+            pkg1 Great module Myself      1.0     1       buddy@somewhere.org
+            pkg2 Great module Myself      2.1     3       buddy@somewhere.org
+            """),
+            mock_stdout.getvalue())
+
+    @patch('sys.stdout', new_callable=StringIO)
+    def test_action_query_output_format(self, mock_stdout):
+        self.make_pkg(name="pkg1")
+        self.make_pkg(name="pkg2", version='2.1', release='3')
+        self.assertEqual(
+            main([
+                'query', '--format',
+                '%name %module %origin %reason %tests %version %arch %release '
+                '%changelogname %changelogtime %maintainers %modulemanager '
+                '%buildrequires']), 0)
+        self.assertIn(
+            "NAME MODULE       ORIGIN REASON          TESTS VERSION ARCH   "
+            "RELEASE CHANGELOGNAME                        CHANGELOGTIME "
+            "MAINTAINERS MODULEMANAGER       BUILDREQUIRES",
+            mock_stdout.getvalue())
+        self.assertIn(textwrap.dedent("""
+            ---- ------       ------ ------          ----- ------- ----   ------- -------------                        ------------- ----------- -------------       -------------
+            pkg1 Great module Vendor Missing feature 0     1.0     noarch 1       Myself <buddy@somewhere.org> - 1.0-1 2019-02-26    Myself      buddy@somewhere.org br-package
+            pkg2 Great module Vendor Missing feature 0     2.1     noarch 3       Myself <buddy@somewhere.org> - 2.1-3 2019-02-26    Myself      buddy@somewhere.org br-package
+            """),
+            mock_stdout.getvalue())
 
 
 class ControllerProjectActionValiddiffTest(RiftProjectTestCase):

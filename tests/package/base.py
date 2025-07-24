@@ -40,3 +40,11 @@ class PackageTest(RiftPackageTestCase):
         self.assertEqual(pkg.maintainers, ['Myself'])
         self.assertEqual(pkg.reason, 'Missing feature')
         self.assertEqual(pkg.origin, 'Vendor')
+
+    def test_add_changelog_entry(self):
+        """ Test Package add changelog entry (not implemented) """
+        pkgname = 'pkg'
+        pkg = Package(pkgname, self.config, self.staff, self.modules, 'rpm',
+                      f"{pkgname}.spec")
+        with self.assertRaises(NotImplementedError):
+            pkg.add_changelog_entry("Myself", "Package modification", False)

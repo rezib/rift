@@ -260,6 +260,45 @@ class ControllerProjectActionImportTest(RiftProjectTestCase):
                     '-r', 'Good reason', '--maintainer', 'Fail'])
 
 
+class ControllerProjectActionReimportTest(RiftProjectTestCase):
+    """
+    Tests class for Controller actionre import
+    """
+    @property
+    def src_rpm(self):
+        return os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), 'materials', 'pkg-1.0-1.src.rpm'
+        )
+
+    @property
+    def bin_rpm(self):
+        return os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), 'materials', 'pkg-1.0-1.noarch.rpm'
+        )
+
+    def test_reimport_missing_maintainer(self):
+        """reimport without maintainer"""
+        with self.assertRaisesRegex(RiftError, "You must specify a maintainer"):
+            main(['reimport', self.src_rpm, '-m', 'Great module', '-r', 'Good reason'])
+
+    def test_reimport(self):
+        """simple reimport"""
+        self.make_pkg(name='pkg')
+        main(['reimport', self.src_rpm, '--maintainer', 'Myself'])
+        pkg = Package('pkg', self.config, self.staff, self.modules)
+        pkg.load()
+        self.assertEqual(pkg.module, 'Great module')
+        self.assertEqual(pkg.reason, 'Missing feature')
+        self.assertCountEqual(pkg.maintainers, ['Myself'])
+        spec = Spec(filepath=pkg.specfile)
+        spec.load()
+        self.assertEqual(spec.changelog_name, 'Myself <buddy@somewhere.org> - 1.0-1')
+        self.assertEqual(spec.version, '1.0')
+        self.assertEqual(spec.release, '1')
+        self.assertTrue(os.path.exists(f"{pkg.specfile}.orig"))
+        os.unlink(f"{pkg.specfile}.orig")
+
+
 class ControllerProjectActionValiddiffTest(RiftProjectTestCase):
     """
     Tests class for Controller action validdiff

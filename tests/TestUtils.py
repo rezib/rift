@@ -7,6 +7,7 @@ Helper module to write unit tests for Rift project.
 It contains several helper methods or classes like temporary file management.
 """
 
+import logging
 import tempfile
 import unittest
 import os
@@ -16,6 +17,7 @@ import shutil
 import jinja2
 import yaml
 from collections import namedtuple
+from contextlib import contextmanager
 
 from rift.Config import Config, Staff, Modules
 from rift.Mock import Mock
@@ -165,7 +167,7 @@ class RiftProjectTestCase(RiftTestCase):
         os.chdir(self.projdir)
         # Dict of created packages
         self.pkgdirs = {}
-        self.pkgspecs = {}
+        self.buildfiles = []
         self.pkgsrc = {}
         # Load project/staff/modules
         self.config = Config()
@@ -186,8 +188,8 @@ class RiftProjectTestCase(RiftTestCase):
         os.unlink(self.modulespath)
         os.unlink(self.mocktpl)
         os.rmdir(self.annexdir)
-        for spec in self.pkgspecs.values():
-            os.unlink(spec)
+        for buildfile in self.buildfiles:
+            os.unlink(buildfile)
         for src in self.pkgsrc.values():
             os.unlink(src)
         for pkgdir in self.pkgdirs.values():
@@ -221,6 +223,7 @@ class RiftProjectTestCase(RiftTestCase):
     def make_pkg(
         self,
         name='pkg',
+        formats=None,
         version='1.0',
         release='1',
         metadata=None,
@@ -228,6 +231,12 @@ class RiftProjectTestCase(RiftTestCase):
         requires=['another-package'],
         subpackages=[],
     ):
+        # By default, make package in all supported formats
+        if formats is None:
+            formats = ['rpm', 'oci']
+        # Check provide package formats are supported
+        for _format in formats:
+            assert(_format in ['rpm', 'oci'])
         # ./packages/pkg
         self.pkgdirs[name] = os.path.join(self.packagesdir, name)
         os.mkdir(self.pkgdirs[name])
@@ -252,44 +261,56 @@ class RiftProjectTestCase(RiftTestCase):
                     metadata.get('reason', 'Missing feature')
                 )
             )
+            if 'oci' in formats:
+                nfo.write("    oci:\n")
+                nfo.write(f"        version: '{version}'\n")
+                nfo.write(f"        release: '{release}'\n")
 
         # ./packages/pkg/pkg.spec
-        self.pkgspecs[name] = os.path.join(self.pkgdirs[name],
-                                           "{0}.spec".format(name))
-        with open(self.pkgspecs[name], "w") as spec:
-            spec.write("Name:    {0}\n".format(name))
-            spec.write("Version:        {0}\n".format(version))
-            spec.write("Release:        {0}\n".format(release))
-            spec.write("Summary:        A package\n")
-            spec.write("Group:          System Environment/Base\n")
-            spec.write("License:        GPL\n")
-            spec.write("URL:            http://nowhere.com/projects/%{name}/\n")
-            spec.write("Source0:        %{name}-%{version}.tar.gz\n")
-            spec.write("BuildArch:      noarch\n")
-            for build_require in build_requires:
-                spec.write(f"BuildRequires:  {build_require}\n")
-            for require in requires:
-                spec.write(f"Requires:       {require}\n")
-            spec.write("Provides:       {0}-provide\n".format(name))
-            spec.write("%description\n")
-            spec.write("A package\n")
-            for subpackage in subpackages:
-                spec.write(f"%package -n {subpackage.name}\n")
-                spec.write(f"Summary: Sub-package {subpackage.name}\n")
-                spec.write(f"%description -n {subpackage.name}\n")
-                spec.write(f"Description for package {subpackage.name}\n")
+        if 'rpm' in formats:
+            buildfile = os.path.join(self.pkgdirs[name], "{0}.spec".format(name))
+            with open(buildfile, "w") as spec:
+                spec.write("Name:    {0}\n".format(name))
+                spec.write("Version:        {0}\n".format(version))
+                spec.write("Release:        {0}\n".format(release))
+                spec.write("Summary:        A package\n")
+                spec.write("Group:          System Environment/Base\n")
+                spec.write("License:        GPL\n")
+                spec.write("URL:            http://nowhere.com/projects/%{name}/\n")
+                spec.write("Source0:        %{name}-%{version}.tar.gz\n")
+                spec.write("BuildArch:      noarch\n")
+                for build_require in build_requires:
+                    spec.write(f"BuildRequires:  {build_require}\n")
+                for require in requires:
+                    spec.write(f"Requires:       {require}\n")
+                spec.write("Provides:       {0}-provide\n".format(name))
+                spec.write("%description\n")
+                spec.write("A package\n")
+                for subpackage in subpackages:
+                    spec.write(f"%package -n {subpackage.name}\n")
+                    spec.write(f"Summary: Sub-package {subpackage.name}\n")
+                    spec.write(f"%description -n {subpackage.name}\n")
+                    spec.write(f"Description for package {subpackage.name}\n")
 
-            spec.write("%prep\n")
-            spec.write("%build\n")
-            spec.write("# Nothing to build\n")
-            spec.write("%install\n")
-            spec.write("# Nothing to install\n")
-            spec.write("%files\n")
-            spec.write("# No files\n")
-            spec.write("%changelog\n")
-            spec.write("* Tue Feb 26 2019 Myself <buddy@somewhere.org>"
-                       " - {0}-{1}\n".format(version, release))
-            spec.write("- Update to {0} release\n".format(version))
+                spec.write("%prep\n")
+                spec.write("%build\n")
+                spec.write("# Nothing to build\n")
+                spec.write("%install\n")
+                spec.write("# Nothing to install\n")
+                spec.write("%files\n")
+                spec.write("# No files\n")
+                spec.write("%changelog\n")
+                spec.write("* Tue Feb 26 2019 Myself <buddy@somewhere.org>"
+                           " - {0}-{1}\n".format(version, release))
+                spec.write("- Update to {0} release\n".format(version))
+            self.buildfiles.append(buildfile)
+
+        # ./packages/pkg/Containerfile
+        if 'oci' in formats:
+            buildfile = os.path.join(self.pkgdirs[name], 'Containerfile')
+            with open(buildfile, "w") as fh:
+                fh.write('FROM debian:stable')
+            self.buildfiles.append(buildfile)
 
         # ./packages/pkg/sources
         srcdir = os.path.join(self.pkgdirs[name], 'sources')
@@ -344,6 +365,7 @@ class RiftProjectTestCase(RiftTestCase):
 #
 def gen_rpm_spec(**kwargs):
     return jinja2.Template(SPEC_TPL).render(**kwargs)
+
 
 #
 # Temp files

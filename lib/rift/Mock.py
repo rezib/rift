@@ -40,12 +40,12 @@ import shutil
 import glob
 import getpass
 import logging
-from subprocess import Popen, PIPE
 from jinja2 import Template
 
 from rift import RiftError
 from rift.TempDir import TempDir
 from rift.RPM import RPM
+from rift.run import run_command
 
 class Mock():
     """
@@ -133,12 +133,33 @@ class Mock():
                     f"Repository {repo.path} does not exist, unable to "
                     "initialize Mock environment"
                 )
+    def _build_macro_args(self):
+        """ Return mock argument to define rpm_macros file """
+        rpm_macros = self._config.get('rpm_macros', {})
+        if not rpm_macros:
+            return []
+        # Generate rpm.macro file
+        macropath = os.path.join(self._tmpdir.path, 'rpm.macro')
+        with open(macropath, 'w') as fmacro:
+            for key, value in rpm_macros.items():
+                logging.debug("> adding macro %s=%s", key, value)
+                fmacro.write(f"%{key} {value}\n")
+        return [f"--macro-file={macropath}"]
 
     def _mock_base(self):
         """Return base argument to launch mock"""
-        if logging.getLogger().isEnabledFor(logging.INFO):
-            return ['mock', f"--configdir={self._tmpdir.path}"]
-        return ['mock', '-q', f"--configdir={self._tmpdir.path}"]
+        args = [f'--configdir={self._tmpdir.path}'] + self._build_macro_args()
+        logging.debug("> adding mock arguments %s", args)
+        # Force mock to print build commands output with print_main_output=yes,
+        # no matter if stdout/stderr is a TTY. It is required to capture this
+        # output and have the possibility to report it junit files in case of
+        # failure, in all execution environments.
+        return [
+            'mock',
+            '--config-opts',
+            'print_main_output=yes',
+            f"--configdir={self._tmpdir.path}"
+        ] + self._build_macro_args()
 
     def _exec(self, cmd):
         """
@@ -147,10 +168,15 @@ class Mock():
         """
         cmd = self._mock_base() + cmd
         logging.debug('Running mock: %s', ' '.join(cmd))
-        with Popen(cmd, stdout=PIPE, cwd='/', universal_newlines=True) as popen:
-            stdout = popen.communicate()[0]
-            if popen.returncode != 0:
-                raise RiftError(stdout)
+        proc = run_command(
+            cmd,
+            live_output=logging.getLogger().isEnabledFor(logging.INFO),
+            capture_output=True,
+            merged_capture=True,
+            cwd='/'
+        )
+        if proc.returncode != 0:
+            raise RiftError(proc.out)
 
     def init(self, repolist):
         """

@@ -6,7 +6,7 @@ import os.path
 import os
 import textwrap
 
-from TestUtils import make_temp_file, make_temp_dir, RiftTestCase
+from .TestUtils import make_temp_file, make_temp_dir, RiftTestCase
 
 from rift import DeclError
 from rift.Config import Staff, Modules, Config, _DEFAULT_PKG_DIR, \
@@ -951,8 +951,7 @@ class ConfigTestSyntax(RiftTestCase):
             textwrap.dedent(
                 """
                 param0:
-                    key2:
-                        subkey3: overriden_subkey3
+                    key1: overriden_subkey1
                 """
             )
         )
@@ -961,11 +960,11 @@ class ConfigTestSyntax(RiftTestCase):
         self.assertEqual(
             config.get('param0'),
             {
-                'key1': 'default_key1',
+                'key1': 'overriden_subkey1',
                 'key2': {
                     'subkey2': 'default_subkey2',
                     # Value defined in config file must be properly loaded
-                    'subkey3': 'overriden_subkey3',
+                    'subkey3': 'default_subkey3',
                 },
                 'key3': {
                     'subkey5': 'default_subkey5',

@@ -59,9 +59,10 @@ from jinja2 import Template
 
 from rift import RiftError
 from rift.Config import _DEFAULT_VIRTIOFSD
-from rift.Repository import ProjectArchRepositories
+from rift.repository import ProjectArchRepositories
 from rift.TempDir import TempDir
-from rift.utils import download_file, setup_dl_opener
+from rift.utils import download_file, setup_dl_opener, message
+from rift.run import run_command
 
 __all__ = ['VM']
 
@@ -128,7 +129,7 @@ class VM():
         if extra_repos is None:
             extra_repos = []
 
-        self._repos = ProjectArchRepositories(config, arch).all + extra_repos
+        self._repos = ProjectArchRepositories(config, arch).for_format('rpm').all + extra_repos
 
         self.address = config.get('vm_address')
         self.port = self.default_port(config.get('vm_port_range'))
@@ -461,7 +462,7 @@ class VM():
             """)
         self.cmd(cmd)
 
-    def cmd(self, command=None, options=('-T',), stderr=None, stdin=None):
+    def cmd(self, command=None, options=('-T',), **kwargs):
         """Run specified command inside this VM"""
         cmd = ['ssh', '-oStrictHostKeyChecking=no', '-oLogLevel=ERROR',
                '-oUserKnownHostsFile=/dev/null',
@@ -472,9 +473,7 @@ class VM():
         if command:
             cmd.append(command)
         logging.debug("Running command in VM: %s", ' '.join(cmd))
-        with Popen(cmd, stderr=stderr, stdin=stdin) as popen:
-            popen.wait()
-            return popen.returncode
+        return run_command(cmd, **kwargs)
 
     def copy(self, source, dest, stderr=None):
         """Copy files from or to VM"""
@@ -571,7 +570,7 @@ class VM():
             else:
                 testcmd = test.command
             cmd = f"cd {self._PROJ_MOUNTPOINT}; {testcmd}"
-            return self.cmd(cmd)
+            return self.cmd(cmd, capture_output=True)
 
         cmd = ''
         for func, code in funcs.items():
@@ -579,13 +578,11 @@ class VM():
         cmd += shlex.quote(test.command)
 
         logging.debug("Running command outside VM: %s", cmd)
-        with Popen(cmd, shell=True) as popen:
-            popen.wait()
-            return popen.returncode
+        return run_command(cmd, capture_output=True, shell=True)
 
     def running(self):
         """Check if VM is already running."""
-        return self.cmd('/bin/true', stderr=PIPE) == 0
+        return self.cmd('/bin/true', live_output=False).returncode == 0
 
     def ready(self):
         """
@@ -651,6 +648,21 @@ class VM():
                           self._tmpimg.name)
             self._tmpimg.close()
             self._tmpimg = None
+
+    def start(self):
+        """
+        Start VM if not already running. Return rue if VM is actually started,
+        False if already running.
+        """
+        if self.running():
+            message('VM is already running')
+            return False
+
+        message('Launching VM ...')
+        self.spawn()
+        self.ready()
+        self.prepare()
+        return True
 
     def restart(self):
         """
@@ -796,9 +808,8 @@ class VM():
         with open(self.build_post_script, encoding='utf-8') as fh:
             if self.cmd(
                     f"{env_str} bash -",
-                    stderr=STDOUT,
                     stdin=fh
-                ):
+                ).returncode:
                 self.stop()
                 raise RiftError("Error while running build post script")
 

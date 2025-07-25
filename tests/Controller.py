@@ -25,7 +25,7 @@ from rift.Controller import (
 from rift.package.rpm import PackageRPM, ActionableArchPackageRPM
 from rift.TestResults import TestResults, TestCase
 from rift.RPM import RPM, Spec
-from rift import RiftError
+from rift import RiftError, DeclError
 
 VALID_REPOS = {
     'os': {
@@ -243,6 +243,94 @@ class ControllerProjectActionQueryTest(RiftProjectTestCase):
             pkg2 Great module Vendor Missing feature 0     2.1     noarch 3       Myself <buddy@somewhere.org> 2.1-3 2019-02-26    Myself      buddy@somewhere.org br-package
             """),
             mock_stdout.getvalue())
+
+
+class ControllerProjectActionCheckTest(RiftProjectTestCase):
+    """
+    Tests class for Controller action check
+    """
+
+    def test_check_without_type(self):
+        """check without type fails"""
+        with self.assertRaisesRegex(SystemExit, "2"):
+            main(['check'])
+
+    def test_check_staff(self):
+        """simple check staff"""
+        with self.assertLogs(level='INFO') as log:
+            main(['check', 'staff'])
+        self.assertIn(
+            'INFO:root:Staff file is OK.',
+            log.output
+        )
+
+    def test_check_staff_not_found(self):
+        """check staff file not found fails"""
+        with self.assertRaisesRegex(DeclError, "Could not find '/dev/fail'"):
+            main(['check', 'staff', '-f', '/dev/fail'])
+
+    def test_check_modules(self):
+        """simple check modules"""
+        with self.assertLogs(level='INFO') as log:
+            main(['check', 'modules'])
+        self.assertIn(
+            'INFO:root:Modules file is OK.',
+            log.output
+        )
+
+    def test_check_modules_not_found(self):
+        """check modules file not found fails"""
+        with self.assertRaisesRegex(DeclError, "Could not find '/dev/fail'"):
+            main(['check', 'modules', '-f', '/dev/fail'])
+
+    def test_check_info_without_file(self):
+        """check info without file fails"""
+        with self.assertRaisesRegex(
+            RiftError, r"You must specifiy a file path \(-f\)"):
+            main(['check', 'info'])
+
+    def test_check_info(self):
+        """simple check info"""
+        self.make_pkg()
+        with self.assertLogs(level='INFO') as log:
+            main(
+                ['check', 'info', '-f',
+                 os.path.join(self.pkgdirs['pkg'], 'info.yaml')]
+            )
+        self.assertIn(
+            'INFO:root:Info file is OK.',
+            log.output
+        )
+
+    def test_check_info_not_found(self):
+        """check info file not found fails"""
+        self.make_pkg()
+        with self.assertRaises(FileNotFoundError):
+            main(['check', 'info', '-f', '/dev/fail'])
+
+    def test_check_spec_without_file(self):
+        """check spec without file fails"""
+        with self.assertRaisesRegex(
+            RiftError, r"You must specifiy a file path \(-f\)"):
+            main(['check', 'spec'])
+
+    def test_check_spec(self):
+        """simple check spec"""
+        self.make_pkg()
+        with self.assertLogs(level='INFO') as log:
+            main(
+                ['check', 'spec', '-f', self.buildfiles[0]]
+            )
+        self.assertIn(
+            'INFO:root:Spec file is OK.',
+            log.output
+        )
+
+    def test_check_spec_not_found(self):
+        """check spec file not found fails"""
+        self.make_pkg()
+        with self.assertRaisesRegex(RiftError, "/dev/fail does not exist"):
+            main(['check', 'spec', '-f', '/dev/fail'])
 
 
 class ControllerProjectActionValiddiffTest(RiftProjectTestCase):

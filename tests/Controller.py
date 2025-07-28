@@ -11,7 +11,7 @@ from io import StringIO
 import textwrap
 
 from TestUtils import (
-    make_temp_dir, RiftTestCase, RiftProjectTestCase
+    make_temp_dir, make_temp_file, gen_rpm_spec, RiftTestCase, RiftProjectTestCase
 )
 
 from VM import GLOBAL_CACHE, VALID_IMAGE_URL, PROXY
@@ -385,6 +385,80 @@ class ControllerProjectActionCheckTest(RiftProjectTestCase):
         self.make_pkg()
         with self.assertRaisesRegex(RiftError, "/dev/fail does not exist"):
             main(['check', 'spec', '-f', '/dev/fail'])
+
+
+class ControllerProjectActionGerritTest(RiftProjectTestCase):
+    """
+    Tests class for Controller action gerrit
+    """
+
+    def test_gerrit_missing_patch_change_patchset(self):
+        """gerrit without patch, change or patchset fails"""
+        for cmd in (['gerrit', '--change', '1', '--patchset', '2'],
+                    ['gerrit', '--patchset', '2', '/dev/null'],
+                    ['gerrit', '--change', '1', '/dev/null']):
+            with self.assertRaisesRegex(SystemExit, "2"):
+                main(cmd)
+
+    @patch('rift.Controller.Review')
+    def test_gerrit(self, mock_review):
+        """simple gerrit"""
+        self.make_pkg()
+        patch = make_temp_file(
+            textwrap.dedent("""
+                diff --git a/packages/pkg/pkg.spec b/packages/pkg/pkg.spec
+                index d1a0d0e7..b3e36379 100644
+                --- a/packages/pkg/pkg.spec
+                +++ b/packages/pkg/pkg.spec
+                @@ -1,6 +1,6 @@
+                 Name:    pkg
+                 Version:        1.0
+                -Release:        1
+                +Release:        2
+                 Summary:        A package
+                 Group:          System Environment/Base
+                 License:        GPL
+                """))
+        main(['gerrit', '--change', '1', '--patchset', '2', patch.name])
+        # Check review has not been invalidated and pushed
+        mock_review.return_value.invalidate.assert_not_called()
+        mock_review.return_value.push.assert_called_once()
+
+    @patch('rift.Controller.Review')
+    def test_gerrit_review_invalidated(self, mock_review):
+        """gerrit review invalidated"""
+        # Make package and inject rpmlint error ($RPM_BUILD_ROOT in buildsteps)
+        # in RPM spec file.
+        self.make_pkg()
+        with open(self.pkgspecs['pkg'], "w") as spec:
+            spec.write(
+                gen_rpm_spec(
+                    name='pkg',
+                    version='1.0',
+                    release='2',
+                    arch='noarch',
+                    buildsteps="$RPM_BUILD_ROOT",
+                )
+            )
+        patch = make_temp_file(
+            textwrap.dedent("""
+                diff --git a/packages/pkg/pkg.spec b/packages/pkg/pkg.spec
+                index d1a0d0e7..b3e36379 100644
+                --- a/packages/pkg/pkg.spec
+                +++ b/packages/pkg/pkg.spec
+                @@ -1,6 +1,6 @@
+                 Name:    pkg
+                 Version:        1.0
+                -Release:        1
+                +Release:        2
+                 Summary:        A package
+                 Group:          System Environment/Base
+                 License:        GPL
+                """))
+        main(['gerrit', '--change', '1', '--patchset', '2', patch.name])
+        # Check review has been invalidated and pushed
+        mock_review.return_value.invalidate.assert_called_once()
+        mock_review.return_value.push.assert_called_once()
 
 
 class ControllerProjectActionValiddiffTest(RiftProjectTestCase):

@@ -7,9 +7,12 @@ from rift import RiftError
 from rift.package import Package
 from rift.package._base import _SOURCES_DIR, _META_FILE, _TESTS_DIR
 from ..TestUtils import RiftProjectTestCase
+from rift.Gerrit import Review
+
 
 class RiftPackageTestCase(RiftProjectTestCase):
     pass
+
 
 class PackageTest(RiftPackageTestCase):
     """
@@ -48,3 +51,11 @@ class PackageTest(RiftPackageTestCase):
                       f"{pkgname}.spec")
         with self.assertRaises(NotImplementedError):
             pkg.add_changelog_entry("Myself", "Package modification", False)
+
+    def test_analyze(self):
+        """ Test Package analyze (not implemented) """
+        pkgname = 'pkg'
+        pkg = Package(pkgname, self.config, self.staff, self.modules, 'rpm',
+                      f"{pkgname}.spec")
+        with self.assertRaises(NotImplementedError):
+            pkg.analyze(Review(), pkg.dir)

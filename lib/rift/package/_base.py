@@ -230,6 +230,10 @@ class Package():
         """Must be implemented in concrete children classes when supported."""
         raise NotImplementedError
 
+    def analyze(self, review, configdir):
+        """Must be implemented in concrete children classes when supported."""
+        raise NotImplementedError
+
 
 class ActionableArchPackage:
     """

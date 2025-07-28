@@ -129,6 +129,10 @@ class PackageRPM(Package):
         logging.info("Adding changelog record for '%s'", author)
         self.spec.add_changelog_entry(author, comment, bump)
 
+    def analyze(self, review, configdir):
+        assert self.spec is not None
+        self.spec.analyze(review, configdir)
+
     def supports_arch(self, arch):
         """
         Returns True is package spec file does not restrict ExclusiveArch or if

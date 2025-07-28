@@ -137,6 +137,10 @@ class PackageRPM(Package):
         assert self.spec is not None
         return not self.spec.exclusive_archs or arch in self.spec.exclusive_archs
 
+    def analyze(self, review, configdir):
+        assert self.spec is not None
+        self.spec.analyze(review, configdir)
+
     def for_arch(self, arch):
         """
         Return RPM package specialized for a given architecture.

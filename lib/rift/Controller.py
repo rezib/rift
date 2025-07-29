@@ -742,6 +742,38 @@ def action_vm(args, config):
         ret = vm_build(vm, args, config)
     return ret
 
+def build_pkgs(config, args, pkgs, arch, results):
+    """Build a list of packages on a given architecture and report results."""
+    for pkg in pkgs:
+        case = TestCase('build', pkg.name, arch)
+        now = time.time()
+        try:
+            spec = Spec(pkg.specfile, config=config)
+        except RiftError as ex:
+            logging.error("Unable to load spec file: %s", str(ex))
+            results.add_failure(case, time.time() - now, err=str(ex))
+            continue  # skip current package
+
+        if not spec.supports_arch(arch):
+            logging.info(
+                "Skipping build on architecture %s not supported by "
+                "package %s",
+                arch,
+                pkg.name
+            )
+            continue
+
+        banner(f"Building package '{pkg.name}' for architecture {arch}")
+        now = time.time()
+        try:
+            pkg.load()
+            build_pkg(config, args, pkg, arch)
+        except RiftError as ex:
+            logging.error("Build failure: %s", str(ex))
+            results.add_failure(case, time.time() - now, err=str(ex))
+        else:
+            results.add_success(case, time.time() - now)
+
 def action_build(args, config):
     """Action for 'build' command."""
 
@@ -761,36 +793,8 @@ def action_build(args, config):
     # Build all packages for all project supported architectures
     for arch in config.get('arch'):
 
-        for pkg in Package.list(config, staff, modules, args.packages):
-
-            case = TestCase('build', pkg.name, arch)
-            now = time.time()
-            try:
-                spec = Spec(pkg.specfile, config=config)
-            except RiftError as ex:
-                logging.error("Unable to load spec file: %s", str(ex))
-                results.add_failure(case, time.time() - now, err=str(ex))
-                continue  # skip current package
-
-            if not spec.supports_arch(arch):
-                logging.info(
-                    "Skipping build on architecture %s not supported by "
-                    "package %s",
-                    arch,
-                    pkg.name
-                )
-                continue
-
-            banner(f"Building package '{pkg.name}' for architecture {arch}")
-            now = time.time()
-            try:
-                pkg.load()
-                build_pkg(config, args, pkg, arch)
-            except RiftError as ex:
-                logging.error("Build failure: %s", str(ex))
-                results.add_failure(case, time.time() - now, err=str(ex))
-            else:
-                results.add_success(case, time.time() - now)
+        pkgs = Package.list(config, staff, modules, args.packages)
+        build_pkgs(config, args, pkgs, arch, results)
 
         if getattr(args, 'junit', False):
             logging.info('Writing test results in %s', args.junit)

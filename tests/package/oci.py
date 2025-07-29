@@ -3,6 +3,7 @@
 #
 import os
 import textwrap
+from unittest.mock import patch
 
 from rift import RiftError
 from rift.package.oci import PackageOCI, ActionableArchPackageOCI
@@ -187,7 +188,18 @@ class ActionableArchPackageOCITest(RiftPackageTestCase):
         _pkg.load(infopath = pkgfile.name)
         self.pkg = ActionableArchPackageOCI(_pkg, 'x86_64')
 
-    # test build
+    @patch('rift.package.oci.ContainerRuntime')
+    def test_build(self, mock_container_runtime):
+        # Create sources dir and source
+        sources_dir = os.path.join(self.pkg.package.dir, 'sources')
+        os.makedirs(sources_dir)
+        with open(os.path.join(sources_dir, "pkg-1.0.tar.gz"), 'w+') as fh:
+            fh.write("data")
+        self.pkg.package.load()
+        self.pkg.build()
+
+    # test build missing source
+
     # test test
     # test publish
     # test clean

@@ -33,6 +33,7 @@ class SpecTest(RiftTestCase):
         self.buildsteps = ""
         self.installsteps = ""
         self.files = ""
+        self.exclusive_arch = None
         self.update_spec()
 
 
@@ -47,7 +48,8 @@ class SpecTest(RiftTestCase):
                     prepsteps=self.prepsteps,
                     buildsteps=self.buildsteps,
                     installsteps=self.installsteps,
-                    files=self.files
+                    files=self.files,
+                    exclusive_arch=self.exclusive_arch,
                 )
             )
 
@@ -189,6 +191,19 @@ class SpecTest(RiftTestCase):
         self.assertTrue(spec._match_var('%{foo}%{bar}%{?dist}') == bar)
         self.assertTrue(spec._match_var('no vars inside') is None)
 
+    def test_supports_arch_w_exclusive_arch(self):
+        """ Test supports_arch() with ExclusiveArch"""
+        self.exclusive_arch = "x86_64"
+        self.update_spec()
+        spec = Spec(self.spec)
+        self.assertTrue(spec.supports_arch('x86_64'))
+        self.assertFalse(spec.supports_arch('aarch64'))
+
+    def test_supports_arch_wo_exclusive_arch(self):
+        """ Test supports_arch() without ExclusiveArch"""
+        spec = Spec(self.spec)
+        self.assertTrue(spec.supports_arch('x86_64'))
+        self.assertTrue(spec.supports_arch('aarch64'))
 
 class VariableTest(RiftTestCase):
     """ Test Variable class """

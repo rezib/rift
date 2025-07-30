@@ -497,6 +497,13 @@ class Spec():
         if popen.returncode != 0:
             review.invalidate()
 
+    def supports_arch(self, arch):
+        """
+        Returns True is package spec file does not restrict ExclusiveArch or if
+        the arch in argument is explicitely set in package ExclusiveArch.
+        """
+        return not self.exclusive_archs or arch in self.exclusive_archs
+
 
 class Variable():
 

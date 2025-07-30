@@ -33,14 +33,11 @@
 Controler.py:
     Core package to manage rift actions
 """
-import re
 import os
 import argparse
 import logging
 from operator import attrgetter
-import random
 import time
-import textwrap
 # Since pylint can not found rpm.error, disable this check
 from rpm import error as RpmError # pylint: disable=no-name-in-module
 from unidiff import parse_unidiff
@@ -49,28 +46,16 @@ from rift import RiftError, __version__
 from rift.Annex import Annex, is_binary
 from rift.Config import Config, Staff, Modules
 from rift.Gerrit import Review
-from rift.Mock import Mock
-from rift.Package import Package, Test
-from rift.Repository import LocalRepository, ProjectArchRepositories
-from rift.RPM import RPM, Spec, RPMLINT_CONFIG_V1, RPMLINT_CONFIG_V2
-from rift.TempDir import TempDir
+from rift.package import ProjectPackages
+from rift.repository import ProjectArchRepositories
+from rift.RPM import RPM, Spec
 from rift.TestResults import TestCase, TestResults
 from rift.TextTable import TextTable
 from rift.VM import VM
 from rift.sync import RepoSyncFactory
+from rift.patches import get_packages_from_patch
+from rift.utils import message, banner
 
-
-def message(msg):
-    """
-    helper function to print a log message
-    """
-    print(f"> {msg}")
-
-def banner(title):
-    """
-    helper function to print a banner
-    """
-    print(f"** {title} **")
 
 def make_parser():
     """Create command line parser"""
@@ -318,9 +303,11 @@ def action_check(args, config):
         if args.file is None:
             raise RiftError("You must specifiy a file path (-f)")
 
-        pkg = Package('dummy', config, staff, modules)
+        # If the package supports multiple format, check only the first as
+        # the info file is the name for all formats.
+        pkg = ProjectPackages.get('dummy', config, staff, modules)[0]
         pkg.sourcesdir = '/'
-        pkg.load(args.file)
+        pkg.load_info(args.file)
         logging.info('Info file is OK.')
 
     elif args.type == 'spec':
@@ -378,193 +365,10 @@ def action_annex(args, config, staff, modules):
     elif args.annex_cmd == 'backup':
         message("Annex backup in progress...")
         output_file = annex.backup(
-            Package.list(config, staff, modules), args.output_file
+            ProjectPackages.list(config, staff, modules), args.output_file
         )
         message(f"Annex backup is available here: {output_file}")
 
-def _vm_start(vm):
-    if vm.running():
-        message('VM is already running')
-        return False
-
-    message('Launching VM ...')
-    vm.spawn()
-    vm.ready()
-    vm.prepare()
-    return True
-
-
-class BasicTest(Test):
-    """
-    Auto-generated test for a Package.
-    Setup a test to install a package and its dependencies.
-        - pkg: package to test
-        - config: rift configuration
-    """
-
-    def __init__(self, pkg, config=None):
-        if pkg.rpmnames:
-            rpmnames = pkg.rpmnames
-        else:
-            rpmnames = Spec(pkg.specfile, config=config).pkgnames
-
-        try:
-            for name in pkg.ignore_rpms:
-                rpmnames.remove(name)
-        except ValueError as exc:
-            raise RiftError(f"'{name}' is not in RPMS list") from exc
-
-        # Avoid always processing the rpm list in the same order
-        random.shuffle(rpmnames)
-
-        cmd = textwrap.dedent(f"""
-        if [ -x /usr/bin/dnf ] ; then
-            YUM="dnf"
-        else
-            YUM="yum"
-        fi
-        i=0
-        for pkg in {' '.join(rpmnames)}; do
-            i=$(( $i + 1 ))
-            echo -e "[Testing '${{pkg}}' (${{i}}/{len(rpmnames)})]"
-            rm -rf /var/lib/${{YUM}}/history*
-            if rpm -q --quiet $pkg; then
-              ${{YUM}} -y -d1 upgrade $pkg || exit 1
-            else
-              ${{YUM}} -y -d1 install $pkg || exit 1
-            fi
-            if [ -n "$(${{YUM}} history | tail -n +3)" ]; then
-                echo '> Cleanup last transaction'
-                ${{YUM}} -y -d1 history undo last || exit 1
-            else
-                echo '> Warning: package already installed and up to date !'
-            fi
-        done""")
-        Test.__init__(self, cmd, "basic_install")
-        self.local = False
-
-def build_pkg(config, args, pkg, arch):
-    """
-    Build a package for a specific architecture
-      - config: rift configuration
-      - pkg: package to build
-      - repo: rpm repositories to use
-      - suppl_repos: optional additional repositories
-    """
-    repos = ProjectArchRepositories(config, arch)
-    if args.publish and not repos.can_publish():
-        raise RiftError("Cannot publish if 'working_repo' is undefined")
-
-    message('Preparing Mock environment...')
-    mock = Mock(config, arch, config.get('version'))
-    mock.init(repos.all)
-
-    message("Building SRPM...")
-    srpm = pkg.build_srpm(mock, args.sign)
-    logging.info("Built: %s", srpm.filepath)
-
-    message("Building RPMS...")
-    for rpm in pkg.build_rpms(mock, srpm, args.sign):
-        logging.info('Built: %s', rpm.filepath)
-    message("RPMS successfully built")
-
-    # Publish
-    if args.publish:
-        message("Publishing RPMS...")
-        mock.publish(repos.working)
-
-        if args.updaterepo:
-            message("Updating repository...")
-            repos.working.update()
-    else:
-        logging.info("Skipping publication")
-
-    mock.clean()
-
-def test_one_pkg(config, args, pkg, vm, arch, repos, results):
-    """
-    Launch tests on a given package on a specific VM and a set of repositories.
-    """
-    message(f"Preparing {arch} test environment")
-    _vm_start(vm)
-    if repos.working is None:
-        disablestr = '--disablerepo=working'
-    else:
-        disablestr = ''
-    vm.cmd(f"yum -y -d0 {disablestr} update")
-
-    banner(f"Starting tests of package {pkg.name} on architecture {arch}")
-
-    rc = 0
-
-    tests = list(pkg.tests())
-    if not args.noauto:
-        tests.insert(0, BasicTest(pkg, config=config))
-    for test in tests:
-        case = TestCase(test.name, pkg.name, arch)
-        now = time.time()
-        message(f"Running test '{case.fullname}' on architecture '{arch}'")
-        proc = vm.run_test(test)
-        if proc.returncode == 0:
-            results.add_success(case, time.time() - now, out=proc.out, err=proc.err)
-            message(f"Test '{case.fullname}' on architecture {arch}: OK")
-        else:
-            rc = 1
-            results.add_failure(case, time.time() - now, out=proc.out, err=proc.err)
-            message(f"Test '{case.fullname}' on architecture {arch}: ERROR")
-
-    if not getattr(args, 'noquit', False):
-        message(f"Cleaning {arch} test environment")
-        vm.cmd("poweroff")
-        time.sleep(5)
-        vm.stop()
-
-    return rc
-
-def test_pkgs(config, args, results, pkgs, arch, extra_repos=None):
-    """Test a list of packages on a specific architecture."""
-
-    if extra_repos is None:
-        extra_repos = []
-
-    vm = VM(config, arch, extra_repos=extra_repos)
-    repos = ProjectArchRepositories(config, arch)
-
-    if vm.running():
-        raise RiftError('VM is already running')
-
-    rc = 0
-
-    for pkg in pkgs:
-
-        now = time.time()
-        try:
-            spec = Spec(pkg.specfile, config=config)
-        except RiftError as ex:
-            # Create a dummy parse test case to report specifically the spec
-            # parsing error. When parsing succeed, this test case is not
-            # reported in test results.
-            case = TestCase("parse", pkg.name, arch)
-            logging.error("Unable to load spec file: %s", str(ex))
-            results.add_failure(case, time.time() - now, err=str(ex))
-            continue
-
-        if not spec.supports_arch(arch):
-            logging.info(
-                "Skipping test on architecture %s not supported by "
-                "package %s",
-                arch,
-                pkg.name
-            )
-            continue
-
-        pkg.load()
-        rc += test_one_pkg(config, args, pkg, vm, arch, repos, results)
-
-    if getattr(args, 'noquit', False):
-        message("Not stopping the VM. Use: rift vm connect")
-
-    return rc
 
 def validate_pkgs(config, args, results, pkgs, arch):
     """
@@ -581,18 +385,17 @@ def validate_pkgs(config, args, results, pkgs, arch):
         raise RiftError("Cannot publish if 'working_repo' is undefined")
 
     for pkg in pkgs:
-
+        # Load package and report possible failure
         case = TestCase('build', pkg.name, arch)
         now = time.time()
-
         try:
-            spec = Spec(pkg.specfile, config=config)
+            pkg.load()
         except RiftError as ex:
-            logging.error("Unable to load spec file: %s", str(ex))
+            logging.error("Unable to load package: %s", str(ex))
             results.add_failure(case, time.time() - now, err=str(ex))
             continue  # skip current package
 
-        if not spec.supports_arch(arch):
+        if not pkg.supports_arch(arch):
             logging.info(
                 "Skipping validation on architecture %s not supported by "
                 "package %s",
@@ -603,30 +406,21 @@ def validate_pkgs(config, args, results, pkgs, arch):
 
         banner(f"Checking package '{pkg.name}' on architecture {arch}")
 
-        # Check info
-        message('Validate package info...')
-        pkg.load()
-        pkg.check_info()
+        now = time.time()
+        try:
+            pkg.check()
+        except RiftError as ex:
+            logging.error("Static analysis of package failed: %s", str(ex))
+            results.add_failure(case, time.time() - now, err=str(ex))
+            continue  # skip current package
 
-        # Check spec
-        message('Validate specfile...')
-        spec.check(pkg)
-
-        (staging, stagedir) = create_staging_repo(config)
-
-        message('Preparing Mock environment...')
-        mock = Mock(config, arch, config.get('version'))
-        mock.init(repos.all)
+        # Get package specialized for this architecture
+        pkg_arch = pkg.for_arch(arch)
 
         try:
             now = time.time()
-            # Check build SRPM
-            message('Validate source RPM build...')
-            srpm = pkg.build_srpm(mock, args.sign)
-
-            # Check build RPMS
-            message('Validate RPMS build...')
-            pkg.build_rpms(mock, srpm, args.sign)
+            case = TestCase('build', pkg.name, arch)
+            pkg_arch.build(sign=args.sign)
         except RiftError as ex:
             logging.error("Build failure: %s", str(ex))
             results.add_failure(case, time.time() - now, err=str(ex))
@@ -634,35 +428,25 @@ def validate_pkgs(config, args, results, pkgs, arch):
         else:
             results.add_success(case, time.time() - now)
 
-        # Check tests
-        mock.publish(staging)
-        staging.update()
+        # Publish package in staging environment for testing
+        pkg_arch.publish(staging=True)
 
-        rc = 0
+        pkg_results = None
+        # Check tests
         if args.test:
-            rc = test_pkgs(
-                config,
-                args,
-                results,
-                [pkg],
-                arch,
-                [staging.consumables[arch]]
-            )
+            pkg_results = pkg_arch.test(
+                noauto=args.noauto,
+                staging=True,
+                noquit=args.noquit)
+            results.merge(pkg_results)
 
         # Also publish on working repo if requested
-        # XXX: All RPMs should be published when all of them have been validated
-        if rc == 0 and args.publish:
-            message("Publishing RPMS...")
-            mock.publish(repos.working)
+        # XXX: All packages should be published when all of them have been validated
+        if (pkg_results is None or pkg_results.global_result) and args.publish:
+            pkg_arch.publish()
 
-            message("Updating repository...")
-            repos.working.update()
-
-        if getattr(args, 'noquit', False):
-            message("Keep environment, VM is running. Use: rift vm connect")
-        else:
-            mock.clean()
-            stagedir.delete()
+        # Clean build environment
+        pkg_arch.clean(noquit=args.noquit)
 
     banner(f"All packages checked on architecture {arch}")
 
@@ -696,12 +480,8 @@ def remove_packages(config, args, pkgs_to_remove, arch):
         return
 
     for pkg in pkgs_to_remove:
-        found_pkgs = repos.working.search(pkg.name)
-        for found_pkg in found_pkgs:
-            repos.working.delete(found_pkg)
+        repos.delete_matching(pkg.name)
 
-    # Update repository metadata
-    repos.working.update()
 
 def action_vm(args, config):
     """Action for 'vm' sub-commands."""
@@ -733,7 +513,7 @@ def action_vm(args, config):
         ret = vm.copy(args.source, args.dest)
     elif args.vm_cmd == 'start':
         vm.tmpmode = args.tmpimg
-        if _vm_start(vm):
+        if vm.start():
             message("VM started. Use: rift vm connect")
             ret = 0
     elif args.vm_cmd == 'stop':
@@ -761,18 +541,21 @@ def action_build(args, config):
     # Build all packages for all project supported architectures
     for arch in config.get('arch'):
 
-        for pkg in Package.list(config, staff, modules, args.packages):
+        for pkg in ProjectPackages.list(config, staff, modules, args.packages):
 
+            # Load package and report possible failure
             case = TestCase('build', pkg.name, arch)
             now = time.time()
             try:
-                spec = Spec(pkg.specfile, config=config)
+                pkg.load()
             except RiftError as ex:
-                logging.error("Unable to load spec file: %s", str(ex))
+                logging.error("Unable to load package: %s", str(ex))
                 results.add_failure(case, time.time() - now, err=str(ex))
                 continue  # skip current package
 
-            if not spec.supports_arch(arch):
+
+            # Check architecture is supported or skip package
+            if not pkg.supports_arch(arch):
                 logging.info(
                     "Skipping build on architecture %s not supported by "
                     "package %s",
@@ -781,16 +564,26 @@ def action_build(args, config):
                 )
                 continue
 
-            banner(f"Building package '{pkg.name}' for architecture {arch}")
+            # Get package specialized for this architecture
+            pkg_arch = pkg.for_arch(arch)
+
             now = time.time()
             try:
-                pkg.load()
-                build_pkg(config, args, pkg, arch)
+                pkg_arch.build(sign=args.sign)
             except RiftError as ex:
                 logging.error("Build failure: %s", str(ex))
                 results.add_failure(case, time.time() - now, err=str(ex))
             else:
                 results.add_success(case, time.time() - now)
+
+            # Publish
+            if args.publish:
+                pkg_arch.publish(updaterepo=args.updaterepo)
+            else:
+                logging.info("Skipping publication")
+
+            # Clean build environment
+            pkg_arch.clean()
 
         if getattr(args, 'junit', False):
             logging.info('Writing test results in %s', args.junit)
@@ -820,14 +613,37 @@ def action_test(args, config):
     staff, modules = staff_modules(config)
     results = TestResults('test')
     # Test package on all project supported architectures
+
     for arch in config.get('arch'):
-        test_pkgs(
-            config,
-            args,
-            results,
-            Package.list(config, staff, modules, args.packages),
-            arch
-        )
+        for pkg in ProjectPackages.list(config, staff, modules, args.packages):
+
+            # Load package and report possible failure
+            now = time.time()
+            try:
+                pkg.load()
+            except RiftError as ex:
+                # Create a dummy parse test case to report this error
+                # specifically. When parsings succeed, this test case is not
+                # reported in test results.
+                case = TestCase("load", pkg.name, arch)
+                logging.error("Unable to load package: %s", str(ex))
+                results.add_failure(case, time.time() - now, err=str(ex))
+                continue  # skip current package
+
+            if not pkg.supports_arch(arch):
+                logging.info(
+                    "Skipping test on architecture %s not supported by "
+                    "package %s",
+                    arch,
+                    pkg.name
+                )
+                continue
+
+            pkg_arch = pkg.for_arch(arch)
+
+            pkg_results = pkg_arch.test(noauto=args.noauto, noquit=args.noquit)
+            results.merge(pkg_results)
+
     if getattr(args, 'junit', False):
         logging.info('Writing test results in %s', args.junit)
         results.junit(args.junit)
@@ -856,7 +672,7 @@ def action_validate(args, config):
             config,
             args,
             results,
-            Package.list(config, staff, modules, args.packages),
+            ProjectPackages.list(config, staff, modules, args.packages),
             arch
         )
     banner('All packages checked on all architectures')
@@ -890,7 +706,7 @@ def action_validdiff(args, config):
     # Re-validate all updated packages for all architectures supported by the
     # project.
     for arch in config.get('arch'):
-        validate_pkgs(config, args, results, updated.values(), arch)
+        validate_pkgs(config, args, results, updated, arch)
 
 
     if getattr(args, 'junit', False):
@@ -910,7 +726,7 @@ def action_validdiff(args, config):
     # Remove from working repository packages detected as removed in patch for
     # all architectures supported by the project.
     for arch in config.get('arch'):
-        remove_packages(config, args, removed.values(), arch)
+        remove_packages(config, args, removed, arch)
 
     return rc
 
@@ -924,12 +740,19 @@ def action_gerrit(args, config, staff, modules):
         filepath = patchedfile.path
         names = filepath.split(os.path.sep)
         if names[0] == config.get('packages_dir'):
-            pkg = Package(names[1], config, staff, modules)
-            if filepath == pkg.specfile and not patchedfile.is_deleted_file:
-                Spec(pkg.specfile, config=config).analyze(review, pkg.dir)
+            pkgs = ProjectPackages.get(names[1], config, staff, modules)
+            for pkg in pkgs:
+                if (filepath == os.path.relpath(pkg.buildfile) and
+                    not patchedfile.is_deleted_file):
+                    pkg.load()
+                    try:
+                        pkg.analyze(review, pkg.dir)
+                    except NotImplementedError:
+                        logging.info("Skipping package format %s which does "
+                                     "not support static analysis", pkg.format)
 
     # Push review
-    review.msg_header = 'rpmlint analysis'
+    review.msg_header = 'rift static analysis'
     review.push(config, args.change, args.patchset)
 
 def action_sync(args, config):
@@ -988,65 +811,118 @@ def action_sync(args, config):
             )
             synchronizer.run()
 
+def action_create_import(args, config):
+    """Action for 'create', 'import' and 'reimport' commands."""
+    if args.command == 'create':
+        pkgname = args.name
+    elif args.command in ('import', 'reimport'):
+        rpm = RPM(args.file, config)
+        if not rpm.is_source:
+            raise RiftError(f"{args.file} is not a source RPM")
+        pkgname = rpm.name
 
-def get_packages_from_patch(patch, config, modules, staff):
-    """
-    Return 2-tuple of dicts of updated and removed packages extracted from given
-    patch.
-    """
-    updated = {}
-    removed = {}
-    patchedfiles = parse_unidiff(patch)
-    if not patchedfiles:
-        raise RiftError("Invalid patch detected (empty commit ?)")
+    if args.maintainer is None:
+        raise RiftError("You must specify a maintainer")
 
-    for patchedfile in patchedfiles:
-        modifies_packages = _validate_patched_file(
-            patchedfile,
-            config=config,
-            modules=modules,
-            staff=staff
-        )
-        if not modifies_packages:
+    pkgs = ProjectPackages.get(pkgname, config, *staff_modules(config))
+
+    for pkg in pkgs:
+        if args.command == 'reimport':
+            pkg.load()
+
+        if args.module:
+            pkg.module = args.module
+        if args.maintainer not in pkg.maintainers:
+            pkg.maintainers.append(args.maintainer)
+        if args.reason:
+            pkg.reason = args.reason
+        if args.origin:
+            pkg.origin = args.origin
+
+        pkg.check_info()
+        pkg.write()
+
+        if args.command in ('create', 'import'):
+            message(f"Package '{pkg.name}' has been created")
+
+        if args.command in ('import', 'reimport'):
+            rpm.extract_srpm(pkg.dir, pkg.sourcesdir)
+            message(f"Package '{pkg.name}' has been {args.command}ed")
+
+    return 0
+
+def action_query(args, config):
+    """Action for 'query' command."""
+    staff, modules = staff_modules(config)
+    pkglist = sorted(ProjectPackages.list(config, staff, modules, args.packages),
+                        key=attrgetter('name'))
+
+    tbl = TextTable()
+    tbl.fmt = args.fmt or '%name %module %maintainers %format %version '\
+                            '%release %modulemanager'
+    tbl.show_header = args.headers
+    tbl.color = True
+
+    supported_keys = set(('name', 'module', 'origin', 'reason', 'format',
+                            'tests', 'version', 'arch', 'release',
+                            'changelogname', 'changelogtime', 'maintainers',
+                            'modulemanager', 'buildrequires'))
+    diff_keys = set(tbl.pattern_fields()) - supported_keys
+    if diff_keys:
+        raise RiftError(f"Unknown placeholder(s): {', '.join(diff_keys)} "
+                        f"(supported keys are: {', '.join(supported_keys)})")
+
+    for pkg in pkglist:
+        logging.debug('Loading package %s', pkg.name)
+        try:
+            pkg.load()
+        except RiftError as exp:
+            logging.error("%s: %s", pkg.name, str(exp))
             continue
-        pkg = _patched_file_updated_package(
-            patchedfile,
-            config=config,
-            modules=modules,
-            staff=staff
-        )
-        if pkg is not None and pkg not in updated:
-            logging.info('Patch updates package %s', pkg.name)
-            updated[pkg.name] = pkg
-        pkg = _patched_file_removed_package(
-            patchedfile,
-            config=config,
-            modules=modules,
-            staff=staff
-        )
-        if pkg is not None and pkg not in removed:
-            logging.info('Patch deletes package %s', pkg.name)
-            removed[pkg.name] = pkg
 
-    return updated, removed
+        date = str(time.strftime("%Y-%m-%d", time.localtime(pkg.changelog_time)))
+        modulemanager = staff.get(modules.get(pkg.module).get('manager')[0])
+        tbl.append({'name': pkg.name,
+                    'module': pkg.module,
+                    'origin': pkg.origin,
+                    'reason': pkg.reason,
+                    'format': pkg.format,
+                    'tests': str(len(list(pkg.tests()))),
+                    'version': pkg.version,
+                    'arch': pkg.arch,
+                    'release': pkg.release,
+                    'changelogname': pkg.changelog_name,
+                    'changelogtime': date,
+                    'buildrequires': pkg.buildrequires,
+                    'modulemanager': modulemanager['email'],
+                    'maintainers': ', '.join(pkg.maintainers)})
+    print(tbl)
 
-def create_staging_repo(config):
-    """
-    Create and return staging temporary repository with a 2-tuple containing
-    (Repository, TempDir) objects.
-    """
-    logging.info('Creating temporary repository')
-    stagedir = TempDir('stagedir')
-    stagedir.create()
-    staging_repo_options = {'module_hotfixes': "true"}
-    staging = LocalRepository(
-        path=stagedir.path,
-        config=config,
-        name='staging',
-        options=staging_repo_options,
-    )
-    staging.create()
-    return (staging, stagedir)
+    return 0
+
+def action_changelog(args, config):
+    """Action for 'changelog' command."""
+    staff, modules = staff_modules(config)
+    if args.maintainer is None:
+        raise RiftError("You must specify a maintainer")
+
+    pkgs = ProjectPackages.get(args.package, config, staff, modules)
+    package_found = False
+    for pkg in pkgs:
+        pkg.load()
+        try:
+            pkg.add_changelog_entry(args.maintainer, args.comment, args.bump)
+            package_found = True
+        except NotImplementedError:
+            logging.info("Skipping package format %s which does not support "
+                         "changelog", pkg.format)
+
+    if not package_found:
+        logging.error("Unable to find package %s with changelog to update",
+                      args.package)
+        return 1
+
+    return 0
 
 def staff_modules(config):
     """
@@ -1084,40 +960,7 @@ def action(config, args):
 
     # CREATE/IMPORT/REIMPORT
     if args.command in ['create', 'import', 'reimport']:
-
-        if args.command == 'create':
-            pkgname = args.name
-        elif args.command in ('import', 'reimport'):
-            rpm = RPM(args.file, config)
-            if not rpm.is_source:
-                raise RiftError(f"{args.file} is not a source RPM")
-            pkgname = rpm.name
-
-        if args.maintainer is None:
-            raise RiftError("You must specify a maintainer")
-
-        pkg = Package(pkgname, config, *staff_modules(config))
-        if args.command == 'reimport':
-            pkg.load()
-
-        if args.module:
-            pkg.module = args.module
-        if args.maintainer not in pkg.maintainers:
-            pkg.maintainers.append(args.maintainer)
-        if args.reason:
-            pkg.reason = args.reason
-        if args.origin:
-            pkg.origin = args.origin
-
-        pkg.check_info()
-        pkg.write()
-
-        if args.command in ('create', 'import'):
-            message(f"Package '{pkg.name}' has been created")
-
-        if args.command in ('import', 'reimport'):
-            rpm.extract_srpm(pkg.dir, pkg.sourcesdir)
-            message(f"Package '{pkg.name}' has been {args.command}ed")
+        return action_create_import(args, config)
 
     # BUILD
     elif args.command == 'build':
@@ -1139,86 +982,13 @@ def action(config, args):
     elif args.command == 'validdiff':
         return action_validdiff(args, config)
 
+    # QUERY
     elif args.command == 'query':
+        return action_query(args, config)
 
-        staff, modules = staff_modules(config)
-        pkglist = sorted(Package.list(config, staff, modules, args.packages),
-                         key=attrgetter('name'))
-
-        tbl = TextTable()
-        tbl.fmt = args.fmt or '%name %module %maintainers %version %release '\
-                              '%modulemanager'
-        tbl.show_header = args.headers
-        tbl.color = True
-
-        supported_keys = set(('name', 'module', 'origin', 'reason', 'tests',
-                              'version', 'arch', 'release', 'changelogname',
-                              'changelogtime', 'maintainers', 'modulemanager',
-                              'buildrequires'))
-        diff_keys = set(tbl.pattern_fields()) - supported_keys
-        if diff_keys:
-            raise RiftError(f"Unknown placeholder(s): {', '.join(diff_keys)} "
-                            f"(supported keys are: {', '.join(supported_keys)})")
-
-        for pkg in pkglist:
-            logging.debug('Loading package %s', pkg.name)
-            try:
-                pkg.load()
-                spec = Spec(config=config)
-                if args.spec:
-                    spec.filepath = pkg.specfile
-                    spec.load()
-            except RiftError as exp:
-                logging.error("%s: %s", pkg.name, str(exp))
-                continue
-
-            date = str(time.strftime("%Y-%m-%d", time.localtime(spec.changelog_time)))
-            modulemanager = staff.get(modules.get(pkg.module).get('manager')[0])
-            tbl.append({'name': pkg.name,
-                        'module': pkg.module,
-                        'origin': pkg.origin,
-                        'reason': pkg.reason,
-                        'tests': str(len(list(pkg.tests()))),
-                        'version': spec.version,
-                        'arch': spec.arch,
-                        'release': spec.release,
-                        'changelogname': spec.changelog_name,
-                        'changelogtime': date,
-                        'buildrequires': spec.buildrequires,
-                        'modulemanager': modulemanager['email'],
-                        'maintainers': ', '.join(pkg.maintainers)})
-        print(tbl)
-
+    # CHANGELOG
     elif args.command == 'changelog':
-
-        staff, modules = staff_modules(config)
-        if args.maintainer is None:
-            raise RiftError("You must specify a maintainer")
-
-        pkg = Package(args.package, config, staff, modules)
-        pkg.load()
-
-        author = f"{args.maintainer} <{staff.get(args.maintainer)['email']}>"
-
-        # Format comment.
-        # Grab bullet, insert one if not found.
-        bullet = "-"
-        match = re.search(r'^([^\s\w])\s', args.comment, re.UNICODE)
-        if match:
-            bullet = match.group(1)
-        else:
-            args.comment = bullet + " " + args.comment
-
-        if args.comment.find("\n") == -1:
-            wrapopts = {"subsequent_indent": (len(bullet) + 1) * " ",
-                        "break_long_words": False,
-                        "break_on_hyphens": False}
-            args.comment = textwrap.fill(args.comment, 80, **wrapopts)
-
-        logging.info("Adding changelog record for '%s'", author)
-        Spec(pkg.specfile,
-             config=config).add_changelog_entry(author, args.comment,
-                                                bump=getattr(args, 'bump', False))
+        return action_changelog(args, config)
 
     # GERRIT
     elif args.command == 'gerrit':
@@ -1230,130 +1000,6 @@ def action(config, args):
 
     return 0
 
-def _validate_patched_file(patched_file, config, modules, staff):
-    """
-    Raise RiftError if patched_file is a binary file or does not match any known
-    file path in Rift project tree.
-
-    Return True if the patched_file modifies a package or False otherwise.
-    """
-    filepath = patched_file.path
-    names = filepath.split(os.path.sep)
-
-    if filepath == config.get('staff_file'):
-        staff = Staff(config)
-        staff.load(filepath)
-        logging.info('Staff file is OK.')
-        return False
-
-    if filepath == config.get('modules_file'):
-        modules = Modules(config, staff)
-        modules.load(filepath)
-        logging.info('Modules file is OK.')
-        return False
-
-    if filepath == 'mock.tpl':
-        logging.debug('Ignoring mock template file: %s', filepath)
-        return False
-
-    if filepath == '.gitignore':
-        logging.debug('Ignoring git file: %s', filepath)
-        return False
-
-    if filepath == 'project.conf':
-        logging.debug('Ignoring project config file: %s', filepath)
-        return False
-
-    if patched_file.binary:
-        raise RiftError(f"Binary file detected: {filepath}")
-
-    if names[0] != config.get('packages_dir'):
-        raise RiftError(f"Unknown file pattern: {filepath}")
-
-    return True
-
-def _patched_file_updated_package(patched_file, config, modules, staff):
-    """
-    Return Package updated by patched_file, or None if either:
-
-    - The patched_file modifies a package file that does not impact package
-      build result.
-    - The pached_file is removed.
-
-    Raise RiftError if patched_file path does not match any known
-    packaging code file path.
-    """
-    filepath = patched_file.path
-    names = filepath.split(os.path.sep)
-    fullpath = config.project_path(filepath)
-    pkg = None
-
-    if patched_file.is_deleted_file:
-        logging.debug('Ignoring removed file: %s', filepath)
-        return None
-
-    # Drop config.get('packages_dir') from list
-    names.pop(0)
-
-    pkg = Package(names.pop(0), config, staff, modules)
-
-    # info.yaml
-    if fullpath == pkg.metafile:
-        logging.info('Ignoring meta file')
-        return None
-
-    # README file
-    if fullpath in pkg.docfiles:
-        logging.debug('Ignoring documentation file: %s', fullpath)
-        return None
-
-    # backup specfile
-    if fullpath == f"{pkg.specfile}.orig":
-        logging.debug('Ignoring backup specfile')
-        return None
-
-    # specfile
-    if fullpath == pkg.specfile:
-        logging.info('Detected spec file')
-
-    # rpmlint config file
-    elif names in [RPMLINT_CONFIG_V1, RPMLINT_CONFIG_V2]:
-        logging.debug('Detecting rpmlint config file')
-
-    # sources/
-    elif fullpath.startswith(pkg.sourcesdir) and len(names) == 2:
-        logging.debug('Detecting source file: %s', names[1])
-
-    # tests/
-    elif fullpath.startswith(pkg.testsdir):
-        logging.debug('Detecting test script: %s', filepath)
-
-    else:
-        raise RiftError(
-            f"Unknown file pattern in '{pkg.name}' directory: {filepath}"
-        )
-
-    return pkg
-
-def _patched_file_removed_package(patched_file, config, modules, staff):
-    """
-    Return Package removed by the patched_file or None if patched_file does not
-    remove any package.
-    """
-    filepath = patched_file.path
-    names = filepath.split(os.path.sep)
-    fullpath = config.project_path(filepath)
-
-    if not patched_file.is_deleted_file:
-        logging.debug('Ignoring not removed file: %s', filepath)
-        return None
-
-    pkg = Package(names[1], config, staff, modules)
-
-    if fullpath == pkg.metafile:
-        return pkg
-
-    return None
 
 def main(args=None):
     """Main code of 'rift'"""

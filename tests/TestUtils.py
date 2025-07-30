@@ -84,13 +84,23 @@ Source0:        https://nowhere.com/sources/%{name}-%{version}.tar.gz
 {% if exclusive_arch %}
 ExclusiveArch:  {{ exclusive_arch }}
 {% endif -%}
-BuildArch:      {{ arch }}
-BuildRequires:  br-package
-Requires:       another-package
+{% for build_require in build_requires | default(['br-package']) %}
+BuildRequires:  {{ build_require }}
+{% endfor %}
+{% for require in requires | default(['another-package']) %}
+Requires:       {{ require}}
+{% endfor %}
 Provides:       {{ name }}-provide
 
 %description
 A package
+
+{% for subpackage in subpackages | default([]) %}
+%package -n {{ subpackage.name }}
+Summary: Sub-package {{ subpackage.name }}
+%description -n {{ subpackage.name }}
+Description for package {{ subpackage.name }}
+{% endfor %}
 
 %prep
 {{ prepsteps | default("") }}
@@ -167,7 +177,7 @@ class RiftProjectTestCase(RiftTestCase):
         os.chdir(self.projdir)
         # Dict of created packages
         self.pkgdirs = {}
-        self.pkgspecs = {}
+        self.buildfiles = []
         self.pkgsrc = {}
         # Load project/staff/modules
         self.config = Config()
@@ -188,8 +198,8 @@ class RiftProjectTestCase(RiftTestCase):
         os.unlink(self.modulespath)
         os.unlink(self.mocktpl)
         os.rmdir(self.annexdir)
-        for spec in self.pkgspecs.values():
-            os.unlink(spec)
+        for buildfile in self.buildfiles:
+            os.unlink(buildfile)
         for src in self.pkgsrc.values():
             os.unlink(src)
         for pkgdir in self.pkgdirs.values():
@@ -204,8 +214,7 @@ class RiftProjectTestCase(RiftTestCase):
         ]:
             if os.path.exists(path):
                 os.unlink(path)
-        os.rmdir(self.packagesdir)
-        os.rmdir(self.projdir)
+        shutil.rmtree(self.projdir)
 
     def update_project_conf(self):
         """Update project YAML configuration file with new Config options."""
@@ -223,6 +232,7 @@ class RiftProjectTestCase(RiftTestCase):
     def make_pkg(
         self,
         name='pkg',
+        formats=None,
         version='1.0',
         release='1',
         metadata=None,
@@ -230,6 +240,12 @@ class RiftProjectTestCase(RiftTestCase):
         requires=['another-package'],
         subpackages=[],
     ):
+        # By default, make package in all supported formats
+        if formats is None:
+            formats = ['rpm', 'oci']
+        # Check provide package formats are supported
+        for _format in formats:
+            assert(_format in ['rpm', 'oci'])
         # ./packages/pkg
         self.pkgdirs[name] = os.path.join(self.packagesdir, name)
         os.mkdir(self.pkgdirs[name])
@@ -254,44 +270,27 @@ class RiftProjectTestCase(RiftTestCase):
                     metadata.get('reason', 'Missing feature')
                 )
             )
+            if 'oci' in formats:
+                nfo.write("    oci:\n")
+                nfo.write(f"        version: '{version}'\n")
+                nfo.write(f"        release: '{release}'\n")
 
         # ./packages/pkg/pkg.spec
-        self.pkgspecs[name] = os.path.join(self.pkgdirs[name],
-                                           "{0}.spec".format(name))
-        with open(self.pkgspecs[name], "w") as spec:
-            spec.write("Name:    {0}\n".format(name))
-            spec.write("Version:        {0}\n".format(version))
-            spec.write("Release:        {0}\n".format(release))
-            spec.write("Summary:        A package\n")
-            spec.write("Group:          System Environment/Base\n")
-            spec.write("License:        GPL\n")
-            spec.write("URL:            http://nowhere.com/projects/%{name}/\n")
-            spec.write("Source0:        %{name}-%{version}.tar.gz\n")
-            spec.write("BuildArch:      noarch\n")
-            for build_require in build_requires:
-                spec.write(f"BuildRequires:  {build_require}\n")
-            for require in requires:
-                spec.write(f"Requires:       {require}\n")
-            spec.write("Provides:       {0}-provide\n".format(name))
-            spec.write("%description\n")
-            spec.write("A package\n")
-            for subpackage in subpackages:
-                spec.write(f"%package -n {subpackage.name}\n")
-                spec.write(f"Summary: Sub-package {subpackage.name}\n")
-                spec.write(f"%description -n {subpackage.name}\n")
-                spec.write(f"Description for package {subpackage.name}\n")
+        if 'rpm' in formats:
+            buildfile = os.path.join(self.pkgdirs[name], "{0}.spec".format(name))
+            with open(buildfile, "w") as spec:
+                spec.write(
+                    gen_rpm_spec(name=name, version=version, release=release,
+                                 build_requires=build_requires,
+                                 requires=requires, subpackages=subpackages))
+            self.buildfiles.append(buildfile)
 
-            spec.write("%prep\n")
-            spec.write("%build\n")
-            spec.write("# Nothing to build\n")
-            spec.write("%install\n")
-            spec.write("# Nothing to install\n")
-            spec.write("%files\n")
-            spec.write("# No files\n")
-            spec.write("%changelog\n")
-            spec.write("* Tue Feb 26 2019 Myself <buddy@somewhere.org>"
-                       " - {0}-{1}\n".format(version, release))
-            spec.write("- Update to {0} release\n".format(version))
+        # ./packages/pkg/Containerfile
+        if 'oci' in formats:
+            buildfile = os.path.join(self.pkgdirs[name], 'Containerfile')
+            with open(buildfile, "w") as fh:
+                fh.write('FROM debian:stable')
+            self.buildfiles.append(buildfile)
 
         # ./packages/pkg/sources
         srcdir = os.path.join(self.pkgdirs[name], 'sources')
@@ -359,9 +358,10 @@ def make_temp_filename():
     """Return a temporary name for a file."""
     return (tempfile.mkstemp(prefix='rift-test-'))[1]
 
-def make_temp_file(text, delete=True):
+def make_temp_file(text, delete=True, suffix=None):
     """ Create a temporary file with the provided text."""
-    tmp = tempfile.NamedTemporaryFile(prefix='rift-test-', delete=delete)
+    tmp = tempfile.NamedTemporaryFile(prefix='rift-test-', delete=delete,
+                                      suffix=suffix)
     tmp.write(text.encode())
     tmp.flush()
     return tmp

@@ -1,0 +1,205 @@
+#
+# Copyright (C) 2025 CEA
+#
+import os
+import textwrap
+from unittest.mock import patch
+
+from rift import RiftError
+from rift.package.oci import PackageOCI, ActionableArchPackageOCI
+from rift.Gerrit import Review
+from .base import RiftPackageTestCase
+from ..TestUtils import make_temp_file
+
+class PackageOCITest(RiftPackageTestCase):
+    """
+    Tests class for PackageOCI
+    """
+    def test_init(self):
+        """PackageOCI initialisation """
+        pkgname = 'pkg'
+        pkg = PackageOCI(pkgname, self.config, self.staff, self.modules)
+        self.assertEqual(pkg.format, 'oci')
+        self.assertEqual(pkg.buildfile, f"{pkg.dir}/Containerfile")
+
+    def test_load(self):
+        """PackageOCI infos loading"""
+        pkgfile = make_temp_file(textwrap.dedent("""
+            package:
+                maintainers:
+                - J. Doe
+                module: Tools
+                reason: Missing package
+                origin: Company
+                oci:
+                    version: 0.0.1
+                    release: 1
+            """))
+        pkg = PackageOCI('pkg', self.config, self.staff, self.modules)
+        pkg.load(infopath = pkgfile.name)
+        self.assertEqual(pkg.version, '0.0.1')
+        self.assertEqual(pkg.release, '1')
+
+    def test_load_source_topdir(self):
+        """PackageOCI infos loading with source topdir"""
+        pkgfile = make_temp_file(textwrap.dedent("""
+            package:
+                maintainers:
+                - J. Doe
+                module: Tools
+                reason: Missing package
+                origin: Company
+                oci:
+                    version: 0.0.1
+                    release: 1
+                    source_topdir: pkg-main
+            """))
+        pkg = PackageOCI('pkg', self.config, self.staff, self.modules)
+        pkg.load(infopath = pkgfile.name)
+        self.assertEqual(pkg.source_topdir, 'pkg-main')
+
+    def test_load_main_source(self):
+        """PackageOCI infos loading with main source"""
+        pkgfile = make_temp_file(textwrap.dedent("""
+            package:
+                maintainers:
+                - J. Doe
+                module: Tools
+                reason: Missing package
+                origin: Company
+                oci:
+                    version: 0.0.1
+                    release: 1
+                    main_source: pkg-full.tar.bz2
+            """))
+        pkg = PackageOCI('pkg', self.config, self.staff, self.modules)
+        pkg.load(infopath = pkgfile.name)
+        self.assertEqual(pkg.main_source, 'pkg-full.tar.bz2')
+
+    def test_load_missing_version(self):
+        """PackageOCI infos missing version"""
+        pkgfile = make_temp_file(textwrap.dedent("""
+            package:
+                maintainers:
+                - J. Doe
+                module: Tools
+                reason: Missing package
+                origin: Company
+                oci:
+                    release: 1
+            """))
+        pkg = PackageOCI('pkg', self.config, self.staff, self.modules)
+        with self.assertRaisesRegex(
+            RiftError, "Unable to load oci version from metadata"):
+            pkg.load(infopath = pkgfile.name)
+
+    def test_load_missing_release(self):
+        """PackageOCI infos missing release"""
+        pkgfile = make_temp_file(textwrap.dedent("""
+            package:
+                maintainers:
+                - J. Doe
+                module: Tools
+                reason: Missing package
+                origin: Company
+                oci:
+                    version: 0.0.1
+            """))
+        pkg = PackageOCI('pkg', self.config, self.staff, self.modules)
+        with self.assertRaisesRegex(
+            RiftError, "Unable to load oci release from metadata"):
+            pkg.load(infopath = pkgfile.name)
+
+    def test_write(self):
+        """PackageOCI write"""
+        pkg = PackageOCI('pkg', self.config, self.staff, self.modules)
+        pkg.module = 'Tools'
+        pkg.maintainers = ['J. Doe']
+        pkg.reason = 'Missing package'
+        pkg.origin = 'Company'
+        pkg.version = '0.0.1'
+        pkg.release = '2'
+        pkg.main_source = 'pkg-1.0.tar.gz'
+        pkg.source_topdir = 'pkg_1.0'
+        os.makedirs(pkg.dir)
+        pkg.write()
+        loaded = PackageOCI('pkg', self.config, self.staff, self.modules)
+        loaded.load()
+        self.assertEqual(pkg.module, loaded.module)
+        self.assertCountEqual(pkg.maintainers, loaded.maintainers)
+        self.assertEqual(pkg.reason, loaded.reason)
+        self.assertEqual(pkg.origin, loaded.origin)
+        self.assertEqual(pkg.version, loaded.version)
+        self.assertEqual(pkg.release, loaded.release)
+        self.assertEqual(pkg.main_source, loaded.main_source)
+        self.assertEqual(pkg.source_topdir, loaded.source_topdir)
+
+    def test_add_changelog_entry(self):
+        """PackageOCI add changelog entry (not implemented)"""
+        pkg = PackageOCI('pkg', self.config, self.staff, self.modules)
+        with self.assertRaises(NotImplementedError):
+            pkg.add_changelog_entry("Myself", "Modify package", False)
+
+    def test_analyze(self):
+        """PackageOCI analyse (not implemented)"""
+        pkg = PackageOCI('pkg', self.config, self.staff, self.modules)
+        review = Review()
+        with self.assertRaises(NotImplementedError):
+            pkg.analyze(review, pkg.dir)
+
+    def test_supports_arch(self):
+        """ PackageOCI supports_arch() """
+        pkg = PackageOCI('pkg', self.config, self.staff, self.modules)
+        self.assertTrue(pkg.supports_arch('x86_64'))
+        self.assertTrue(pkg.supports_arch('aarch64'))
+        self.assertFalse(pkg.supports_arch('fail'))
+
+    def test_for_arch(self):
+        """ PackageOCI for_arch() returns ActionableArchPackageOCI object. """
+        pkgname = 'pkg'
+        pkg = PackageOCI(pkgname, self.config, self.staff, self.modules)
+        pkg_arch = pkg.for_arch('x86_64')
+        self.assertIsInstance(pkg_arch, ActionableArchPackageOCI)
+        self.assertEqual(pkg_arch.name, pkg.name)
+        self.assertEqual(pkg_arch.buildfile, pkg.buildfile)
+        self.assertEqual(pkg_arch.config, pkg._config)
+        self.assertEqual(pkg_arch.package, pkg)
+        self.assertEqual(pkg_arch.arch, 'x86_64')
+
+class ActionableArchPackageOCITest(RiftPackageTestCase):
+    """
+    Tests class for ActionableArchPackageOCI
+    """
+    def setUp(self):
+        super().setUp()
+        self.pkgname = 'pkg'
+        _pkg = PackageOCI(self.pkgname, self.config, self.staff, self.modules)
+        pkgfile = make_temp_file(textwrap.dedent("""
+            package:
+                maintainers:
+                - J. Doe
+                module: Tools
+                reason: Missing package
+                origin: Company
+                oci:
+                    version: 0.0.1
+                    release: 1
+            """))
+        _pkg.load(infopath = pkgfile.name)
+        self.pkg = ActionableArchPackageOCI(_pkg, 'x86_64')
+
+    @patch('rift.package.oci.ContainerRuntime')
+    def test_build(self, mock_container_runtime):
+        # Create sources dir and source
+        sources_dir = os.path.join(self.pkg.package.dir, 'sources')
+        os.makedirs(sources_dir)
+        with open(os.path.join(sources_dir, "pkg-1.0.tar.gz"), 'w+') as fh:
+            fh.write("data")
+        self.pkg.package.load()
+        self.pkg.build()
+
+    # test build missing source
+
+    # test test
+    # test publish
+    # test clean

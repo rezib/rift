@@ -137,6 +137,15 @@ class TestResults():
         """
         self.results.append(result)
 
+    def merge(self, other):
+        """
+        Merge all TestResult from another TestResults into this one.
+        """
+        for result in other.results:
+            self.results.append(result)
+            if result.value == 'Failure':
+                self.global_result = False
+
     def junit(self, filename):
         """
         Generate a junit xml file containing all tests results.

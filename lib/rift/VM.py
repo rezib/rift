@@ -59,9 +59,9 @@ from jinja2 import Template
 
 from rift import RiftError
 from rift.Config import _DEFAULT_VIRTIOFSD
-from rift.Repository import ProjectArchRepositories
+from rift.repository import ProjectArchRepositories
 from rift.TempDir import TempDir
-from rift.utils import download_file, setup_dl_opener
+from rift.utils import download_file, setup_dl_opener, message
 from rift.run import run_command
 
 __all__ = ['VM']
@@ -129,7 +129,7 @@ class VM():
         if extra_repos is None:
             extra_repos = []
 
-        self._repos = ProjectArchRepositories(config, arch).all + extra_repos
+        self._repos = ProjectArchRepositories(config, arch).for_format('rpm').all + extra_repos
 
         self.address = config.get('vm_address')
         self.port = self.default_port(config.get('vm_port_range'))
@@ -648,6 +648,21 @@ class VM():
                           self._tmpimg.name)
             self._tmpimg.close()
             self._tmpimg = None
+
+    def start(self):
+        """
+        Start VM if not already running. Return rue if VM is actually started,
+        False if already running.
+        """
+        if self.running():
+            message('VM is already running')
+            return False
+
+        message('Launching VM ...')
+        self.spawn()
+        self.ready()
+        self.prepare()
+        return True
 
     def restart(self):
         """

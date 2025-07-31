@@ -143,7 +143,7 @@ class TestResults():
 
         When result out property is defined, test outputs (out and err) are
         reported in <system-out/> and <system-err/> tags. When only result err
-        property is defined, it is reported in <failure/> tag onyl when test is
+        property is defined, it is reported in <failure/> tag only when test is
         failed.
         """
 
@@ -159,14 +159,14 @@ class TestResults():
                 sub.set('time', f"{result.time:.2f}")
             if result.value == 'Failure':
                 failure = ET.SubElement(sub, 'failure')
-                if result.out is None:
+                if result.out is None and result.err:
                     failure.text = str_xml_escape(result.err)
             if result.out:
                 system_out = ET.SubElement(sub, 'system-out')
                 system_out.text = str_xml_escape(result.out)
-            if result.err and result.out:
-                system_err = ET.SubElement(sub, 'system-err')
-                system_err.text = str_xml_escape(result.err)
+                if result.err:
+                    system_err = ET.SubElement(sub, 'system-err')
+                    system_err.text = str_xml_escape(result.err)
 
         tree = ET.ElementTree(suite)
         tree.write(filename, encoding='UTF-8', xml_declaration=True)

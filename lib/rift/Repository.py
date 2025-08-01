@@ -142,6 +142,7 @@ class LocalRepository:
         for arch in self.config.get('arch'):
             path = self.rpms_dir(arch)
             if not os.path.exists(path):
+                logging.info("LocalRepository create dir %s", path)
                 os.mkdir(path)
         self.update()
 
@@ -157,6 +158,7 @@ class LocalRepository:
                 stderr=STDOUT,
                 universal_newlines=True,
             ) as popen:
+                logging.info("LocalRepository run update path %s", path)
                 stdout = popen.communicate()[0]
                 if popen.returncode != 0:
                     raise RiftError(stdout)

@@ -142,6 +142,7 @@ class LocalRepository:
         for arch in self.config.get('arch'):
             path = self.rpms_dir(arch)
             if not os.path.exists(path):
+                logging.info("LocalRepository create dir %s", path)
                 os.mkdir(path)
         self.update()
 
@@ -157,6 +158,7 @@ class LocalRepository:
                 stderr=STDOUT,
                 universal_newlines=True,
             ) as popen:
+                logging.info("LocalRepository run update path %s", path)
                 stdout = popen.communicate()[0]
                 if popen.returncode != 0:
                     raise RiftError(stdout)
@@ -263,7 +265,8 @@ class ProjectArchRepositories:
     """
     Manipulate repositories defined in a project for a particular architecture.
     """
-    def __init__(self, config, arch):
+    def __init__(self, config, arch, extra=None):
+
         self.working = None
         self.arch = arch
         if config.get('working_repo'):
@@ -275,6 +278,8 @@ class ProjectArchRepositories:
             )
             self.working.create()
         self.supplementaries = []
+        if extra:
+            self.supplementaries.append(extra)
         repos = config.get('repos', arch=arch)
         if repos:
             for name, data in repos.items():

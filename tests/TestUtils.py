@@ -150,11 +150,21 @@ class RiftProjectTestCase(RiftTestCase):
         # ./packages/staff.yaml
         self.staffpath = os.path.join(self.packagesdir, 'staff.yaml')
         with open(self.staffpath, "w") as staff:
-            staff.write('staff: {Myself: {email: buddy@somewhere.org}}')
+            staff.write(
+                "staff:\n"
+                "  Myself: {email: buddy@somewhere.org}\n"
+                "  Another: {email: another@elsewhere.org}\n"
+            )
         # ./packages/modules.yaml
         self.modulespath = os.path.join(self.packagesdir, 'modules.yaml')
         with open(self.modulespath, "w") as mod:
-            mod.write('modules: {Great module: {manager: Myself}}')
+            mod.write(
+                "modules:\n"
+                "  Great module:\n"
+                "    manager: Myself\n"
+                "  Other module:\n"
+                "    manager: Another\n"
+            )
         # ./annex/
         self.annexdir = os.path.join(self.projdir, 'annex')
         os.mkdir(self.annexdir)
@@ -193,7 +203,9 @@ class RiftProjectTestCase(RiftTestCase):
         for src in self.pkgsrc.values():
             os.unlink(src)
         for pkgdir in self.pkgdirs.values():
-            os.unlink(os.path.join(pkgdir, 'info.yaml'))
+            info_path = os.path.join(pkgdir, 'info.yaml')
+            if os.path.exists(info_path):
+                os.unlink(info_path)
             os.rmdir(os.path.join(pkgdir, 'sources'))
             os.rmdir(pkgdir)
         # Remove potentially generated files for VM related tests
@@ -254,6 +266,8 @@ class RiftProjectTestCase(RiftTestCase):
                     metadata.get('reason', 'Missing feature')
                 )
             )
+            if 'depends' in metadata:
+                nfo.write("    depends: {}\n".format(metadata.get('depends')))
 
         # ./packages/pkg/pkg.spec
         self.pkgspecs[name] = os.path.join(self.pkgdirs[name],

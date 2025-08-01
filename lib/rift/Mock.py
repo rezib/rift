@@ -87,8 +87,8 @@ class Mock():
             if repo.proxy:
                 repo_ctx['proxy'] = repo.proxy
             context['repos'].append(repo_ctx)
+        logging.info("mock template context: %s", context)
         return context
-
 
     def _create_template(self, repolist, dstpath):
         """Create 'default.cfg' config file based on a template."""

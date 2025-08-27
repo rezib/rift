@@ -248,6 +248,8 @@ class RiftProjectTestCase(RiftTestCase):
             if os.path.exists(info_path):
                 os.unlink(info_path)
             os.rmdir(os.path.join(pkgdir, 'sources'))
+            os.unlink(os.path.join(pkgdir, 'tests', '0_test.sh'))
+            os.rmdir(os.path.join(pkgdir, 'tests'))
             os.rmdir(pkgdir)
         # Remove potentially generated files for VM related tests
         for path in [
@@ -356,6 +358,15 @@ class RiftProjectTestCase(RiftTestCase):
                                          "{0}-{1}.tar.gz".format(name, version))
         with open(self.pkgsrc[name], "w") as src:
             src.write("ACACACACACACACAC")
+
+        # ./tests
+        testsdir = os.path.join(self.pkgdirs[name], 'tests')
+        os.mkdir(testsdir)
+
+        # ./tests/0_test.sh
+        test_file = os.path.join(testsdir, "0_test.sh")
+        with open(test_file, "w") as fh:
+            fh.write("#!/bin/sh\ntrue")
 
     def clean_mock_environments(self):
         """Remove mock build environments."""

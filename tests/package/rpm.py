@@ -484,7 +484,7 @@ class ActionableArchPackageRPMTest(RiftProjectTestCase):
         self.setup_package()
         results = self.pkg.test()
         self.assertIsInstance(results, TestResults)
-        self.assertEqual(len(results), 1)
+        self.assertEqual(len(results), 2)
         self.assertEqual(results.global_result, True)
         # Check VM run_test() called once for basic test
         mock_vm_obj.run_test.assert_called_with(
@@ -551,7 +551,7 @@ class ActionableArchPackageRPMTest(RiftProjectTestCase):
         self.setup_package()
         results = self.pkg.test()
         self.assertIsInstance(results, TestResults)
-        self.assertEqual(len(results), 1)
+        self.assertEqual(len(results), 2)
         self.assertEqual(results.global_result, False)
 
     @patch('rift.package.rpm.time.sleep')
@@ -561,7 +561,7 @@ class ActionableArchPackageRPMTest(RiftProjectTestCase):
         # mock time.sleep() to avoid waiting sleep timeout when VM is stopped
         mock_vm_obj = mock_vm.return_value
         mock_vm_obj.running.return_value = False
-        self.setup_package()
+        self.setup_package(tests=[])
         results = self.pkg.test(noauto=True)
         # Check empty TestResults
         self.assertIsInstance(results, TestResults)

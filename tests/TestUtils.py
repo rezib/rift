@@ -240,9 +240,15 @@ class RiftProjectTestCase(RiftTestCase):
         os.unlink(self.mocktpl)
         os.rmdir(self.annexdir)
         for buildfile in self.buildfiles:
-            os.unlink(buildfile)
+            try:
+                os.unlink(buildfile)
+            except FileNotFoundError:
+                pass  # ignore deletion error if file is not found
         for src in self.pkgsrc.values():
-            os.unlink(src)
+            try:
+                os.unlink(src)
+            except FileNotFoundError:
+                pass  # ignore deletion error if file is not found
         for pkgdir in self.pkgdirs.values():
             info_path = os.path.join(pkgdir, 'info.yaml')
             if os.path.exists(info_path):

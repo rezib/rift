@@ -205,7 +205,10 @@ class RiftProjectTestCase(RiftTestCase):
         for buildfile in self.buildfiles:
             os.unlink(buildfile)
         for src in self.pkgsrc.values():
-            os.unlink(src)
+            try:
+                os.unlink(src)
+            except FileNotFoundError:
+                pass  # ignore deletion error if file is not found
         for pkgdir in self.pkgdirs.values():
             os.unlink(os.path.join(pkgdir, 'info.yaml'))
             os.rmdir(os.path.join(pkgdir, 'sources'))

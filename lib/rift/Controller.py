@@ -52,6 +52,7 @@ from rift.Gerrit import Review
 from rift.Mock import Mock
 from rift.Package import Package, Test
 from rift.Repository import LocalRepository, ProjectArchRepositories
+from rift.graph import PackagesDependencyGraph
 from rift.RPM import RPM, Spec, RPMLINT_CONFIG_V1, RPMLINT_CONFIG_V2
 from rift.TempDir import TempDir
 from rift.TestResults import TestCase, TestResults
@@ -140,6 +141,8 @@ def make_parser():
     subprs.add_argument('-s', '--sign', action='store_true',
                         help='sign built packages with GPG key '
                              '(implies -p, --publish)')
+    subprs.add_argument('-S', '--skip-deps', action='store_true',
+                        help='Skip automatic rebuild of reverse dependencies')
     subprs.add_argument('--junit', metavar='FILENAME',
                         help='write junit result file')
     subprs.add_argument('--dont-update-repo', dest='updaterepo', action='store_false',
@@ -178,6 +181,8 @@ def make_parser():
                         help='write junit result file')
     subprs.add_argument('-p', '--publish', action='store_true',
                         help='publish build RPMS to repository')
+    subprs.add_argument('-S', '--skip-deps', action='store_true',
+                        help='Skip automatic validation of reverse dependencies')
 
     # Validate diff
     subprs = subparsers.add_parser('validdiff')
@@ -287,6 +292,16 @@ def make_parser():
     subprs.add_argument('-o', '--output', help='Synchronization output directory')
     subprs.add_argument('repositories', metavar='REPOSITORY', nargs='*',
                         help='repositories to synchronize (default: all)')
+
+    # graph
+    subprs = subparsers.add_parser('graph',
+                                   help='Draw graph of packages dependencies')
+    subprs.add_argument('--with-external', action='store_true',
+                        help="add project external dependencies in the graph")
+    subprs.add_argument('--module',
+                        help="represent packages from this module in the graph")
+    subprs.add_argument('packages', metavar='PACKAGE', nargs='*',
+                        help='packages to represent in the graph')
 
     # Parse options
     return parser
@@ -443,15 +458,19 @@ class BasicTest(Test):
         Test.__init__(self, cmd, "basic_install")
         self.local = False
 
-def build_pkg(config, args, pkg, arch):
+def build_pkg(config, args, pkg, arch, staging):
     """
     Build a package for a specific architecture
       - config: rift configuration
+      - args: command line arguments
       - pkg: package to build
-      - repo: rpm repositories to use
-      - suppl_repos: optional additional repositories
+      - arch: CPU architecture
+      - staging: temporary staging rpm repositories to hold dependencies when
+        testing builds of reserve dependencies recursively.
     """
-    repos = ProjectArchRepositories(config, arch)
+    repos = ProjectArchRepositories(config, arch,
+                                    extra=staging.consumables[arch]
+                                    if staging is not None else None)
     if args.publish and not repos.can_publish():
         raise RiftError("Cannot publish if 'working_repo' is undefined")
 
@@ -468,6 +487,14 @@ def build_pkg(config, args, pkg, arch):
         logging.info('Built: %s', rpm.filepath)
     message("RPMS successfully built")
 
+    # If defined, publish in staging repository
+    if staging:
+        message("Publishing RPMS in staging repository...")
+        mock.publish(staging)
+
+        message("Updating staging repository...")
+        staging.update()
+
     # Publish
     if args.publish:
         message("Publishing RPMS...")
@@ -481,9 +508,10 @@ def build_pkg(config, args, pkg, arch):
 
     mock.clean()
 
-def test_one_pkg(config, args, pkg, vm, arch, repos, results):
+def test_one_pkg(config, args, pkg, vm, arch, repos):
     """
-    Launch tests on a given package on a specific VM and a set of repositories.
+    Launch tests on a given package on a specific VM and a set of repositories
+    and return results.
     """
     message(f"Preparing {arch} test environment")
     _vm_start(vm)
@@ -495,7 +523,7 @@ def test_one_pkg(config, args, pkg, vm, arch, repos, results):
 
     banner(f"Starting tests of package {pkg.name} on architecture {arch}")
 
-    rc = 0
+    results = TestResults()
 
     tests = list(pkg.tests())
     if not args.noauto:
@@ -509,7 +537,6 @@ def test_one_pkg(config, args, pkg, vm, arch, repos, results):
             results.add_success(case, time.time() - now, out=proc.out, err=proc.err)
             message(f"Test '{case.fullname}' on architecture {arch}: OK")
         else:
-            rc = 1
             results.add_failure(case, time.time() - now, out=proc.out, err=proc.err)
             message(f"Test '{case.fullname}' on architecture {arch}: ERROR")
 
@@ -519,10 +546,10 @@ def test_one_pkg(config, args, pkg, vm, arch, repos, results):
         time.sleep(5)
         vm.stop()
 
-    return rc
+    return results
 
-def test_pkgs(config, args, results, pkgs, arch, extra_repos=None):
-    """Test a list of packages on a specific architecture."""
+def test_pkgs(config, args, pkgs, arch, extra_repos=None):
+    """Test a list of packages on a specific architecture and return results."""
 
     if extra_repos is None:
         extra_repos = []
@@ -533,7 +560,7 @@ def test_pkgs(config, args, results, pkgs, arch, extra_repos=None):
     if vm.running():
         raise RiftError('VM is already running')
 
-    rc = 0
+    results = TestResults()
 
     for pkg in pkgs:
 
@@ -559,26 +586,33 @@ def test_pkgs(config, args, results, pkgs, arch, extra_repos=None):
             continue
 
         pkg.load()
-        rc += test_one_pkg(config, args, pkg, vm, arch, repos, results)
+        results.extend(test_one_pkg(config, args, pkg, vm, arch, repos))
 
     if getattr(args, 'noquit', False):
         message("Not stopping the VM. Use: rift vm connect")
 
-    return rc
+    return results
 
-def validate_pkgs(config, args, results, pkgs, arch):
+
+def validate_pkgs(config, args, pkgs, arch):
     """
-    Validate packages on a specific architecture:
+    Validate packages on a specific architecture and return results:
         - rpmlint on specfile
         - check file patterns
         - build it
-        - lauch tests
+        - launch tests
     """
 
-    repos = ProjectArchRepositories(config, arch)
+    # Create staging repository for all packages and add it to the project
+    # supplementary repositories.
+    (staging, stagedir) = create_staging_repo(config)
+    repos = ProjectArchRepositories(config, arch,
+                                    extra=staging.consumables[arch])
 
     if args.publish and not repos.can_publish():
         raise RiftError("Cannot publish if 'working_repo' is undefined")
+
+    results = TestResults()
 
     for pkg in pkgs:
 
@@ -612,10 +646,12 @@ def validate_pkgs(config, args, results, pkgs, arch):
         message('Validate specfile...')
         spec.check(pkg)
 
-        (staging, stagedir) = create_staging_repo(config)
-
         message('Preparing Mock environment...')
         mock = Mock(config, arch, config.get('version'))
+
+        for repo in repos.all:
+            logging.debug("Mock with repo %s: %s", repo.name, repo.url)
+
         mock.init(repos.all)
 
         try:
@@ -638,20 +674,20 @@ def validate_pkgs(config, args, results, pkgs, arch):
         mock.publish(staging)
         staging.update()
 
-        rc = 0
         if args.test:
-            rc = test_pkgs(
-                config,
-                args,
-                results,
-                [pkg],
-                arch,
-                [staging.consumables[arch]]
+            results.extend(
+                test_pkgs(
+                    config,
+                    args,
+                    [pkg],
+                    arch,
+                    [staging.consumables[arch]]
+                )
             )
 
         # Also publish on working repo if requested
         # XXX: All RPMs should be published when all of them have been validated
-        if rc == 0 and args.publish:
+        if results.global_result and args.publish:
             message("Publishing RPMS...")
             mock.publish(repos.working)
 
@@ -662,9 +698,12 @@ def validate_pkgs(config, args, results, pkgs, arch):
             message("Keep environment, VM is running. Use: rift vm connect")
         else:
             mock.clean()
-            stagedir.delete()
+
+    stagedir.delete()
 
     banner(f"All packages checked on architecture {arch}")
+
+    return results
 
 def vm_build(vm, args, config):
     """Build VM image."""
@@ -742,6 +781,44 @@ def action_vm(args, config):
         ret = vm_build(vm, args, config)
     return ret
 
+def build_pkgs(config, args, pkgs, arch, staging):
+    """
+    Build a list of packages on a given architecture and return results.
+    """
+    results = TestResults()
+
+    for pkg in pkgs:
+        case = TestCase('build', pkg.name, arch)
+        now = time.time()
+        try:
+            spec = Spec(pkg.specfile, config=config)
+        except RiftError as ex:
+            logging.error("Unable to load spec file: %s", str(ex))
+            results.add_failure(case, time.time() - now, err=str(ex))
+            continue  # skip current package
+
+        if not spec.supports_arch(arch):
+            logging.info(
+                "Skipping build on architecture %s not supported by "
+                "package %s",
+                arch,
+                pkg.name
+            )
+            continue
+
+        banner(f"Building package '{pkg.name}' for architecture {arch}")
+        now = time.time()
+        try:
+            pkg.load()
+            build_pkg(config, args, pkg, arch, staging)
+        except RiftError as ex:
+            logging.error("Build failure: %s", str(ex))
+            results.add_failure(case, time.time() - now, err=str(ex))
+        else:
+            results.add_success(case, time.time() - now)
+
+    return results
+
 def action_build(args, config):
     """Action for 'build' command."""
 
@@ -757,45 +834,30 @@ def action_build(args, config):
     results = TestResults('build')
 
     staff, modules = staff_modules(config)
+    pkgs = get_packages_to_build(config, staff, modules, args)
+    logging.info(
+        "Ordered list of packages to build: %s",
+        str([pkg.name for pkg in pkgs])
+    )
 
     # Build all packages for all project supported architectures
     for arch in config.get('arch'):
 
-        for pkg in Package.list(config, staff, modules, args.packages):
+        # Create temporary staging repository to hold dependencies unless
+        # dependency tracking is disabled in project configuration or user set
+        # --skip-deps argument.
+        staging = stagedir = None
+        if config.get('dependency_tracking') and not args.skip_deps:
+            (staging, stagedir) = create_staging_repo(config)
 
-            case = TestCase('build', pkg.name, arch)
-            now = time.time()
-            try:
-                spec = Spec(pkg.specfile, config=config)
-            except RiftError as ex:
-                logging.error("Unable to load spec file: %s", str(ex))
-                results.add_failure(case, time.time() - now, err=str(ex))
-                continue  # skip current package
-
-            if not spec.supports_arch(arch):
-                logging.info(
-                    "Skipping build on architecture %s not supported by "
-                    "package %s",
-                    arch,
-                    pkg.name
-                )
-                continue
-
-            banner(f"Building package '{pkg.name}' for architecture {arch}")
-            now = time.time()
-            try:
-                pkg.load()
-                build_pkg(config, args, pkg, arch)
-            except RiftError as ex:
-                logging.error("Build failure: %s", str(ex))
-                results.add_failure(case, time.time() - now, err=str(ex))
-            else:
-                results.add_success(case, time.time() - now)
+        results.extend(build_pkgs(config, args, pkgs, arch, staging))
 
         if getattr(args, 'junit', False):
             logging.info('Writing test results in %s', args.junit)
             results.junit(args.junit)
 
+        if stagedir:
+            stagedir.delete()
         banner(f"All packages processed for architecture {arch}")
 
     banner('All architectures processed')
@@ -821,12 +883,13 @@ def action_test(args, config):
     results = TestResults('test')
     # Test package on all project supported architectures
     for arch in config.get('arch'):
-        test_pkgs(
-            config,
-            args,
-            results,
-            Package.list(config, staff, modules, args.packages),
-            arch
+        results.extend(
+            test_pkgs(
+                config,
+                args,
+                Package.list(config, staff, modules, args.packages),
+                arch
+            )
         )
     if getattr(args, 'junit', False):
         logging.info('Writing test results in %s', args.junit)
@@ -850,14 +913,20 @@ def action_validate(args, config):
 
     staff, modules = staff_modules(config)
     results = TestResults('validate')
+    pkgs = get_packages_to_build(config, staff, modules, args)
+    logging.info(
+        "Ordered list of packages to validate: %s",
+        str([pkg.name for pkg in pkgs])
+    )
     # Validate packages on all project supported architectures
     for arch in config.get('arch'):
-        validate_pkgs(
-            config,
-            args,
-            results,
-            Package.list(config, staff, modules, args.packages),
-            arch
+        results.extend(
+            validate_pkgs(
+                config,
+                args,
+                pkgs,
+                arch
+            )
         )
     banner('All packages checked on all architectures')
 
@@ -890,7 +959,7 @@ def action_validdiff(args, config):
     # Re-validate all updated packages for all architectures supported by the
     # project.
     for arch in config.get('arch'):
-        validate_pkgs(config, args, results, updated.values(), arch)
+        results.extend(validate_pkgs(config, args, updated.values(), arch))
 
 
     if getattr(args, 'junit', False):
@@ -988,6 +1057,32 @@ def action_sync(args, config):
             )
             synchronizer.run()
 
+def action_graph(args, config, staff, modules):
+    """Action for 'graph' command."""
+    # Build dependency graph with all selected packages and generate graphviz
+    # representation of this graph.
+    PackagesDependencyGraph.from_project(config, staff, modules).draw(
+        args.with_external, get_packages_in_graph(args, config, staff, modules)
+    )
+
+def get_packages_in_graph(args, config, staff, modules):
+    """
+    Return the list of packages to represent in the graph depending on the
+    arguments.
+    """
+    if args.module:
+        # If module arg is set by user, search for all packages in this module.
+        if args.module not in modules:
+            raise RiftError(f"Invalid module name {args.module}")
+        packages = []
+        for pkg in Package.list(config, staff, modules, args.packages):
+            pkg.load()
+            if pkg.module == args.module:
+                packages.append(pkg.name)
+        return packages
+    # Else (module arg undefined), use packages args (possibly empty, ie.
+    # all packages are selected eventually).
+    return args.packages
 
 def get_packages_from_patch(patch, config, modules, staff):
     """
@@ -1029,6 +1124,54 @@ def get_packages_from_patch(patch, config, modules, staff):
             removed[pkg.name] = pkg
 
     return updated, removed
+
+def get_packages_to_build(config, staff, modules, args):
+    """
+    Return ordered list of Packages to build. If dependency_tracking is disabled
+    in project configuration or --skip-deps arguments is set, only the list of
+    packages in arguments is selected. Else, this function builds a dependency
+    graph of all packages in the project to determine the list of packages that
+    reverse depends on the list of packages in arguments, recursively.
+    """
+    if not config.get('dependency_tracking') or args.skip_deps:
+        return list(Package.list(config, staff, modules, args.packages))
+
+    # Build dependency graph with all projects packages.
+    graph = PackagesDependencyGraph.from_project(config, staff, modules)
+
+    result = []
+
+    def result_position(new_build_requirements):
+        """
+        Return the first index in result of packages in provided build
+        requirements list.
+        """
+        for build_requirement in new_build_requirements:
+            for index, package in enumerate(result):
+                if build_requirement.package == package:
+                    return index
+        return -1
+
+    for pkg in Package.list(config, staff, modules, args.packages):
+        required_builds = graph.solve(pkg)
+        for index, required_build in enumerate(required_builds):
+            if required_build.package in result:
+                continue
+            # Search the position in result before all its own reverse
+            # dependencies.
+            position = result_position(required_builds[index+1:])
+            logging.info(
+                "Package %s must be built: %s",
+                required_build.package.name,
+                required_build.reasons,
+            )
+            # No position constraint in result, just append the package at the
+            # end. Else insert at the right position.
+            if position == -1:
+                result.append(required_build.package)
+            else:
+                result.insert(position, required_build.package)
+    return result
 
 def create_staging_repo(config):
     """
@@ -1227,6 +1370,10 @@ def action(config, args):
     # SYNC
     elif args.command == 'sync':
         return action_sync(args, config)
+
+    # GRAPH
+    elif args.command == 'graph':
+        action_graph(args, config, *staff_modules(config))
 
     return 0
 

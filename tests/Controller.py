@@ -709,7 +709,8 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
         # Make ActionableArchPackageRPM.test() return results with one failure.
         test_results = TestResults()
-        test_results.add_failure(TestCase('fake', 'pkg', 'x86_64'), 0, None, None)
+        test_results.add_failure(
+            TestCase('fake', 'pkg', 'x86_64', 'rpm'), 0, None, None)
         mock_act_arch_pkg_rpm.test.return_value = test_results
 
         # Run test on package and check main returns non-zero exit code
@@ -1161,7 +1162,8 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
         # Make ActionableArchPackageRPM.test() return results with one failure.
         test_results = TestResults()
-        test_results.add_failure(TestCase('fake', 'pkg', 'x86_64'), 0, None, None)
+        test_results.add_failure(
+            TestCase('fake', 'pkg', 'x86_64', 'rpm'), 0, None, None)
         mock_act_arch_pkg_rpm.test.return_value = test_results
 
         # Run validate on package and check main returns non-zero exit code
@@ -1328,7 +1330,8 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         mock_staging_repo_cls.return_value = mock_staging_repo
         # Make ActionableArchPackageRPM.test() return results with one failure.
         test_results = TestResults()
-        test_results.add_failure(TestCase('fake', 'pkg', 'x86_64'), 0, None, None)
+        test_results.add_failure(
+            TestCase('fake', 'pkg', 'x86_64', 'rpm'), 0, None, None)
         mock_act_arch_pkg_rpm.test.return_value = test_results
 
         # Run validate on package and check main returns non-zero exit code

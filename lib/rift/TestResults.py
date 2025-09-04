@@ -72,7 +72,7 @@ class TestCase():
     TestCase: oject for to manage a Test to format ajunit file in TestResult
     """
 
-    def __init__(self, name, classname, arch):
+    def __init__(self, name, classname, arch, _format):
         """
         name: TestCase name
         classname: TestCase classname
@@ -81,6 +81,7 @@ class TestCase():
         self.name = name
         self.classname = classname
         self.arch = arch
+        self.format = _format
 
     @property
     def fullname(self):
@@ -184,12 +185,13 @@ class TestResults():
         """
         Get a summary table of all tests
         """
-        tbl = TextTable("%name %arch %>duration %result")
+        tbl = TextTable("%name %arch %format %>duration %result")
         for result in self.results:
             tbl.append(
                 {
                     'name': result.case.fullname,
                     'arch': result.case.arch,
+                    'format': result.case.format,
                     'duration': f"{result.time:.0f}s",
                     'result': (
                         result.value.upper()

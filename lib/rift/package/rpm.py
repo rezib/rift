@@ -247,7 +247,7 @@ class ActionableArchPackageRPM(ActionableArchPackage):
         if not kwargs.get('noauto', False):
             tests.insert(0, BasicTest(self.package, config=self.config))
         for test in tests:
-            case = TestCase(test.name, self.name, self.arch)
+            case = TestCase(test.name, self.name, self.arch, self.package.format)
             now = time.time()
             message(f"Running test '{case.fullname}' on architecture '{self.arch}'")
             proc = vm.run_test(test)

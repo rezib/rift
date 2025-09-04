@@ -426,7 +426,7 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
             # Check main returns non-zero exit code
             self.assertEqual(main(['build', 'pkg']), 2)
         self.assertIn(
-            'ERROR:root:Unable to load package: fake load failure',
+            'ERROR:root:Unable to load rpm package: fake load failure',
             log.output
         )
 
@@ -464,7 +464,7 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Check skipping arch info in logs.
         self.assertIn(
             'INFO:root:Skipping build on architecture aarch64 not supported by '
-            'package pkg',
+            'rpm package pkg',
             log.output
         )
 
@@ -507,7 +507,7 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
 
         # Check build failure error in logs.
         self.assertIn(
-            'ERROR:root:Build failure: fake build failure',
+            'ERROR:root:rpm build failure: fake build failure',
             log.output
         )
 
@@ -583,7 +583,7 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         with self.assertLogs(level='ERROR') as log:
             self.assertEqual(main(['test', 'pkg']), 2)
         self.assertIn(
-            'ERROR:root:Unable to load package: fake load failure',
+            'ERROR:root:Unable to load rpm package: fake load failure',
             log.output
         )
         mock_act_arch_pkg_rpm.test.assert_not_called()
@@ -658,7 +658,7 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Check skipping arch info in logs.
         self.assertIn(
             'INFO:root:Skipping test on architecture aarch64 not supported by '
-            'package pkg',
+            'rpm package pkg',
             log.output
         )
 
@@ -735,7 +735,7 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         with self.assertLogs(level='ERROR') as log:
             self.assertEqual(main(['validate', 'pkg']), 2)
         self.assertIn(
-            'ERROR:root:Unable to load package: fake load failure',
+            'ERROR:root:Unable to load rpm package: fake load failure',
             log.output
         )
 
@@ -775,7 +775,7 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         with self.assertLogs(level='ERROR') as log:
             self.assertEqual(main(['validate', 'pkg']), 2)
         self.assertIn(
-            'ERROR:root:Static analysis of package failed: fake check failure',
+            'ERROR:root:Static analysis of rpm package failed: fake check failure',
             log.output
         )
 
@@ -821,7 +821,7 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
 
         # Check build failure error in logs.
         self.assertIn(
-            'ERROR:root:Build failure: fake build failure',
+            'ERROR:root:rpm build failure: fake build failure',
             log.output
         )
 
@@ -923,7 +923,7 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Check skipping arch info in logs.
         self.assertIn(
             'INFO:root:Skipping validation on architecture aarch64 not '
-            'supported by package pkg',
+            'supported by rpm package pkg',
             log.output
         )
 

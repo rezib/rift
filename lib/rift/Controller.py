@@ -434,26 +434,29 @@ def validate_pkgs(config, args, pkgs, arch):
         try:
             pkg.load()
         except RiftError as ex:
-            logging.error("Unable to load package: %s", str(ex))
+            logging.error("Unable to load %s package: %s", pkg.format, str(ex))
             results.add_failure(case, time.time() - now, err=str(ex))
             continue  # skip current package
 
         if not pkg.supports_arch(arch):
             logging.info(
                 "Skipping validation on architecture %s not supported by "
-                "package %s",
+                "%s package %s",
                 arch,
+                pkg.format,
                 pkg.name
             )
             continue
 
-        banner(f"Checking package '{pkg.name}' on architecture {arch}")
+        banner(f"Checking {pkg.format} package '{pkg.name}' on architecture "
+            f"{arch}")
 
         now = time.time()
         try:
             pkg.check()
         except RiftError as ex:
-            logging.error("Static analysis of package failed: %s", str(ex))
+            logging.error("Static analysis of %s package failed: %s",
+                pkg.format, str(ex))
             results.add_failure(case, time.time() - now, err=str(ex))
             continue  # skip current package
 
@@ -465,7 +468,7 @@ def validate_pkgs(config, args, pkgs, arch):
             case = TestCase('build', pkg.name, arch, pkg.format)
             pkg_arch.build(sign=args.sign, staging=staging)
         except RiftError as ex:
-            logging.error("Build failure: %s", str(ex))
+            logging.error("%s build failure: %s", pkg.format, str(ex))
             results.add_failure(case, time.time() - now, err=str(ex))
             continue  # skip current package
         else:
@@ -583,7 +586,8 @@ def build_pkgs(args, pkgs, arch, staging):
         try:
             pkg.load()
         except RiftError as ex:
-            logging.error("Unable to load package: %s", str(ex))
+            logging.error("Unable to load %s package: %s",
+                pkg.format, str(ex))
             results.add_failure(case, time.time() - now, err=str(ex))
             continue  # skip current package
 
@@ -591,9 +595,10 @@ def build_pkgs(args, pkgs, arch, staging):
         # Check architecture is supported or skip package
         if not pkg.supports_arch(arch):
             logging.info(
-                "Skipping build on architecture %s not supported by "
-                "package %s",
+                "Skipping build on architecture %s not supported by %s package "
+                "%s",
                 arch,
+                pkg.format,
                 pkg.name
             )
             continue
@@ -606,7 +611,7 @@ def build_pkgs(args, pkgs, arch, staging):
         try:
             pkg_arch.build(sign=args.sign, staging=staging)
         except RiftError as ex:
-            logging.error("Build failure: %s", str(ex))
+            logging.error("%s build failure: %s", pkg.format, str(ex))
             results.add_failure(case, time.time() - now, err=str(ex))
             build_success = False
         else:
@@ -704,15 +709,17 @@ def action_test(args, config):
                 # specifically. When parsings succeed, this test case is not
                 # reported in test results.
                 case = TestCase("load", pkg.name, arch, pkg.format)
-                logging.error("Unable to load package: %s", str(ex))
+                logging.error("Unable to load %s package: %s",
+                    pkg.format, str(ex))
                 results.add_failure(case, time.time() - now, err=str(ex))
                 continue  # skip current package
 
             if not pkg.supports_arch(arch):
                 logging.info(
                     "Skipping test on architecture %s not supported by "
-                    "package %s",
+                    "%s package %s",
                     arch,
+                    pkg.format,
                     pkg.name
                 )
                 continue

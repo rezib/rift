@@ -429,7 +429,7 @@ def validate_pkgs(config, args, pkgs, arch):
 
     for pkg in pkgs:
         # Load package and report possible failure
-        case = TestCase('build', pkg.name, arch)
+        case = TestCase('build', pkg.name, arch, pkg.format)
         now = time.time()
         try:
             pkg.load()
@@ -462,7 +462,7 @@ def validate_pkgs(config, args, pkgs, arch):
 
         try:
             now = time.time()
-            case = TestCase('build', pkg.name, arch)
+            case = TestCase('build', pkg.name, arch, pkg.format)
             pkg_arch.build(sign=args.sign, staging=staging)
         except RiftError as ex:
             logging.error("Build failure: %s", str(ex))
@@ -578,7 +578,7 @@ def build_pkgs(args, pkgs, arch, staging):
 
     for pkg in pkgs:
         # Load package and report possible failure
-        case = TestCase('build', pkg.name, arch)
+        case = TestCase('build', pkg.name, arch, pkg.format)
         now = time.time()
         try:
             pkg.load()
@@ -703,7 +703,7 @@ def action_test(args, config):
                 # Create a dummy parse test case to report this error
                 # specifically. When parsings succeed, this test case is not
                 # reported in test results.
-                case = TestCase("load", pkg.name, arch)
+                case = TestCase("load", pkg.name, arch, pkg.format)
                 logging.error("Unable to load package: %s", str(ex))
                 results.add_failure(case, time.time() - now, err=str(ex))
                 continue  # skip current package

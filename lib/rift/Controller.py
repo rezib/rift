@@ -1303,43 +1303,43 @@ def action(config, args):
         return action_create_import(args, config)
 
     # BUILD
-    elif args.command == 'build':
+    if args.command == 'build':
         return action_build(args, config)
 
     # SIGN
-    elif args.command == 'sign':
+    if args.command == 'sign':
         return action_sign(args, config)
 
     # TEST
-    elif args.command == 'test':
+    if args.command == 'test':
         return action_test(args, config)
 
     # VALIDATE
-    elif args.command == 'validate':
+    if args.command == 'validate':
         return action_validate(args, config)
 
     # VALIDDIFF
-    elif args.command == 'validdiff':
+    if args.command == 'validdiff':
         return action_validdiff(args, config)
 
     # QUERY
-    elif args.command == 'query':
+    if args.command == 'query':
         return action_query(args, config)
 
     # CHANGELOG
-    elif args.command == 'changelog':
+    if args.command == 'changelog':
         return action_changelog(args, config)
 
     # GITLAB
-    elif args.command == 'gitlab':
+    if args.command == 'gitlab':
         return action_gitlab(args, config, *staff_modules(config))
 
     # GERRIT
-    elif args.command == 'gerrit':
+    if args.command == 'gerrit':
         return action_gerrit(args, config, *staff_modules(config))
 
     # SYNC
-    elif args.command == 'sync':
+    if args.command == 'sync':
         return action_sync(args, config)
 
     return 0

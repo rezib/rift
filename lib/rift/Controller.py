@@ -1109,6 +1109,9 @@ def action_create_import(args, config):
         if not rpm.is_source:
             raise RiftError(f"{args.file} is not a source RPM")
         pkgname = rpm.name
+    else:
+        raise RiftError(
+            f"Unsupported command {args.command} for action_create_import")
 
     if args.maintainer is None:
         raise RiftError("You must specify a maintainer")

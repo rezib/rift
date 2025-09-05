@@ -1150,12 +1150,12 @@ def action(config, args):
     # CHECK
     if args.command == 'check':
         action_check(args, config)
-        return
+        return 0
 
     # ANNEX
     if args.command == 'annex':
         action_annex(args, config, *staff_modules(config))
-        return
+        return 0
 
     # VM
     if args.command == 'vm':

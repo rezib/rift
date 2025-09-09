@@ -73,10 +73,8 @@ class PackageDependencyNode:
         # If dependencies are not defined in info.yaml, look at build requires
         # and produced subpackages found in spec file.
         return any(
-            [
-                build_require in node.subpackages
-                for build_require in self.build_requires
-            ]
+            build_require in node.subpackages
+            for build_require in self.build_requires
         )
 
     def required_subpackages(self, rdep):

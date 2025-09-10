@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2014-2016 CEA
+# Copyright (C) 2014-2025 CEA
 #
 # This file is part of Rift project.
 #
@@ -37,12 +37,12 @@ Class to manipulate packages and package tests with Rift.
 import glob
 import logging
 import os
-import shutil
 import yaml
 
 from rift import RiftError
-from rift.Annex import Annex
 from rift.Config import OrderedLoader
+from rift.utils import message
+from rift.repository import ProjectArchRepositories
 
 _META_FILE = 'info.yaml'
 _SOURCES_DIR = 'sources'
@@ -56,19 +56,21 @@ class Package():
     It creates, load, update, check, build and test a package.
     """
 
-    def __init__(self, name, config, staff, modules):
+    def __init__(self, name, config, staff, modules, _format, buildfile):
         self._config = config
         self._staff = staff
         self._modules = modules
         self.name = name
+        # check package format
+        if _format not in ['_virtual', 'rpm', 'oci']:
+            raise RiftError(f"Unsupported package format {_format}")
+        self.format = _format
 
         # infos.yaml
         self.module = None
         self.maintainers = []
         self.reason = None
         self.origin = None
-        self.ignore_rpms = None
-        self.rpmnames = None
 
         # Static paths
         pkgdir = os.path.join(self._config.get('packages_dir'), self.name)
@@ -76,16 +78,34 @@ class Package():
         self.sourcesdir = os.path.join(self.dir, _SOURCES_DIR)
         self.testsdir = os.path.join(self.dir, _TESTS_DIR)
         self.metafile = os.path.join(self.dir, _META_FILE)
-        self.specfile = os.path.join(self.dir, f"{self.name}.spec")
+        self.buildfile = None
+        if buildfile:
+            self.buildfile = os.path.join(self.dir, buildfile)
         self.docfiles = []
         for doc in _DOC_FILES:
             self.docfiles.append(os.path.join(self.dir, doc))
 
         self.sources = set()
 
-    def check_info(self):
+        # Optionally set in load() by concrete children classes.
+        self.version = None
+        self.release = None
+        self.arch = None
+        self.changelog_name = None
+        self.changelog_time = None
+        self.buildrequires = None
+
+    def __eq__(self, other):
+        return self.name == other.name and self.format == other.format
+
+    def check(self):
+        """Load package and check info."""
+        message('Validate package info...')
+        self.check_info()
+
+    def _check_generic_info(self):
         """
-        Check info.yaml content is correct.
+        Check info.yaml generic content is correct.
 
         This uses Staff and Modules content.
         """
@@ -107,6 +127,44 @@ class Package():
         if self.reason is None:
             raise RiftError("Missing reason")
 
+    def _check_specific_info(self):
+        """
+        Check info.yaml format specific content is correct. No-op in base class,
+        designed to be overriden when necessary in format specific class.
+        """
+
+    def check_info(self):
+        """Check info.yaml generic and format specific content is correct."""
+        self._check_generic_info()
+        self._check_specific_info()
+
+    def _serialize_generic_metadata(self):
+        """Return dict of package generic metadata to write in metadata file."""
+        data = {}
+        if self.module:
+            data['module'] = self.module
+        if self.reason:
+            data['reason'] = self.reason
+        if self.maintainers:
+            data['maintainers'] = self.maintainers
+        if self.origin:
+            data['origin'] = self.origin
+        return data
+
+    def _serialize_specific_metadata(self):
+        """
+        Return dict of format specific metadata to write in metadata file. This
+        is an empty in base class, designed to be overriden when necessary in
+        format specific classes.
+        """
+        return {}
+
+    def _serialize_metadata(self):
+        """Return dict of package metadata to write in metadata file."""
+        data = self._serialize_generic_metadata()
+        data.update(self._serialize_specific_metadata())
+        return data
+
     def write(self):
         """
         Create or update the file and directory structure for this package
@@ -118,24 +176,33 @@ class Package():
             os.mkdir(self.dir)
 
         # Write meta information
-        data = {}
-        if self.module:
-            data['module'] = self.module
-        if self.reason:
-            data['reason'] = self.reason
-        if self.maintainers:
-            data['maintainers'] = self.maintainers
-        if self.origin:
-            data['origin'] = self.origin
-        if self.rpmnames:
-            data['rpm_names'] = self.rpmnames
-        if self.ignore_rpms:
-            data['ignore_rpms'] = self.ignore_rpms
-
+        data = self._serialize_metadata()
         with open(self.metafile, 'w', encoding='utf-8') as fyaml:
             yaml.dump({'package': data}, fyaml, default_flow_style=False)
 
-    def load(self, infopath=None):
+    def _deserialize_generic_metadata(self, data):
+        """Set generic package object attribute with values in metadata dict."""
+        self.module = data.get('module')
+        if isinstance(data.get('maintainers'), str):
+            self.maintainers = [data['maintainers']]
+        else:
+            self.maintainers = data.get('maintainers')
+        self.reason = data.get('reason')
+        self.origin = data.get('origin')
+
+    def _deserialize_specific_metadata(self, data):
+        """
+        Set format specific package object attribute with values in metadata
+        dict. No-op in base class, designed to be overriden when necessary in
+        format specific classes.
+        """
+
+    def _deserialize_metadata(self, data):
+        """Set package object attribute with values in metadata dict."""
+        self._deserialize_generic_metadata(data)
+        self._deserialize_specific_metadata(data)
+
+    def load_info(self, infopath=None):
         """Read package metadata 'info.yaml' and check its content."""
 
         if infopath is None:
@@ -148,26 +215,16 @@ class Package():
             data = yaml.load(fyaml, Loader=OrderedLoader)
 
         data = data.pop('package') or {}
-        self.module = data.get('module')
-        if isinstance(data.get('maintainers'), str):
-            self.maintainers = [data['maintainers']]
-        else:
-            self.maintainers = data.get('maintainers')
-        self.reason = data.get('reason')
-        self.origin = data.get('origin')
-        if isinstance(data.get('rpm_names'), str):
-            self.rpmnames = [data.get('rpm_names')]
-        else:
-            self.rpmnames = data.get('rpm_names')
-        if isinstance(data.get('ignore_rpms'), str):
-            self.ignore_rpms = [data.get('ignore_rpms')]
-        else:
-            self.ignore_rpms = data.get('ignore_rpms', [])
+        self._deserialize_metadata(data)
 
         self.check_info()
 
         if os.path.exists(self.sourcesdir):
             self.sources = set(os.listdir(self.sourcesdir))
+
+    def load(self, infopath=None):
+        """Read package metadata 'info.yaml' and check its content."""
+        self.load_info(infopath)
 
     def tests(self):
         """An iterator over Test objects for each test files."""
@@ -175,41 +232,46 @@ class Package():
         for testpath in glob.glob(testspattern):
             yield Test(testpath)
 
-    def build_srpm(self, mock, sign):
-        """
-        Build package source RPM
-        """
-        tmpdir = Annex(self._config).import_dir(self.sourcesdir,
-                                                force_temp=True)
+    def add_changelog_entry(self, maintainer, comment, bump):
+        """Must be implemented in concrete children classes when supported."""
+        raise NotImplementedError
 
-        # To avoid root_squash issue, also copy the specfile in the temp dir
-        tmpspec = os.path.join(tmpdir.path, os.path.basename(self.specfile))
-        shutil.copyfile(self.specfile, tmpspec)
+    def analyze(self, review, configdir):
+        """Must be implemented in concrete children classes when supported."""
+        raise NotImplementedError
 
-        srpm = mock.build_srpm(tmpspec, tmpdir.path or self.sourcesdir, sign)
-        tmpdir.delete()
-        return srpm
 
-    def build_rpms(self, mock, srpm, sign):
-        """
-        Build package RPMS using provided `srpm' and repository list for build
-        requires.
-        """
-        return mock.build_rpms(srpm, sign)
+class ActionableArchPackage:
+    """
+    Abstract class to build, test and publish package for a specific format and
+    architecture. This class must be overriden with expected methods for every
+    supported package formats.
+    """
+    def __init__(self, package, arch):
+        self.name = package.name
+        self.buildfile = package.buildfile
+        self.config = package._config
+        self.package = package
+        self.arch = arch
+        self.repos = ProjectArchRepositories(self.config, self.arch).for_format(self.package.format)
 
-    @classmethod
-    def list(cls, config, staff, modules, names=None):
-        """
-        Iterate over Package instances from 'names' list or all packages
-        if list is not provided.
-        """
-        if not names:
-            pkgdir = config.project_path(config.get('packages_dir'))
-            names = [path for path in os.listdir(pkgdir)
-                     if os.path.isdir(os.path.join(pkgdir, path))]
+    def build(self, **kwargs):
+        """Build package. Must be overriden in concrete format classes."""
+        raise NotImplementedError
 
-        for name in names:
-            yield cls(name, config, staff, modules)
+    def test(self, **kwargs):
+        """Test package. Must be overriden in concrete format classes."""
+        raise NotImplementedError
+
+    def publish(self, **kwargs):
+        """Publish package. Must be overriden in concrete format classes."""
+        raise NotImplementedError
+
+    def clean(self, **kwargs):
+        """
+        Clean package build environment. No-op by default but can be overriden
+        in concrete format class.
+        """
 
 
 class Test():

@@ -5,26 +5,26 @@
 import os.path
 import shutil
 import atexit
-from unittest.mock import patch, Mock
+from unittest.mock import patch, Mock, call
 import subprocess
 from io import StringIO
+import textwrap
 
-from unidiff import parse_unidiff
-from TestUtils import (
-    make_temp_file, make_temp_dir, RiftTestCase, RiftProjectTestCase
+from .TestUtils import (
+    make_temp_dir, make_temp_file, gen_rpm_spec, RiftTestCase, RiftProjectTestCase
 )
 
-from VM import GLOBAL_CACHE, VALID_IMAGE_URL, PROXY
+from .VM import GLOBAL_CACHE, VALID_IMAGE_URL, PROXY
 from rift.Controller import (
     main,
-    get_packages_from_patch,
     remove_packages,
     make_parser,
 )
-from rift.Package import Package
-from rift.RPM import RPM
-from rift.run import RunResult
-from rift import RiftError
+from rift.package.rpm import PackageRPM, ActionableArchPackageRPM
+from rift.package.oci import PackageOCI, ActionableArchPackageOCI
+from rift.TestResults import TestResults, TestCase
+from rift.RPM import RPM, Spec
+from rift import RiftError, DeclError
 
 VALID_REPOS = {
     'os': {
@@ -46,26 +46,13 @@ class ControllerTest(RiftTestCase):
         self.assert_except(SystemExit, "0", main, ['--version'])
 
 
-class ControllerProjectTest(RiftProjectTestCase):
+class ControllerProjectActionQueryTest(RiftProjectTestCase):
     """
-    Tests class for Controller
+    Tests class for Controller action query
     """
-
-    def _check_qemuuserstatic(self):
-        """Skip the test if none qemu-$arch-static executable is found for all
-        architectures declared in project configuration."""
-        if not any(
-            [
-                os.path.exists(f"/usr/bin/qemu-{arch}-static")
-                for arch in self.config.get('arch')
-            ]
-        ):
-            self.skipTest("qemu-user-static is not available")
-
     def test_action_query(self):
         """simple 'rift query' is ok """
         self.assertEqual(main(['query']), 0)
-
 
     def test_action_query_on_pkg(self):
         """ Test query on one package """
@@ -79,362 +66,436 @@ class ControllerProjectTest(RiftProjectTestCase):
         self.make_pkg(name='pkg2', metadata={})
         self.assertEqual(main(['query']), 0)
 
-    def test_validdiff_readme(self):
-        """ Should allow README files """
+    @patch('sys.stdout', new_callable=StringIO)
+    def test_action_query_output_default(self, mock_stdout):
+        self.make_pkg(name="pkg1")
+        self.make_pkg(name="pkg2", version='2.1', release='3')
+        self.assertEqual(main(['query']), 0)
+        self.assertIn(
+            "NAME MODULE       MAINTAINERS FORMAT VERSION RELEASE MODULEMANAGER",
+            mock_stdout.getvalue())
+        self.assertIn(textwrap.dedent("""
+            ---- ------       ----------- ------ ------- ------- -------------
+            pkg1 Great module Myself      rpm    1.0     1       buddy@somewhere.org
+            pkg1 Great module Myself      oci    1.0     1       buddy@somewhere.org
+            pkg2 Great module Myself      rpm    2.1     3       buddy@somewhere.org
+            pkg2 Great module Myself      oci    2.1     3       buddy@somewhere.org
+            """),
+            mock_stdout.getvalue())
+
+    @patch('sys.stdout', new_callable=StringIO)
+    def test_action_query_output_format(self, mock_stdout):
+        self.make_pkg(name="pkg1")
+        self.make_pkg(name="pkg2", version='2.1', release='3')
+        self.assertEqual(
+            main([
+                'query', '--format',
+                '%name %module %origin %reason %format %tests %version %arch %release '
+                '%changelogname %changelogtime %maintainers %modulemanager '
+                '%buildrequires']), 0)
+        self.assertIn(
+            "NAME MODULE       ORIGIN REASON          FORMAT TESTS VERSION "
+            "ARCH   RELEASE CHANGELOGNAME                      CHANGELOGTIME "
+            "MAINTAINERS MODULEMANAGER       BUILDREQUIRES",
+            mock_stdout.getvalue())
+        self.assertIn(textwrap.dedent("""
+            ---- ------       ------ ------          ------ ----- ------- ----   ------- -------------                      ------------- ----------- -------------       -------------
+            pkg1 Great module Vendor Missing feature rpm    1     1.0     noarch 1       Myself <buddy@somewhere.org> 1.0-1 2019-02-26    Myself      buddy@somewhere.org br-package
+            pkg1 Great module Vendor Missing feature oci    1     1.0            1                                                        Myself      buddy@somewhere.org
+            pkg2 Great module Vendor Missing feature rpm    1     2.1     noarch 3       Myself <buddy@somewhere.org> 2.1-3 2019-02-26    Myself      buddy@somewhere.org br-package
+            pkg2 Great module Vendor Missing feature oci    1     2.1            3                                                        Myself      buddy@somewhere.org
+            """),
+            mock_stdout.getvalue())
+
+
+class ControllerProjectActionChangelogTest(RiftProjectTestCase):
+    """
+    Tests class for Controller action changelog
+    """
+
+    def test_action_changelog_without_pkg(self):
+        """changelog without package fails """
+        with self.assertRaisesRegex(SystemExit, "2"):
+            main(['changelog'])
+
+    def test_action_changelog_without_comment(self):
+        """changelog without comment fails """
+        with self.assertRaisesRegex(SystemExit, "2"):
+            main(['changelog', 'pkg'])
+
+    def test_action_changelog_without_maintainer(self):
+        """changelog without maintainer """
+        with self.assertRaisesRegex(RiftError, "You must specify a maintainer"):
+            main(['changelog', 'pkg', '-c', 'basic change'])
+
+    def test_action_changelog_pkg_not_found(self):
+        """changelog package not found"""
+        with self.assertRaisesRegex(
+            RiftError,
+            "Package 'pkg' directory does not exist"):
+            main(['changelog', 'pkg', '-c', 'basic change', '-t', 'Myself'])
+
+    def test_action_changelog(self):
+        """simple changelog"""
         self.make_pkg()
-        patch_template = """
-commit 0ac8155e2655321ceb28bbf716ff66d1a9e30f29 (HEAD -> master)
-Author: Myself <buddy@somewhere.org>
-Date:   Thu Apr 25 14:30:41 2019 +0200
+        self.assertEqual(
+            main(['changelog', 'pkg', '-c', 'basic change', '-t', 'Myself']), 0)
+        spec = Spec(filepath=self.buildfiles[0])
+        spec.load()
+        self.assertEqual(spec.changelog_name, 'Myself <buddy@somewhere.org> - 1.0-1')
+        self.assertEqual(spec.version, '1.0')
+        self.assertEqual(spec.release, '1')
 
-    packages: document 'pkg'
-
-diff --git a/packages/pkg/{0} b/packages/pkg/{0}
-new file mode 100644
-index 0000000..e845566
---- /dev/null
-+++ b/packages/pkg/{0}
-@@ -0,0 +1 @@
-+README
-"""
-
-        for fmt in '', 'rst', 'md', 'txt':
-            filename = 'README'
-            if fmt:
-                filename = "{0}.{1}".format(filename, fmt)
-            patch = make_temp_file(patch_template.format(filename))
-            self.assertEqual(main(['validdiff', patch.name]), 0)
-
-    def test_validdiff_binary(self):
-        """ Should fail if source file is a binary file """
-        pkgname = 'pkg'
-        pkgvers = 1.0
-        self.make_pkg(name=pkgname, version=pkgvers)
-        pkgsrc = os.path.join('packages', 'pkgname', 'sources',
-                              '{0}-{1}.tar.gz'.format(pkgname, pkgvers))
-        patch = make_temp_file("""
-commit 0ac8155e2655321ceb28bbf716ff66d1a9e30f29 (HEAD -> master)
-Author: Myself <buddy@somewhere.org>
-Date:   Thu Apr 25 14:30:41 2019 +0200
-
-    packages: update 'pkg' sources
-
-diff --git /dev/null b/{0}
-index fcd49dd..91ef207 100644
-Binary files a/sources/a.tar.gz and b/sources/a.tar.gz differ
-""".format(pkgsrc))
-        self.assert_except(RiftError, "Binary file detected: {0}".format(pkgsrc),
-                           main, ['validdiff', patch.name])
-
-    def test_validdiff_binary_with_content(self):
-        """ Should fail if source file is a binary file (diff --binary) """
-        pkgname = 'pkg'
-        pkgvers = 1.0
-        self.make_pkg(name=pkgname, version=pkgvers)
-        pkgsrc = os.path.join('packages', 'pkgname', 'sources',
-                              '{0}-{1}.tar.gz'.format(pkgname, pkgvers))
-        patch = make_temp_file("""
-commit 0ac8155e2655321ceb28bbf716ff66d1a9e30f29 (HEAD -> master)
-Author: Myself <buddy@somewhere.org>
-Date:   Thu Apr 25 14:30:41 2019 +0200
-
-    packages: update 'pkg' sources
-
-diff --git /dev/null b/{0}
-index 6cd0ff6ec591f7f51a3479d7b66c6951a2b4afa9..91ef2076b67f3158ec1670fa7b88d88b2816aa91 100644
-GIT binary patch
-literal 8
-PcmZQ%;Sf+z_{{#tQ1BL-x
-
-literal 4
-LcmZQ%;Sc}}-05kv|
-""".format(pkgsrc))
-        self.assert_except(RiftError, "Binary file detected: {0}".format(pkgsrc),
-                           main, ['validdiff', patch.name])
-
-    def test_validdiff_package_removed(self):
-        """ Test detect removed package in patch"""
-        pkgname = 'pkg'
-        pkgvers = 1.0
-        self.make_pkg(name=pkgname, version=pkgvers)
-        pkgsrc = os.path.join('packages', 'pkgname', 'sources',
-                              '{0}-{1}.tar.gz'.format(pkgname, pkgvers))
-        patch = make_temp_file("""
-diff --git a/packages/pkg/info.yaml b/packages/pkg/info.yaml
-deleted file mode 100644
-index 32ac08e..0000000
---- a/packages/pkg/info.yaml
-+++ /dev/null
-@@ -1,6 +0,0 @@
--package:
--    maintainers:
--        - Myself
--    module: Great module
--    origin: Vendor
--    reason: Missing feature
-diff --git a/packages/pkg/pkg.spec b/packages/pkg/pkg.spec
-deleted file mode 100644
-index b92c49d..0000000
---- a/packages/pkg/pkg.spec
-+++ /dev/null
-@@ -1,24 +0,0 @@
--Name:    pkg
--Version:        1.0
--Release:        1
--Summary:        A package
--Group:          System Environment/Base
--License:        GPL
--URL:            http://nowhere.com/projects/%{{name}}/
--Source0:        %{{name}}-%{{version}}.tar.gz
--BuildArch:      noarch
--BuildRequires:  br-package
--Requires:       another-package
--Provides:       pkg-provide
--%description
--A package
--%prep
--%build
--# Nothing to build
--%install
--# Nothing to install
--%files
--# No files
--%changelog
--* Tue Feb 26 2019 Myself <buddy@somewhere.org> - 1.0-1
--- Update to 1.0 release
-diff --git a/{0} b/{0}
-deleted file mode 100644
-index 43bf48d..0000000
---- a/{0}
-+++ /dev/null
-@@ -1 +0,0 @@
--ACACACACACACACAC
-\ No newline at end of file
-""".format(pkgsrc))
-
-        with open(patch.name) as p:
-            (updated, removed) = get_packages_from_patch(
-                p, self.config, self.modules, self.staff
-            )
-            self.assertEqual(len(updated), 0)
-            self.assertEqual(len(removed), 1)
-            self.assertTrue('pkg' in removed.keys())
-
-    def test_validdiff_on_tests_directory(self):
-        """ Test if package tests directory structure is fine """
-        patch = make_temp_file("""
-diff --git a/packages/pkg/tests/sources/deep/source.c b/packages/pkg/tests/sources/deep/source.c
-new file mode 100644
-index 0000000..68344bf
---- /dev/null
-+++ b/packages/pkg/tests/sources/deep/source.c
-@@ -0,0 +1,4 @@
-+#include <stdlib.h>
-+int main(int argc, char **argv){
-+    exit(0);
-+}
-\ No newline at end of file
-""")
-        # Ensure package exists
-        self.make_pkg('pkg')
-        with open(patch.name, 'r') as f:
-            (updated, removed) = get_packages_from_patch(
-                f, self.config, self.modules, self.staff
-            )
-            self.assertEqual(len(updated), 1)
-            self.assertEqual(len(removed), 0)
-            self.assertTrue('pkg' in updated.keys())
-
-    def test_validdiff_on_invalid_file(self):
-        """Test invalid project file is detected in patch"""
-        patch = make_temp_file("""
-commit 0ac8155e2655321ceb28bbf716ff66d1a9e30f29 (HEAD -> master)
-Author: Myself <buddy@somewhere.org>
-Date:   Thu Apr 25 14:30:41 2019 +0200
-
-    project wrong file
-
-diff --git a/wrong b/wrong
-new file mode 100644
-index 0000000..68344bf
---- a/wrong
-+++ b/wrong
-@@ -0,0 +1 @@
-+README
-""")
-        self.assert_except(RiftError, "Unknown file pattern: wrong",
-                           main, ['validdiff', patch.name])
-
-    def test_validdiff_on_invalid_pkg_file(self):
-        """Test invalid package file is detected in patch"""
-        patch = make_temp_file("""
-commit 0ac8155e2655321ceb28bbf716ff66d1a9e30f29 (HEAD -> master)
-Author: Myself <buddy@somewhere.org>
-Date:   Thu Apr 25 14:30:41 2019 +0200
-
-    packages: Wrong file
-
-diff --git a/packages/pkg/wrong b/packages/pkg/wrong
-new file mode 100644
-index 0000000..68344bf
---- a/packages/pkg/wrong
-+++ b/packages/pkg/wrong
-@@ -0,0 +1 @@
-+README
-""")
-        self.assert_except(RiftError, "Unknown file pattern in 'pkg' directory: packages/pkg/wrong",
-                           main, ['validdiff', patch.name])
-
-    def test_validdiff_on_info(self):
-        patch = make_temp_file("""
-commit 0ac8155e2655321ceb28bbf716ff66d1a9e30f29 (HEAD -> master)
-Author: Myself <buddy@somewhere.org>
-Date:   Thu Apr 25 14:30:41 2019 +0200
-
-    packages: update 'pkg' infos
-
-diff --git a/packages/pkg/info.yaml b/packages/pkg/info.yaml
-new file mode 100644
-index 0000000..68344bf
---- a/packages/pkg/info.yaml
-+++ b/packages/pkg/info.yaml
-@@ -2,5 +2,5 @@ package:
-   maintainers:
-   - Myself
-   module: Great module
--  origin: Somewhere
-+  origin: Elsewhere
-   reason: Missing feature
-""")
+    def test_action_changelog_bump(self):
+        """simple changelog with bump"""
         self.make_pkg()
-        self.assertEqual(main(['validdiff', patch.name]), 0)
-        # For this patch, get_packages_from_patch() must not return updated nor
-        # removed packages.
-        with open(patch.name, 'r') as p:
-            (updated, removed) = get_packages_from_patch(
-                p, config=self.config, modules=self.modules, staff=self.staff
+        self.assertEqual(
+            main(['changelog', 'pkg', '-c', 'basic change', '-t', 'Myself', '--bump']),
+            0)
+        spec = Spec(filepath=self.buildfiles[0])
+        spec.load()
+        self.assertEqual(spec.changelog_name, 'Myself <buddy@somewhere.org> - 1.0-2')
+        self.assertEqual(spec.version, '1.0')
+        self.assertEqual(spec.release, '2')
+
+    def test_action_changelog_unknown_maintainer(self):
+        """changelog with unknown maintainer"""
+        self.make_pkg()
+        with self.assertRaises(TypeError):
+            main(['changelog', 'pkg', '-c', 'basic change', '-t', 'Fail'])
+
+    def test_action_changelog_unsupported_format(self):
+        """changelog with unsupported format"""
+        self.make_pkg(formats=['oci'])
+        self.assertEqual(
+            main(['changelog', 'pkg', '-c', 'basic change', '-t', 'Myself', '--bump']),
+            1)
+
+
+class ControllerProjectActionCreateTest(RiftProjectTestCase):
+    """
+    Tests class for Controller action create
+    """
+
+    def test_create_missing_pkg_module_reason(self):
+        """create without package, module or reason fails"""
+        for cmd in (['create', '-m', 'Great module', '-r', 'Good reason'],
+                    ['create', 'pkg', '-r', 'Good reason'],
+                    ['create', 'pkg', '-m', 'Great module']):
+            with self.assertRaisesRegex(SystemExit, "2"):
+                main(cmd)
+
+    def test_create_missing_maintainer(self):
+        """create without maintainer"""
+        with self.assertRaisesRegex(RiftError, "You must specify a maintainer"):
+            main(['create', 'pkg', '-m', 'Great module', '-r', 'Good reason'])
+
+    def test_create(self):
+        """simple create"""
+        main(['create', 'pkg', '-m', 'Great module', '-r', 'Good reason',
+              '--maintainer', 'Myself'])
+        pkg = PackageRPM('pkg', self.config, self.staff, self.modules)
+        pkg.load_info()
+        self.assertEqual(pkg.module, 'Great module')
+        self.assertEqual(pkg.reason, 'Good reason')
+        self.assertCountEqual(pkg.maintainers, ['Myself'])
+        os.unlink(pkg.metafile)
+        os.rmdir(os.path.dirname(pkg.metafile))
+
+    def test_create_unknown_maintainer(self):
+        """create with unknown maintainer fails"""
+        with self.assertRaisesRegex(
+            RiftError, "Maintainer 'Fail' is not defined"):
+            main(['create', 'pkg', '-m', 'Great module', '-r', 'Good reason',
+                  '--maintainer', 'Fail'])
+
+
+class ControllerProjectActionImportTest(RiftProjectTestCase):
+    """
+    Tests class for Controller action import
+    """
+    @property
+    def src_rpm(self):
+        return os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), 'materials', 'pkg-1.0-1.src.rpm'
+        )
+
+    @property
+    def bin_rpm(self):
+        return os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), 'materials', 'pkg-1.0-1.noarch.rpm'
+        )
+
+    def test_import_missing_pkg_module_reason(self):
+        """import without package, module or reason fails"""
+        for cmd in (['import', '-m', 'Great module', '-r', 'Good reason'],
+                    ['import', 'pkg.src.rpm', '-r', 'Good reason'],
+                    ['import', 'pkg.src.rpm', '-m', 'Great module']):
+            with self.assertRaisesRegex(SystemExit, "2"):
+                main(cmd)
+
+    def test_import_missing_maintainer(self):
+        """import without maintainer"""
+        with self.assertRaisesRegex(RiftError, "You must specify a maintainer"):
+            main(['import', self.src_rpm, '-m', 'Great module', '-r', 'Good reason'])
+
+    def test_import_bin_rpm(self):
+        """import binary rpm"""
+        with self.assertRaisesRegex(
+            RiftError,
+            ".*pkg-1.0-1.noarch.rpm is not a source RPM$"):
+            main(['import', self.bin_rpm, '-m', 'Great module',
+                  '-r', 'Good reason', '--maintainer', 'Myself'])
+
+    def test_import(self):
+        """simple import"""
+        main(['import', self.src_rpm, '-m', 'Great module', '-r', 'Good reason',
+              '--maintainer', 'Myself'])
+        pkg = PackageRPM('pkg', self.config, self.staff, self.modules)
+        pkg.load()
+        self.assertEqual(pkg.module, 'Great module')
+        self.assertEqual(pkg.reason, 'Good reason')
+        self.assertCountEqual(pkg.maintainers, ['Myself'])
+        spec = Spec(filepath=pkg.buildfile)
+        spec.load()
+        self.assertEqual(spec.changelog_name, 'Myself <buddy@somewhere.org> - 1.0-1')
+        self.assertEqual(spec.version, '1.0')
+        self.assertEqual(spec.release, '1')
+        self.assertTrue(os.path.exists(f"{pkg.buildfile}.orig"))
+        shutil.rmtree(os.path.dirname(pkg.metafile))
+
+    def test_import_unknown_maintainer(self):
+        """import with unknown maintainer fails"""
+        with self.assertRaisesRegex(
+            RiftError, "Maintainer 'Fail' is not defined"):
+            main(['import', self.src_rpm, '-m', 'Great module',
+                    '-r', 'Good reason', '--maintainer', 'Fail'])
+
+
+class ControllerProjectActionReimportTest(RiftProjectTestCase):
+    """
+    Tests class for Controller actionre import
+    """
+    @property
+    def src_rpm(self):
+        return os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), 'materials', 'pkg-1.0-1.src.rpm'
+        )
+
+    @property
+    def bin_rpm(self):
+        return os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), 'materials', 'pkg-1.0-1.noarch.rpm'
+        )
+
+    def test_reimport_missing_maintainer(self):
+        """reimport without maintainer"""
+        with self.assertRaisesRegex(RiftError, "You must specify a maintainer"):
+            main(['reimport', self.src_rpm, '-m', 'Great module', '-r', 'Good reason'])
+
+    def test_reimport(self):
+        """simple reimport"""
+        self.make_pkg(name='pkg')
+        main(['reimport', self.src_rpm, '--maintainer', 'Myself'])
+        pkg = PackageRPM('pkg', self.config, self.staff, self.modules)
+        pkg.load()
+        self.assertEqual(pkg.module, 'Great module')
+        self.assertEqual(pkg.reason, 'Missing feature')
+        self.assertCountEqual(pkg.maintainers, ['Myself'])
+        spec = Spec(filepath=pkg.buildfile)
+        spec.load()
+        self.assertEqual(spec.changelog_name, 'Myself <buddy@somewhere.org> - 1.0-1')
+        self.assertEqual(spec.version, '1.0')
+        self.assertEqual(spec.release, '1')
+        self.assertTrue(os.path.exists(f"{pkg.buildfile}.orig"))
+        os.unlink(f"{pkg.buildfile}.orig")
+
+
+class ControllerProjectActionCheckTest(RiftProjectTestCase):
+    """
+    Tests class for Controller action check
+    """
+
+    def test_check_without_type(self):
+        """check without type fails"""
+        with self.assertRaisesRegex(SystemExit, "2"):
+            main(['check'])
+
+    def test_check_staff(self):
+        """simple check staff"""
+        with self.assertLogs(level='INFO') as log:
+            main(['check', 'staff'])
+        self.assertIn(
+            'INFO:root:Staff file is OK.',
+            log.output
+        )
+
+    def test_check_staff_not_found(self):
+        """check staff file not found fails"""
+        with self.assertRaisesRegex(DeclError, "Could not find '/dev/fail'"):
+            main(['check', 'staff', '-f', '/dev/fail'])
+
+    def test_check_modules(self):
+        """simple check modules"""
+        with self.assertLogs(level='INFO') as log:
+            main(['check', 'modules'])
+        self.assertIn(
+            'INFO:root:Modules file is OK.',
+            log.output
+        )
+
+    def test_check_modules_not_found(self):
+        """check modules file not found fails"""
+        with self.assertRaisesRegex(DeclError, "Could not find '/dev/fail'"):
+            main(['check', 'modules', '-f', '/dev/fail'])
+
+    def test_check_info_without_file(self):
+        """check info without file fails"""
+        with self.assertRaisesRegex(
+            RiftError, r"You must specifiy a file path \(-f\)"):
+            main(['check', 'info'])
+
+    def test_check_info(self):
+        """simple check info"""
+        self.make_pkg()
+        with self.assertLogs(level='INFO') as log:
+            main(
+                ['check', 'info', '-f',
+                 os.path.join(self.pkgdirs['pkg'], 'info.yaml')]
             )
-        self.assertEqual(len(updated), 0)
-        self.assertEqual(len(removed), 0)
+        self.assertIn(
+            'INFO:root:Info file is OK.',
+            log.output
+        )
 
-    def test_validdiff_on_modules(self):
-        patch = make_temp_file("""
-commit 0ac8155e2655321ceb28bbf716ff66d1a9e30f29 (HEAD -> master)
-Author: Myself <buddy@somewhere.org>
-Date:   Thu Apr 25 14:30:41 2019 +0200
+    def test_check_info_not_found(self):
+        """check info file not found fails"""
+        self.make_pkg()
+        with self.assertRaises(FileNotFoundError):
+            main(['check', 'info', '-f', '/dev/fail'])
 
-    modules: add 'Section'
+    def test_check_spec_without_file(self):
+        """check spec without file fails"""
+        with self.assertRaisesRegex(
+            RiftError, r"You must specifiy a file path \(-f\)"):
+            main(['check', 'spec'])
 
-diff --git a/packages/modules.yaml b/packages/modules.yaml
-new file mode 100644
-index 0000000..68344bf
---- a/packages/modules.yaml
-+++ b/packages/modules.yaml
-@@ -0,0 +3 @@
-+modules:
-+  User Tools:
-+    manager: John Doe
-""")
-        self.assertEqual(main(['validdiff', patch.name]), 0)
-        # For this patch, get_packages_from_patch() must not return updated nor
-        # removed packages.
-        with open(patch.name, 'r') as p:
-            (updated, removed) = get_packages_from_patch(
-                p, config=self.config, modules=self.modules, staff=self.staff
+    def test_check_spec(self):
+        """simple check spec"""
+        self.make_pkg()
+        with self.assertLogs(level='INFO') as log:
+            main(
+                ['check', 'spec', '-f', self.buildfiles[0]]
             )
-        self.assertEqual(len(updated), 0)
-        self.assertEqual(len(removed), 0)
+        self.assertIn(
+            'INFO:root:Spec file is OK.',
+            log.output
+        )
 
-    def test_rename_package(self):
-        """ Test if renaming a package trigger a build """
-        pkgname = 'pkg'
-        pkgvers = 1.0
-        self.make_pkg(name=pkgname, version=pkgvers)
-        patch = make_temp_file("""
-diff --git a/packages/pkg/pkg.spec b/packages/pkgnew/pkgnew.spec
-similarity index 100%
-rename from packages/pkg/pkg.spec
-rename to packages/pkgnew/pkgnew.spec
-diff --git a/packages/pkg/info.yaml b/packages/pkgnew/info.yaml
-similarity index 100%
-rename from packages/pkg/info.yaml
-rename to packages/pkgnew/info.yaml
-diff --git a/packages/pkg/sources/pkg-1.0.tar.gz b/packages/pkgnew/sources/pkgnew-1.0.tar.gz
-similarity index 100%
-rename from packages/pkg/sources/pkg-1.0.tar.gz
-rename to packages/pkgnew/sources/pkgnew-1.0.tar.gz
-""")
-        # For this patch, get_packages_from_patch() must return an updated
-        # package named pkgnew.
-        with open(patch.name, 'r') as p:
-            (updated, removed) = get_packages_from_patch(
-                p, config=self.config, modules=self.modules, staff=self.staff
+    def test_check_spec_not_found(self):
+        """check spec file not found fails"""
+        self.make_pkg()
+        with self.assertRaisesRegex(RiftError, "/dev/fail does not exist"):
+            main(['check', 'spec', '-f', '/dev/fail'])
+
+
+class ControllerProjectActionGerritTest(RiftProjectTestCase):
+    """
+    Tests class for Controller action gerrit
+    """
+
+    def test_gerrit_missing_patch_change_patchset(self):
+        """gerrit without patch, change or patchset fails"""
+        for cmd in (['gerrit', '--change', '1', '--patchset', '2'],
+                    ['gerrit', '--patchset', '2', '/dev/null'],
+                    ['gerrit', '--change', '1', '/dev/null']):
+            with self.assertRaisesRegex(SystemExit, "2"):
+                main(cmd)
+
+    @patch('rift.Controller.Review')
+    def test_gerrit(self, mock_review):
+        """simple gerrit"""
+        self.make_pkg()
+        patch = make_temp_file(
+            textwrap.dedent("""
+                diff --git a/packages/pkg/pkg.spec b/packages/pkg/pkg.spec
+                index d1a0d0e7..b3e36379 100644
+                --- a/packages/pkg/pkg.spec
+                +++ b/packages/pkg/pkg.spec
+                @@ -1,6 +1,6 @@
+                 Name:    pkg
+                 Version:        1.0
+                -Release:        1
+                +Release:        2
+                 Summary:        A package
+                 Group:          System Environment/Base
+                 License:        GPL
+                """))
+        main(['gerrit', '--change', '1', '--patchset', '2', patch.name])
+        # Check review has not been invalidated and pushed
+        mock_review.return_value.invalidate.assert_not_called()
+        mock_review.return_value.push.assert_called_once()
+
+    @patch('rift.Controller.Review')
+    def test_gerrit_review_invalidated(self, mock_review):
+        """gerrit review invalidated"""
+        # Make package and inject rpmlint error ($RPM_BUILD_ROOT and
+        # RPM_SOURCE_DIR in buildsteps) in RPM spec file, with both rpmlint v1
+        # and v2.
+        self.make_pkg()
+        with open(self.buildfiles[0], "w") as spec:
+            spec.write(
+                gen_rpm_spec(
+                    name='pkg',
+                    version='1.0',
+                    release='2',
+                    arch='noarch',
+                    buildsteps="$RPM_SOURCE_DIR\n$RPM_BUILD_ROOT",
+                )
             )
-        self.assertEqual(len(updated), 1)
-        self.assertEqual(len(removed), 0)
-        self.assertTrue('pkgnew' in updated.keys())
+        patch = make_temp_file(
+            textwrap.dedent("""
+                diff --git a/packages/pkg/pkg.spec b/packages/pkg/pkg.spec
+                index d1a0d0e7..b3e36379 100644
+                --- a/packages/pkg/pkg.spec
+                +++ b/packages/pkg/pkg.spec
+                @@ -1,6 +1,6 @@
+                 Name:    pkg
+                 Version:        1.0
+                -Release:        1
+                +Release:        2
+                 Summary:        A package
+                 Group:          System Environment/Base
+                 License:        GPL
+                """))
+        main(['gerrit', '--change', '1', '--patchset', '2', patch.name])
+        # Check review has been invalidated and pushed
+        mock_review.return_value.invalidate.assert_called_once()
+        mock_review.return_value.push.assert_called_once()
 
-    def test_rename_and_update_package(self):
-        """ Test if renaming and updating a package trigger a build """
-        pkgname = 'pkg'
-        pkgvers = 1.0
-        self.make_pkg(name=pkgname, version=pkgvers)
-        patch = make_temp_file("""
-commit f8c1a88ea96adfccddab0bf43c0a90f05ab26dc5 (HEAD -> playground)
-Author: Myself <buddy@somewhere.org>
-Date:   Thu Apr 25 14:30:41 2019 +0200
 
-    packages: rename 'pkg' to 'pkgnew'
-
-diff --git a/packages/pkg/info.yaml b/packages/pkgnew/info.yaml
-similarity index 100%
-rename from packages/pkg/info.yaml
-rename to packages/pkgnew/info.yaml
-diff --git a/packages/pkg/pkg.spec b/packages/pkgnew/pkgnew.spec
-similarity index 93%
-rename from packages/pkg/pkg.spec
-rename to packages/pkgnew/pkgnew.spec
-index b92c49d..0fa690c 100644
---- a/packages/pkg/pkg.spec
-+++ b/packages/pkgnew/pkgnew.spec
-@@ -1,6 +1,6 @@
--Name:    pkg
-+Name:    pkgnew
- Version:        1.0
--Release:        1
-+Release:        2
- Summary:        A package
- Group:          System Environment/Base
- License:        GPL
-diff --git a/packages/pkg/sources/pkg-1.0.tar.gz b/packages/pkgnew/sources/pkgnew-1.0.tar.gz
-similarity index 100%
-rename from packages/pkg/sources/pkg-1.0.tar.gz
-rename to packages/pkgnew/sources/pkgnew-1.0.tar.gz
-""")
-        # For this patch, get_packages_from_patch() must return an updated
-        # package named pkgnew.
-        with open(patch.name, 'r') as p:
-            (updated, removed) = get_packages_from_patch(
-                p, config=self.config, modules=self.modules, staff=self.staff
-            )
-        self.assertEqual(len(updated), 1)
-        self.assertEqual(len(removed), 0)
-        self.assertTrue('pkgnew' in updated.keys())
+class ControllerProjectActionValiddiffTest(RiftProjectTestCase):
+    """
+    Tests class for Controller action validdiff
+    """
+    @patch('rift.Controller.remove_packages')
+    @patch('rift.Controller.validate_pkgs')
+    @patch('rift.Controller.get_packages_from_patch')
+    def test_action_validdiff(self, mock_get_packages_from_patch,
+                              mock_validate_pkgs, mock_remove_packages):
+        """ Test validdiff action calls expected functions """
+        mock_get_packages_from_patch.return_value = (
+            {'pkg': PackageRPM('pkg', self.config, self.staff, self.modules)}, {}
+        )
+        self.assertEqual(main(['validdiff', '/dev/null']), 0)
+        mock_get_packages_from_patch.assert_called_once()
+        mock_validate_pkgs.assert_called_once()
+        mock_remove_packages.assert_called_once()
 
     @patch('rift.Controller.ProjectArchRepositories')
     def test_remove_packages(self, mock_parepository_class):
         """remove_packages() search, delete and update repository."""
         mock_parepository_objects = mock_parepository_class.return_value
-
-        # Preparer Repository.search() return value
-        rpm = RPM(
-            os.path.join(
-                os.path.dirname(os.path.abspath(__file__)),
-                'materials',
-                'pkg-1.0-1.src.rpm',
-            )
-        )
-        mock_parepository_objects.working.search.return_value = [ rpm ]
 
         # Enable publish arg
         args = Mock()
@@ -442,7 +503,7 @@ rename to packages/pkgnew/sources/pkgnew-1.0.tar.gz
 
         # Define a list of packages to remove
         pkgs_to_remove = [
-            Package('pkg', self.config, self.staff, self.modules)
+            PackageRPM('pkg', self.config, self.staff, self.modules)
         ]
 
         # Define working_repo in configuration
@@ -451,41 +512,113 @@ rename to packages/pkgnew/sources/pkgnew-1.0.tar.gz
         # Call remove_packages()
         remove_packages(self.config, args, pkgs_to_remove, 'x86_64')
 
-        # Check Repository object has been instanciated
+        # Check ProjectArchRepository object has been instanciated
         mock_parepository_class.assert_called()
-        # Check Repository.search() has been called
-        mock_parepository_objects.working.search.assert_called_once_with(
+        # Check ProjectArchRepository.delete_matching() has been called
+        mock_parepository_objects.delete_matching.assert_called_once_with(
             pkgs_to_remove[0].name
         )
-        # Check Repository.delete() has been called
-        mock_parepository_objects.working.delete.assert_called_once_with(rpm)
-        # Check Repository.update() has been called
-        mock_parepository_objects.working.update.assert_called_once()
 
-    @patch('rift.Controller.ProjectArchRepositories')
-    def test_remove_packages_noop(self, mock_parepository_class):
+    @patch('rift.Controller.ProjectArchRepositories.delete_matching')
+    def test_remove_packages_noop(self, mock_delete_matching):
         """remove_packages() is noop if no publish arg or no working_repo"""
-        pkgs_to_remove = []
+
+        pkgs_to_remove = [
+            PackageRPM('pkg', self.config, self.staff, self.modules)
+        ]
         args = Mock()
 
         # publish is False, remove_packages() must be noop
         args.publish = False
         self.config.options['working_repo'] = '/path/to/working/repo'
         remove_packages(self.config, args, pkgs_to_remove, 'x86_64')
-        mock_parepository_class.assert_called_once()
-        mock_parepository_class.working.assert_not_called()
+        mock_delete_matching.assert_not_called()
 
         # working_repo is not defined, remove_packages() must be noop
         args.publish = True
         del self.config.options['working_repo']
-        mock_parepository_class.reset_mock()
         remove_packages(self.config, args, pkgs_to_remove, 'x86_64')
-        mock_parepository_class.assert_called_once()
-        mock_parepository_class.working.assert_not_called()
+        mock_delete_matching.assert_not_called()
 
-    @patch('rift.Controller.VM')
-    def test_action_build_test(self, mock_vm_class):
 
+class ControllerProjectActionBuildTest(RiftProjectTestCase):
+    """
+    Tests class for Controller actions build, test and validate
+    """
+    def _check_qemuuserstatic(self):
+        """Skip the test if none qemu-$arch-static executable is found for all
+        architectures declared in project configuration."""
+        if not any(
+            [
+                os.path.exists(f"/usr/bin/qemu-{arch}-static")
+                for arch in self.config.get('arch')
+            ]
+        ):
+            self.skipTest("qemu-user-static is not available")
+
+
+    @patch('rift.package._project.PackageOCI', autospec=PackageOCI)
+    @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
+    def test_action_build(self, mock_pkg_rpm, mock_pkg_oci):
+
+        # Declare supported archs.
+        self.config.set('arch', ['x86_64', 'aarch64'])
+
+        # Create temporary working repo and register its deletion at exit
+        working_repo = make_temp_dir()
+        atexit.register(shutil.rmtree, working_repo)
+
+        self.config.set('working_repo', working_repo)
+        self.update_project_conf()
+
+        # Create fake package without build requirement
+        self.make_pkg(build_requires=[])
+
+        # Get Package{RPM,OCI} instances mock
+        mock_pkg_rpm_objs = mock_pkg_rpm.return_value
+        mock_pkg_oci_objs = mock_pkg_oci.return_value
+        # Initialize Package{RPM,OCI} object attributes
+        PackageRPM.__init__(
+            mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
+        PackageOCI.__init__(
+            mock_pkg_oci_objs, 'pkg', self.config, self.staff, self.modules)
+        # Make Package{RPM,OCI}.supports_arch() return True for all archs
+        mock_pkg_rpm_objs.supports_arch.return_value = True
+        mock_pkg_oci_objs.supports_arch.return_value = True
+
+        # Mock ActionableArchPackage{RPM,OCI} objects
+        mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_act_arch_pkg_oci = Mock(spec=ActionableArchPackageOCI)
+        mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
+        mock_pkg_oci_objs.for_arch.return_value = mock_act_arch_pkg_oci
+
+        self.assertEqual(main(['build', 'pkg', '--publish']), 0)
+
+        # Check RPM and OCI package supports_arch() method is called for all
+        # supported archs.
+        for arch in self.config.get('arch'):
+            mock_pkg_rpm_objs.supports_arch.assert_any_call(arch)
+            mock_pkg_oci_objs.supports_arch.assert_any_call(arch)
+
+        # Check actionnable RPM and OCI package build(), publish() and clean()
+        # methods are called for all supported arch (ie. twice).
+        mock_act_arch_pkg_rpm.build.assert_has_calls(
+            [call(sign=False), call(sign=False)])
+        mock_act_arch_pkg_oci.build.assert_has_calls(
+            [call(sign=False), call(sign=False)])
+        mock_act_arch_pkg_rpm.publish.assert_has_calls(
+            [call(updaterepo=True), call(updaterepo=True)])
+        mock_act_arch_pkg_oci.publish.assert_has_calls(
+            [call(updaterepo=True), call(updaterepo=True)])
+        mock_act_arch_pkg_rpm.clean.assert_has_calls([call(), call()])
+        mock_act_arch_pkg_oci.clean.assert_has_calls([call(), call()])
+
+        # Remove temporary working repo and unregister its deletion at exit
+        shutil.rmtree(working_repo)
+        atexit.unregister(shutil.rmtree)
+
+    def test_action_build_publish_functional(self):
+        """Functional RPM build and publish test"""
         # Declare supported archs and check qemu-user-static is available for
         # these architectures or skip the test.
         self.config.set('arch', ['x86_64', 'aarch64'])
@@ -502,62 +635,926 @@ rename to packages/pkgnew/sources/pkgnew-1.0.tar.gz
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        main(['build', 'pkg', '--publish'])
+        self.assertEqual(main(['build', 'pkg', '--publish']), 0)
         for arch in self.config.get('arch'):
             self.assertTrue(
                 os.path.exists(f"{working_repo}/{arch}/pkg-1.0-1.noarch.rpm")
             )
+            self.assertTrue(
+                os.path.exists(f"{working_repo}/oci/pkg_1.0-1.{arch}.tar")
+            )
 
-        # Fake stopped VM and successful tests
-        mock_vm_objects = mock_vm_class.return_value
-        mock_vm_objects.running.return_value = False
-        mock_vm_objects.run_test.return_value = RunResult(0, None, None)
-
-        # Run test on package
-        main(['test', 'pkg'])
-
-        # Check two VM objects have been initialized for the two architectures.
-        self.assertEqual(mock_vm_class.call_count, 2)
-        # Check vm.run_test() has been called twice for basic tests on the two
-        # architectures.
-        self.assertEqual(mock_vm_objects.run_test.call_count, 2)
+        # Remove mock build environments
+        self.clean_mock_environments()
 
         # Remove temporary working repo and unregister its deletion at exit
         shutil.rmtree(working_repo)
         atexit.unregister(shutil.rmtree)
 
-        # Remove mock build environments
-        self.clean_mock_environments()
+    @patch('rift.package._project.PackageOCI', autospec=PackageOCI)
+    @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
+    def test_action_build_load_failure(self, mock_pkg_rpm, mock_pkg_oci):
 
-    @patch('rift.Controller.VM')
-    def test_action_validate(self, mock_vm_class):
-        # Declare supported archs and check qemu-user-static is available for
-        # these architectures or skip the test.
+        # Create fake package without build requirement
+        self.make_pkg(build_requires=[])
+
+        # Get Package{RPM,OCI} instances mock
+        mock_pkg_rpm_objs = mock_pkg_rpm.return_value
+        mock_pkg_oci_objs = mock_pkg_oci.return_value
+        # Initialize Package{RPM,OCI} object attributes
+        PackageRPM.__init__(
+            mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
+        PackageOCI.__init__(
+            mock_pkg_oci_objs, 'pkg', self.config, self.staff, self.modules)
+
+        # Make Package{RPM,OCI}.load() raise RiftError
+        mock_pkg_rpm_objs.load.side_effect = RiftError("fake rpm load failure")
+        mock_pkg_oci_objs.load.side_effect = RiftError("fake oci load failure")
+
+        # Mock ActionableArchPackage{RPM,OCI} objects
+        mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_act_arch_pkg_oci = Mock(spec=ActionableArchPackageOCI)
+        mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
+        mock_pkg_oci_objs.for_arch.return_value = mock_act_arch_pkg_oci
+
+        with self.assertLogs(level='ERROR') as log:
+            # Check main returns non-zero exit code
+            self.assertEqual(main(['build', 'pkg']), 2)
+        self.assertIn(
+            'ERROR:root:Unable to load rpm package: fake rpm load failure',
+            log.output
+        )
+        self.assertIn(
+            'ERROR:root:Unable to load oci package: fake oci load failure',
+            log.output
+        )
+        # Check actionnable RPM package build(), publish() and clean() have not
+        # been called.
+        mock_act_arch_pkg_rpm.build.assert_not_called()
+        mock_act_arch_pkg_rpm.publish.assert_not_called()
+        mock_act_arch_pkg_rpm.clean.assert_not_called()
+
+    @patch('rift.package._project.PackageOCI', autospec=PackageOCI)
+    @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
+    def test_action_build_skip_unsupported_arch(self, mock_pkg_rpm, mock_pkg_oci):
+
+        # Declare multiple supported archs.
         self.config.set('arch', ['x86_64', 'aarch64'])
-        self._check_qemuuserstatic()
-        self.config.options['repos'] = VALID_REPOS
         self.update_project_conf()
 
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        # Fake stopped VM and successful tests
-        mock_vm_objects = mock_vm_class.return_value
-        mock_vm_objects.running.return_value = False
-        mock_vm_objects.run_test.return_value = RunResult(0, None, None)
+        # Get Package{RPM,OCI} instances mock
+        mock_pkg_rpm_objs = mock_pkg_rpm.return_value
+        mock_pkg_oci_objs = mock_pkg_oci.return_value
+        # Initialize Package{RPM,OCI} object attributes
+        PackageRPM.__init__(
+            mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
+        PackageOCI.__init__(
+            mock_pkg_oci_objs, 'pkg', self.config, self.staff, self.modules)
+        # Mock ActionableArchPackage{RPM,OCI} objects
+        mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_act_arch_pkg_oci = Mock(spec=ActionableArchPackageOCI)
+        mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
+        mock_pkg_oci_objs.for_arch.return_value = mock_act_arch_pkg_oci
+
+        # Run build with PackageRPM.supports_arch() that returns True only for
+        # x86_64 and PackageOCI.supports_arch() that returns True only for
+        # aarch64.
+        with patch.object(
+            mock_pkg_rpm_objs, "supports_arch",
+            new=lambda arch: arch == 'x86_64'):
+            with patch.object(
+                mock_pkg_oci_objs, "supports_arch",
+                new=lambda arch: arch == 'aarch64'):
+                with self.assertLogs(level='INFO') as log:
+                    self.assertEqual(main(['build', 'pkg']), 0)
+        # Check skipping arch info in logs.
+        self.assertIn(
+            'INFO:root:Skipping build on architecture aarch64 not supported by '
+            'rpm package pkg',
+            log.output
+        )
+        self.assertIn(
+            'INFO:root:Skipping build on architecture x86_64 not supported by '
+            'oci package pkg',
+            log.output
+        )
+        # Check actionnable RPM and OCI package build() and clean() have been
+        # called only once, respectively for x86_64 and aarch64.
+        mock_act_arch_pkg_rpm.build.assert_has_calls([call(sign=False)])
+        mock_act_arch_pkg_oci.build.assert_has_calls([call(sign=False)])
+        mock_act_arch_pkg_rpm.clean.assert_has_calls([call()])
+        mock_act_arch_pkg_oci.clean.assert_has_calls([call()])
+
+    @patch('rift.package._project.PackageOCI', autospec=PackageOCI)
+    @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
+    def test_action_build_failure(self, mock_pkg_rpm, mock_pkg_oci):
+
+        # Declare multiple supported archs.
+        self.config.set('arch', ['x86_64', 'aarch64'])
+
+        # Create temporary working repo and register its deletion at exit
+        working_repo = make_temp_dir()
+        atexit.register(shutil.rmtree, working_repo)
+
+        self.config.set('working_repo', working_repo)
+        self.update_project_conf()
+
+        # Create fake package without build requirement
+        self.make_pkg(build_requires=[])
+
+        # Get Package{RPM,OCI} instances mock
+        mock_pkg_rpm_objs = mock_pkg_rpm.return_value
+        mock_pkg_oci_objs = mock_pkg_oci.return_value
+        # Initialize Package{RPM,OCI} object attributes
+        PackageRPM.__init__(
+            mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
+        PackageOCI.__init__(
+            mock_pkg_oci_objs, 'pkg', self.config, self.staff, self.modules)
+
+        # Make Package{RPM,OCI}.supports_arch() return True for all archs
+        mock_pkg_rpm_objs.supports_arch.return_value = True
+        mock_pkg_oci_objs.supports_arch.return_value = True
+
+        # Mock ActionableArchPackage{RPM,OCI} objects
+        mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_act_arch_pkg_oci = Mock(spec=ActionableArchPackageOCI)
+        mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
+        mock_pkg_oci_objs.for_arch.return_value = mock_act_arch_pkg_oci
+
+        # Make ActionableArchPackage{RPM,OCI}.build() raise RiftError
+        mock_act_arch_pkg_rpm.build.side_effect = RiftError("fake rpm build failure")
+        mock_act_arch_pkg_oci.build.side_effect = RiftError("fake oci build failure")
+
+        with self.assertLogs(level='ERROR') as log:
+            # Check main returns non-zero exit code
+            self.assertEqual(main(['build', '--publish', 'pkg']), 2)
+
+        # Check build failure error in logs.
+        self.assertIn(
+            'ERROR:root:rpm build failure: fake rpm build failure',
+            log.output
+        )
+        self.assertIn(
+            'ERROR:root:oci build failure: fake oci build failure',
+            log.output
+        )
+
+        # Check actionnable RPM and OCI package build() and clean() have been
+        # called for all supported arch (ie. twice).
+        mock_act_arch_pkg_rpm.build.assert_has_calls(
+            [call(sign=False), call(sign=False)])
+        mock_act_arch_pkg_rpm.clean.assert_has_calls(
+            [call(), call()])
+        mock_act_arch_pkg_oci.build.assert_has_calls(
+            [call(sign=False), call(sign=False)])
+        mock_act_arch_pkg_rpm.clean.assert_has_calls([call(), call()])
+        mock_act_arch_pkg_oci.clean.assert_has_calls([call(), call()])
+        # Check actionnable RPM and OCI package publish() have not been called
+        # because of build failures.
+        mock_act_arch_pkg_rpm.publish.assert_not_called()
+
+        # Remove temporary working repo and unregister its deletion at exit
+        shutil.rmtree(working_repo)
+        atexit.unregister(shutil.rmtree)
+
+    @patch('rift.package._project.PackageOCI', autospec=PackageOCI)
+    @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
+    def test_action_test(self, mock_pkg_rpm, mock_pkg_oci):
+
+        # Declare supported archs.
+        self.config.set('arch', ['x86_64', 'aarch64'])
+        self.update_project_conf()
+
+        # Create fake package without build requirement
+        self.make_pkg(build_requires=[])
+
+        # Get Package{RPM,OCI} instances mock
+        mock_pkg_rpm_objs = mock_pkg_rpm.return_value
+        mock_pkg_oci_objs = mock_pkg_oci.return_value
+        # Initialize Package{RPM,OCI} object attributes
+        PackageRPM.__init__(
+            mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
+        PackageOCI.__init__(
+            mock_pkg_oci_objs, 'pkg', self.config, self.staff, self.modules)
+
+        # Make Package{RPM,OCI}.supports_arch() return True for all archs
+        mock_pkg_rpm_objs.supports_arch.return_value = True
+        mock_pkg_oci_objs.supports_arch.return_value = True
+
+        # Mock ActionableArchPackage{RPM,OCI} objects
+        mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_act_arch_pkg_oci = Mock(spec=ActionableArchPackageOCI)
+        mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
+        mock_pkg_oci_objs.for_arch.return_value = mock_act_arch_pkg_oci
+
+        # Make ActionableArchPackage{RPM,OCI}.test() return empty but successful
+        # test results.
+        mock_act_arch_pkg_rpm.test.return_value = TestResults()
+        mock_act_arch_pkg_oci.test.return_value = TestResults()
+
+        # Run test on package
+        self.assertEqual(main(['test', 'pkg']), 0)
+
+        # Check RPM and OCI package supports_arch() method is called for all
+        # supported archs.
+        for arch in self.config.get('arch'):
+            mock_pkg_rpm_objs.supports_arch.assert_any_call(arch)
+            mock_pkg_oci_objs.supports_arch.assert_any_call(arch)
+
+        # Check actionnable RPM and OCI package test() method is called for all
+        # supported arch (ie. twice).
+        mock_act_arch_pkg_rpm.test.assert_has_calls(
+            [call(noauto=False, noquit=False),
+             call(noauto=False, noquit=False)])
+        mock_act_arch_pkg_oci.test.assert_has_calls(
+            [call(noauto=False, noquit=False),
+             call(noauto=False, noquit=False)])
+
+    @patch('rift.package._project.PackageOCI', autospec=PackageOCI)
+    @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
+    def test_action_test_load_failure(self, mock_pkg_rpm, mock_pkg_oci):
+
+        # Create fake package without build requirement
+        self.make_pkg(build_requires=[])
+
+        # Get Package{RPM,OCI} instances mock
+        mock_pkg_rpm_objs = mock_pkg_rpm.return_value
+        mock_pkg_oci_objs = mock_pkg_oci.return_value
+        # Initialize Package{RPM,OCI} object attributes
+        PackageRPM.__init__(
+            mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
+        PackageOCI.__init__(
+            mock_pkg_oci_objs, 'pkg', self.config, self.staff, self.modules)
+
+        # Make Package{RPM,OCI}.load() raise RiftError
+        mock_pkg_rpm_objs.load.side_effect = RiftError("fake rpm load failure")
+        mock_pkg_oci_objs.load.side_effect = RiftError("fake oci load failure")
+
+        # Mock ActionableArchPackage{RPM,OCI} objects
+        mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_act_arch_pkg_oci = Mock(spec=ActionableArchPackageOCI)
+        mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
+        mock_pkg_oci_objs.for_arch.return_value = mock_act_arch_pkg_oci
+
+        with self.assertLogs(level='ERROR') as log:
+            self.assertEqual(main(['test', 'pkg']), 2)
+        self.assertIn(
+            'ERROR:root:Unable to load rpm package: fake rpm load failure',
+            log.output
+        )
+        self.assertIn(
+            'ERROR:root:Unable to load oci package: fake oci load failure',
+            log.output
+        )
+
+        # Check actionnable RPM and OCI package test() method has not been
+        # called.
+        mock_act_arch_pkg_rpm.test.assert_not_called()
+        mock_act_arch_pkg_oci.test.assert_not_called()
+
+    @patch('rift.package._project.PackageOCI', autospec=PackageOCI)
+    @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
+    def test_action_test_failure(self, mock_pkg_rpm, mock_pkg_oci):
+
+        # Declare supported archs.
+        self.config.set('arch', ['x86_64', 'aarch64'])
+        self.update_project_conf()
+
+        # Create fake package without build requirement
+        self.make_pkg(build_requires=[])
+
+        # Get Package{RPM,OCI} instances mock
+        mock_pkg_rpm_objs = mock_pkg_rpm.return_value
+        mock_pkg_oci_objs = mock_pkg_oci.return_value
+        # Initialize Package{RPM,OCI} object attributes
+        PackageRPM.__init__(
+            mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
+        PackageOCI.__init__(
+            mock_pkg_oci_objs, 'pkg', self.config, self.staff, self.modules)
+
+        # Make Package{RPM,OCI}.supports_arch() return True for all archs
+        mock_pkg_rpm_objs.supports_arch.return_value = True
+        mock_pkg_oci_objs.supports_arch.return_value = True
+
+        # Mock ActionableArchPackage{RPM,OCI} objects
+        mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_act_arch_pkg_oci = Mock(spec=ActionableArchPackageOCI)
+        mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
+        mock_pkg_oci_objs.for_arch.return_value = mock_act_arch_pkg_oci
+
+        # Make ActionableArchPackage{RPM,OCI}.test() return results with one
+        # failure.
+        test_results = TestResults()
+        test_results.add_failure(
+            TestCase('fake', 'pkg', 'x86_64', 'rpm'), 0, None, None)
+        mock_act_arch_pkg_rpm.test.return_value = test_results
+        mock_act_arch_pkg_oci.test.return_value = test_results
+
+        # Run test on package and check main returns non-zero exit code
+        self.assertEqual(main(['test', 'pkg']), 2)
+
+        # Check RPM and OCI package supports_arch() method is called for all
+        # supported archs.
+        for arch in self.config.get('arch'):
+            mock_pkg_rpm_objs.supports_arch.assert_any_call(arch)
+            mock_pkg_oci_objs.supports_arch.assert_any_call(arch)
+
+        # Check actionnable RPM and OCI package test() method is called for all
+        # supported arch (ie. twice).
+        mock_act_arch_pkg_rpm.test.assert_has_calls(
+            [call(noauto=False, noquit=False),
+             call(noauto=False, noquit=False)])
+        mock_act_arch_pkg_oci.test.assert_has_calls(
+            [call(noauto=False, noquit=False),
+             call(noauto=False, noquit=False)])
+
+    @patch('rift.package._project.PackageOCI', autospec=PackageOCI)
+    @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
+    def test_action_test_skip_unsupported_arch(self, mock_pkg_rpm, mock_pkg_oci):
+
+        # Declare multiple supported archs.
+        self.config.set('arch', ['x86_64', 'aarch64'])
+        self.update_project_conf()
+
+        # Create fake package without build requirement
+        self.make_pkg(build_requires=[])
+
+        # Get Package{RPM,OCI} instances mock
+        mock_pkg_rpm_objs = mock_pkg_rpm.return_value
+        mock_pkg_oci_objs = mock_pkg_oci.return_value
+        # Initialize Package{RPM,OCI} object attributes
+        PackageRPM.__init__(
+            mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
+        PackageOCI.__init__(
+            mock_pkg_oci_objs, 'pkg', self.config, self.staff, self.modules)
+
+        # Mock ActionableArchPackage{RPM,OCI} objects
+        mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_act_arch_pkg_oci = Mock(spec=ActionableArchPackageOCI)
+        mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
+        mock_pkg_oci_objs.for_arch.return_value = mock_act_arch_pkg_oci
+
+        # Make ActionableArchPackage{RPM,OCI}.test() return empty but successful
+        # test results.
+        mock_act_arch_pkg_rpm.test.return_value = TestResults()
+        mock_act_arch_pkg_oci.test.return_value = TestResults()
+
+        # Run test with PackageRPM.supports_arch() that returns True only for
+        # x86_64 and PackageOCI.supports_arch() that returns True only for
+        # aarch64.
+        with patch.object(
+            mock_pkg_rpm_objs, "supports_arch",
+            new=lambda arch: arch == 'x86_64'):
+            with patch.object(
+                mock_pkg_oci_objs, "supports_arch",
+                new=lambda arch: arch == 'aarch64'):
+                with self.assertLogs(level='INFO') as log:
+                    self.assertEqual(main(['test', 'pkg']), 0)
+        # Check skipping arch info in logs.
+        self.assertIn(
+            'INFO:root:Skipping test on architecture aarch64 not supported by '
+            'rpm package pkg',
+            log.output
+        )
+        self.assertIn(
+            'INFO:root:Skipping test on architecture x86_64 not supported by '
+            'oci package pkg',
+            log.output
+        )
+
+        # Check actionnable RPM and OCI package test() has been called only once
+        # (for x86_64).
+        mock_act_arch_pkg_rpm.test.assert_has_calls(
+            [call(noauto=False, noquit=False)])
+        mock_act_arch_pkg_oci.test.assert_has_calls(
+            [call(noauto=False, noquit=False)])
+
+    @patch('rift.package._project.PackageOCI', autospec=PackageOCI)
+    @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
+    def test_action_validate(self, mock_pkg_rpm, mock_pkg_oci):
+
+        # Declare supported archs.
+        self.config.set('arch', ['x86_64', 'aarch64'])
+        self.update_project_conf()
+
+        # Create fake package without build requirement
+        self.make_pkg(build_requires=[])
+
+        # Get Package{RPM,OCI} instances mock
+        mock_pkg_rpm_objs = mock_pkg_rpm.return_value
+        mock_pkg_oci_objs = mock_pkg_oci.return_value
+        # Initialize Package{RPM,OCI} object attributes
+        PackageRPM.__init__(
+            mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
+        PackageOCI.__init__(
+            mock_pkg_oci_objs, 'pkg', self.config, self.staff, self.modules)
+
+        # Make Package{RPM,OCI}.supports_arch() return True for all archs
+        mock_pkg_rpm_objs.supports_arch.return_value = True
+        mock_pkg_oci_objs.supports_arch.return_value = True
+
+        # Mock ActionableArchPackage{RPM,OCI} objects
+        mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_act_arch_pkg_oci = Mock(spec=ActionableArchPackageOCI)
+        mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
+        mock_pkg_oci_objs.for_arch.return_value = mock_act_arch_pkg_oci
+
+        # Make ActionableArchPackage{RPM,OCI}.test() return empty but successful
+        # test results.
+        mock_act_arch_pkg_rpm.test.return_value = TestResults()
+        mock_act_arch_pkg_oci.test.return_value = TestResults()
 
         # Run validate on pkg
-        main(['validate', 'pkg'])
+        self.assertEqual(main(['validate', 'pkg']), 0)
 
-        # Check two VM objects have been initialized for the two architectures.
-        self.assertEqual(mock_vm_class.call_count, 2)
-        # Check vm.run_test() has been called twice for basic tests on the two
-        # architectures.
-        self.assertEqual(mock_vm_objects.run_test.call_count, 2)
+        # Check RPM package supports_arch() method is called for all supported
+        # archs.
+        for arch in self.config.get('arch'):
+            mock_pkg_rpm_objs.supports_arch.assert_any_call(arch)
+            mock_pkg_oci_objs.supports_arch.assert_any_call(arch)
 
-        # Remove mock build environments
-        self.clean_mock_environments()
+        # Check RPM and OCI package check() method is called for all supported
+        # arch (ie. twice).
+        mock_pkg_rpm_objs.check.assert_has_calls([call(), call()])
+        mock_pkg_oci_objs.check.assert_has_calls([call(), call()])
 
+        # Check actionnable RPM and OCI package build(), publish(staging),
+        # test() and clean() methods are called for all supported arch (ie.
+        # twice).
+        mock_act_arch_pkg_rpm.build.assert_has_calls(
+            [call(sign=False), call(sign=False)])
+        mock_act_arch_pkg_oci.build.assert_has_calls(
+            [call(sign=False), call(sign=False)])
+        mock_act_arch_pkg_rpm.publish.assert_has_calls(
+            [call(staging=True), call(staging=True)])
+        mock_act_arch_pkg_oci.publish.assert_has_calls(
+            [call(staging=True), call(staging=True)])
+        mock_act_arch_pkg_rpm.test.assert_has_calls(
+            [call(noauto=False, staging=True, noquit=False),
+             call(noauto=False, staging=True, noquit=False)])
+        mock_act_arch_pkg_oci.test.assert_has_calls(
+            [call(noauto=False, staging=True, noquit=False),
+             call(noauto=False, staging=True, noquit=False)])
+        mock_act_arch_pkg_rpm.clean.assert_has_calls(
+            [call(noquit=False), call(noquit=False)])
+        mock_act_arch_pkg_oci.clean.assert_has_calls(
+            [call(noquit=False), call(noquit=False)])
+
+    @patch('rift.package._project.PackageOCI', autospec=PackageOCI)
+    @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
+    def test_action_validate_load_failure(self, mock_pkg_rpm, mock_pkg_oci):
+
+        # Create fake package without build requirement
+        self.make_pkg(build_requires=[])
+
+        # Get Package{RPM,OCI} instances mock
+        mock_pkg_rpm_objs = mock_pkg_rpm.return_value
+        mock_pkg_oci_objs = mock_pkg_oci.return_value
+        # Initialize Package{RPM,OCI} object attributes
+        PackageRPM.__init__(
+            mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
+        PackageOCI.__init__(
+            mock_pkg_oci_objs, 'pkg', self.config, self.staff, self.modules)
+
+        # Make Package{RPM,OCI}.load() raise RiftError
+        mock_pkg_rpm_objs.load.side_effect = RiftError("fake rpm load failure")
+        mock_pkg_oci_objs.load.side_effect = RiftError("fake oci load failure")
+
+        # Mock ActionableArchPackage{RPM,OCI} objects
+        mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_act_arch_pkg_oci = Mock(spec=ActionableArchPackageOCI)
+        mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
+        mock_pkg_oci_objs.for_arch.return_value = mock_act_arch_pkg_oci
+
+        with self.assertLogs(level='ERROR') as log:
+            self.assertEqual(main(['validate', 'pkg']), 2)
+        self.assertIn(
+            'ERROR:root:Unable to load rpm package: fake rpm load failure',
+            log.output
+        )
+        self.assertIn(
+            'ERROR:root:Unable to load oci package: fake oci load failure',
+            log.output
+        )
+
+        # Check RPM and OCI package check() method has not been called.
+        mock_pkg_rpm_objs.check.assert_not_called()
+        mock_pkg_oci_objs.check.assert_not_called()
+
+        # Check actionnable RPM and OCI package build(), publish(), test() and
+        # clean() have not been called.
+        mock_act_arch_pkg_rpm.build.assert_not_called()
+        mock_act_arch_pkg_oci.build.assert_not_called()
+        mock_act_arch_pkg_rpm.publish.assert_not_called()
+        mock_act_arch_pkg_oci.publish.assert_not_called()
+        mock_act_arch_pkg_rpm.test.assert_not_called()
+        mock_act_arch_pkg_oci.test.assert_not_called()
+        mock_act_arch_pkg_rpm.clean.assert_not_called()
+        mock_act_arch_pkg_oci.clean.assert_not_called()
+
+    @patch('rift.package._project.PackageOCI', autospec=PackageOCI)
+    @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
+    def test_action_validate_check_failure(self, mock_pkg_rpm, mock_pkg_oci):
+
+        # Declare multiple supported archs.
+        self.config.set('arch', ['x86_64', 'aarch64'])
+        self.update_project_conf()
+
+        # Create fake package without build requirement
+        self.make_pkg(build_requires=[])
+
+        # Get Package{RPM,OCI} instances mock
+        mock_pkg_rpm_objs = mock_pkg_rpm.return_value
+        mock_pkg_oci_objs = mock_pkg_oci.return_value
+        # Initialize Package{RPM,OCI} object attributes
+        PackageRPM.__init__(
+            mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
+        PackageOCI.__init__(
+            mock_pkg_oci_objs, 'pkg', self.config, self.staff, self.modules)
+
+        # Make Package{RPM,OCI}.supports_arch() return True for all archs
+        mock_pkg_rpm_objs.supports_arch.return_value = True
+        mock_pkg_oci_objs.supports_arch.return_value = True
+
+        # Make Package{RPM,OCI}.check() raise RiftError
+        mock_pkg_rpm_objs.check.side_effect = RiftError("fake rpm check failure")
+        mock_pkg_oci_objs.check.side_effect = RiftError("fake oci check failure")
+
+        # Mock ActionableArchPackage{RPM,OCI} objects
+        mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_act_arch_pkg_oci = Mock(spec=ActionableArchPackageOCI)
+        mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
+        mock_pkg_oci_objs.for_arch.return_value = mock_act_arch_pkg_oci
+
+        with self.assertLogs(level='ERROR') as log:
+            self.assertEqual(main(['validate', 'pkg']), 2)
+        self.assertIn(
+            'ERROR:root:Static analysis of rpm package failed: fake rpm check failure',
+            log.output
+        )
+        self.assertIn(
+            'ERROR:root:Static analysis of oci package failed: fake oci check failure',
+            log.output
+        )
+
+        # Check RPM and OCI package load() and check() methods are called for
+        # all supported arch (ie. twice).
+        mock_pkg_rpm_objs.load.assert_has_calls([call(), call()])
+        mock_pkg_oci_objs.load.assert_has_calls([call(), call()])
+        mock_pkg_rpm_objs.check.assert_has_calls([call(), call()])
+        mock_pkg_oci_objs.check.assert_has_calls([call(), call()])
+
+        # Check actionnable RPM and OCI package build(), publish(), test() and
+        # clean() have not been called.
+        mock_act_arch_pkg_rpm.build.assert_not_called()
+        mock_act_arch_pkg_oci.build.assert_not_called()
+        mock_act_arch_pkg_rpm.publish.assert_not_called()
+        mock_act_arch_pkg_oci.publish.assert_not_called()
+        mock_act_arch_pkg_rpm.test.assert_not_called()
+        mock_act_arch_pkg_oci.test.assert_not_called()
+        mock_act_arch_pkg_rpm.clean.assert_not_called()
+        mock_act_arch_pkg_oci.clean.assert_not_called()
+
+    @patch('rift.package._project.PackageOCI', autospec=PackageOCI)
+    @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
+    def test_action_validate_build_failure(self, mock_pkg_rpm, mock_pkg_oci):
+
+        # Declare multiple supported archs.
+        self.config.set('arch', ['x86_64', 'aarch64'])
+        self.update_project_conf()
+
+        # Create fake package without build requirement
+        self.make_pkg(build_requires=[])
+
+        # Get Package{RPM,OCI} instances mock
+        mock_pkg_rpm_objs = mock_pkg_rpm.return_value
+        mock_pkg_oci_objs = mock_pkg_oci.return_value
+        # Initialize Package{RPM,OCI} object attributes
+        PackageRPM.__init__(
+            mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
+        PackageOCI.__init__(
+            mock_pkg_oci_objs, 'pkg', self.config, self.staff, self.modules)
+
+        # Make Package{RPM,OCI}.supports_arch() return True for all archs
+        mock_pkg_rpm_objs.supports_arch.return_value = True
+        mock_pkg_oci_objs.supports_arch.return_value = True
+
+        # Mock ActionableArchPackage{RPM,OCI} objects
+        mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_act_arch_pkg_oci = Mock(spec=ActionableArchPackageOCI)
+        mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
+        mock_pkg_oci_objs.for_arch.return_value = mock_act_arch_pkg_oci
+
+        # Make ActionableArchPackage{RPM,OCI}.build() raise RiftError
+        mock_act_arch_pkg_rpm.build.side_effect = RiftError("fake rpm build failure")
+        mock_act_arch_pkg_oci.build.side_effect = RiftError("fake oci build failure")
+
+        with self.assertLogs(level='ERROR') as log:
+            # Check main returns non-zero exit code
+            self.assertEqual(main(['validate', 'pkg']), 2)
+
+        # Check build failure error in logs.
+        self.assertIn(
+            'ERROR:root:rpm build failure: fake rpm build failure',
+            log.output
+        )
+        self.assertIn(
+            'ERROR:root:oci build failure: fake oci build failure',
+            log.output
+        )
+
+        # Check RPM and OCI package load() and check() methods are called for
+        # all supported arch (ie. twice).
+        mock_pkg_rpm_objs.load.assert_has_calls([call(), call()])
+        mock_pkg_oci_objs.load.assert_has_calls([call(), call()])
+        mock_pkg_rpm_objs.check.assert_has_calls([call(), call()])
+        mock_pkg_oci_objs.check.assert_has_calls([call(), call()])
+
+        # Check actionnable RPM and OCI package build() has been called for all
+        # supported arch (ie. twice).
+        mock_act_arch_pkg_rpm.build.assert_has_calls(
+            [call(sign=False), call(sign=False),])
+        mock_act_arch_pkg_oci.build.assert_has_calls(
+            [call(sign=False), call(sign=False),])
+
+        # Check actionnable RPM and OCI package publish(), test() and clean()
+        # have not been called.
+        mock_act_arch_pkg_rpm.publish.assert_not_called()
+        mock_act_arch_pkg_oci.publish.assert_not_called()
+        mock_act_arch_pkg_rpm.test.assert_not_called()
+        mock_act_arch_pkg_oci.test.assert_not_called()
+        mock_act_arch_pkg_rpm.clean.assert_not_called()
+        mock_act_arch_pkg_oci.clean.assert_not_called()
+
+    @patch('rift.package._project.PackageOCI', autospec=PackageOCI)
+    @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
+    def test_action_validate_test_failure(self, mock_pkg_rpm, mock_pkg_oci):
+
+        # Declare supported archs.
+        self.config.set('arch', ['x86_64', 'aarch64'])
+        self.update_project_conf()
+
+        # Create fake package without build requirement
+        self.make_pkg(build_requires=[])
+
+        # Get Package{RPM,OCI} instances mock
+        mock_pkg_rpm_objs = mock_pkg_rpm.return_value
+        mock_pkg_oci_objs = mock_pkg_oci.return_value
+        # Initialize Package{RPM,OCI} object attributes
+        PackageRPM.__init__(
+            mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
+        PackageOCI.__init__(
+            mock_pkg_oci_objs, 'pkg', self.config, self.staff, self.modules)
+
+        # Make Package{RPM,OCI}.supports_arch() return True for all archs
+        mock_pkg_rpm_objs.supports_arch.return_value = True
+        mock_pkg_oci_objs.supports_arch.return_value = True
+
+        # Mock ActionableArchPackage{RPM,OCI} objects
+        mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_act_arch_pkg_oci = Mock(spec=ActionableArchPackageOCI)
+        mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
+        mock_pkg_oci_objs.for_arch.return_value = mock_act_arch_pkg_oci
+
+        # Make ActionableArchPackage{RPM,OCI}.test() return results with one
+        # failure.
+        test_results = TestResults()
+        test_results.add_failure(
+            TestCase('fake', 'pkg', 'x86_64', 'rpm'), 0, None, None)
+        mock_act_arch_pkg_rpm.test.return_value = test_results
+        mock_act_arch_pkg_oci.test.return_value = test_results
+
+        # Run validate on package and check main returns non-zero exit code
+        self.assertEqual(main(['validate', 'pkg']), 2)
+
+        # Check RPM and OCI package supports_arch() method is called for all
+        # supported archs.
+        for arch in self.config.get('arch'):
+            mock_pkg_rpm_objs.supports_arch.assert_any_call(arch)
+            mock_pkg_oci_objs.supports_arch.assert_any_call(arch)
+
+        # Check RPM and OCI package check() method is called for all supported
+        # arch (ie. twice).
+        mock_pkg_rpm_objs.check.assert_has_calls([call(), call()])
+        mock_pkg_oci_objs.check.assert_has_calls([call(), call()])
+
+        # Check actionnable RPM and OCI package build(), publish(staging),
+        # test() and clean() methods are called for all supported arch (ie.
+        # twice).
+        mock_act_arch_pkg_rpm.build.assert_has_calls(
+            [call(sign=False), call(sign=False)])
+        mock_act_arch_pkg_oci.build.assert_has_calls(
+            [call(sign=False), call(sign=False)])
+        mock_act_arch_pkg_rpm.publish.assert_has_calls(
+            [call(staging=True), call(staging=True)])
+        mock_act_arch_pkg_oci.publish.assert_has_calls(
+            [call(staging=True), call(staging=True)])
+        mock_act_arch_pkg_rpm.test.assert_has_calls(
+            [call(noauto=False, staging=True, noquit=False),
+             call(noauto=False, staging=True, noquit=False)])
+        mock_act_arch_pkg_oci.test.assert_has_calls(
+            [call(noauto=False, staging=True, noquit=False),
+             call(noauto=False, staging=True, noquit=False)])
+        mock_act_arch_pkg_rpm.clean.assert_has_calls(
+            [call(noquit=False), call(noquit=False)])
+        mock_act_arch_pkg_oci.clean.assert_has_calls(
+            [call(noquit=False), call(noquit=False)])
+
+    @patch('rift.package._project.PackageOCI', autospec=PackageOCI)
+    @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
+    def test_action_validate_skip_unsupported_arch(self, mock_pkg_rpm, mock_pkg_oci):
+
+        # Declare multiple supported archs.
+        self.config.set('arch', ['x86_64', 'aarch64'])
+        self.update_project_conf()
+
+        # Create fake package without build requirement
+        self.make_pkg(build_requires=[])
+
+        # Get Package{RPM,OCI} instances mock
+        mock_pkg_rpm_objs = mock_pkg_rpm.return_value
+        mock_pkg_oci_objs = mock_pkg_oci.return_value
+        # Initialize Package{RPM,OCI} object attributes
+        PackageRPM.__init__(
+            mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
+        PackageOCI.__init__(
+            mock_pkg_oci_objs, 'pkg', self.config, self.staff, self.modules)
+
+        # Mock ActionableArchPackage{RPM,OCI} objects
+        mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_act_arch_pkg_oci = Mock(spec=ActionableArchPackageOCI)
+        mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
+        mock_pkg_oci_objs.for_arch.return_value = mock_act_arch_pkg_oci
+
+        # Make ActionableArchPackage{RPM,OCI}.test() return empty but successful
+        # test results.
+        mock_act_arch_pkg_rpm.test.return_value = TestResults()
+        mock_act_arch_pkg_oci.test.return_value = TestResults()
+
+        # Run validate with PackageRPM.supports_arch() that returns True only for
+        # x86_64 and PackageOCI.supports_arch() that returns True only for
+        # aarch64.
+        with patch.object(
+            mock_pkg_rpm_objs, "supports_arch",
+            new=lambda arch: arch == 'x86_64'):
+            with patch.object(
+                mock_pkg_oci_objs, "supports_arch",
+                new=lambda arch: arch == 'aarch64'):
+                with self.assertLogs(level='INFO') as log:
+                    self.assertEqual(main(['validate', 'pkg']), 0)
+        # Check skipping arch info in logs.
+        self.assertIn(
+            'INFO:root:Skipping validation on architecture aarch64 not '
+            'supported by rpm package pkg',
+            log.output
+        )
+        self.assertIn(
+            'INFO:root:Skipping validation on architecture x86_64 not '
+            'supported by oci package pkg',
+            log.output
+        )
+
+        # Check RPM and OCI package check() method has been called only once
+        # (for x86_64).
+        mock_pkg_rpm_objs.check.assert_has_calls([call()])
+        mock_pkg_oci_objs.check.assert_has_calls([call()])
+
+        # Check actionnable RPM and pOCI ackage build(), publish(staging),
+        # test() and clean() methods have been called only once (for x86_64).
+        mock_act_arch_pkg_rpm.build.assert_has_calls([call(sign=False)])
+        mock_act_arch_pkg_oci.build.assert_has_calls([call(sign=False)])
+        mock_act_arch_pkg_rpm.publish.assert_has_calls([call(staging=True)])
+        mock_act_arch_pkg_oci.publish.assert_has_calls([call(staging=True)])
+        mock_act_arch_pkg_rpm.test.assert_has_calls(
+            [call(noauto=False, staging=True, noquit=False)])
+        mock_act_arch_pkg_oci.test.assert_has_calls(
+            [call(noauto=False, staging=True, noquit=False)])
+        mock_act_arch_pkg_rpm.clean.assert_has_calls([call(noquit=False)])
+        mock_act_arch_pkg_oci.clean.assert_has_calls([call(noquit=False)])
+
+    @patch('rift.package._project.PackageOCI', autospec=PackageOCI)
+    @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
+    def test_action_validate_publish(self, mock_pkg_rpm, mock_pkg_oci):
+
+        # Declare supported archs.
+        self.config.set('arch', ['x86_64', 'aarch64'])
+
+        # Create temporary working repo and register its deletion at exit
+        working_repo = make_temp_dir()
+        atexit.register(shutil.rmtree, working_repo)
+
+        self.config.set('working_repo', working_repo)
+        self.update_project_conf()
+
+        # Create fake package without build requirement
+        self.make_pkg(build_requires=[])
+
+        # Get Package{RPM,OCI} instances mock
+        mock_pkg_rpm_objs = mock_pkg_rpm.return_value
+        mock_pkg_oci_objs = mock_pkg_oci.return_value
+        # Initialize Package{RPM,OCI} object attributes
+        PackageRPM.__init__(
+            mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
+        PackageOCI.__init__(
+            mock_pkg_oci_objs, 'pkg', self.config, self.staff, self.modules)
+
+        # Make Package{RPM,OCI}.supports_arch() return True for all archs
+        mock_pkg_rpm_objs.supports_arch.return_value = True
+        mock_pkg_oci_objs.supports_arch.return_value = True
+
+        # Mock ActionableArchPackage{RPM,OCI} objects
+        mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_act_arch_pkg_oci = Mock(spec=ActionableArchPackageOCI)
+        mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
+        mock_pkg_oci_objs.for_arch.return_value = mock_act_arch_pkg_oci
+
+        # Make ActionableArchPackage{RPM,OCI}.test() return empty but successful
+        # test results.
+        mock_act_arch_pkg_rpm.test.return_value = TestResults()
+        mock_act_arch_pkg_oci.test.return_value = TestResults()
+
+        # Run validate on pkg
+        self.assertEqual(main(['validate', 'pkg', '--publish']), 0)
+
+        # Check actionnable RPM and OCI package publish(staging) and
+        # publish(working_dir) are called for all supported arch (ie. twice).
+        mock_act_arch_pkg_rpm.publish.assert_has_calls(
+            [call(staging=True), call(), call(staging=True), call()])
+        mock_act_arch_pkg_oci.publish.assert_has_calls(
+            [call(staging=True), call(), call(staging=True), call()])
+
+        # Remove temporary working repo and unregister its deletion at exit
+        shutil.rmtree(working_repo)
+        atexit.unregister(shutil.rmtree)
+
+    @patch('rift.package._project.PackageOCI', autospec=PackageOCI)
+    @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
+    def test_action_validate_publish_test_failure(self, mock_pkg_rpm, mock_pkg_oci):
+
+        # Declare supported archs.
+        self.config.set('arch', ['x86_64', 'aarch64'])
+
+        # Create temporary working repo and register its deletion at exit
+        working_repo = make_temp_dir()
+        atexit.register(shutil.rmtree, working_repo)
+
+        self.config.set('working_repo', working_repo)
+        self.update_project_conf()
+
+        # Create fake package without build requirement
+        self.make_pkg(build_requires=[])
+
+
+        # Get Package{RPM,OCI} instances mock
+        mock_pkg_rpm_objs = mock_pkg_rpm.return_value
+        mock_pkg_oci_objs = mock_pkg_oci.return_value
+        # Initialize Package{RPM,OCI} object attributes
+        PackageRPM.__init__(
+            mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
+        PackageOCI.__init__(
+            mock_pkg_oci_objs, 'pkg', self.config, self.staff, self.modules)
+
+        # Make Package{RPM,OCI}.supports_arch() return True for all archs
+        mock_pkg_rpm_objs.supports_arch.return_value = True
+        mock_pkg_oci_objs.supports_arch.return_value = True
+
+        # Mock ActionableArchPackage{RPM,OCI} objects
+        mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_act_arch_pkg_oci = Mock(spec=ActionableArchPackageOCI)
+        mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
+        mock_pkg_oci_objs.for_arch.return_value = mock_act_arch_pkg_oci
+
+        # Make ActionableArchPackage{RPM,OCI}.test() return results with one
+        # failure.
+        test_results = TestResults()
+        test_results.add_failure(
+            TestCase('fake', 'pkg', 'x86_64', 'rpm'), 0, None, None)
+        mock_act_arch_pkg_rpm.test.return_value = test_results
+        mock_act_arch_pkg_oci.test.return_value = test_results
+
+        # Run validate on package and check main returns non-zero exit code
+        self.assertEqual(main(['validate', 'pkg', '--publish']), 2)
+
+        # Check actionnable RPM and OCI package publish is called for staging
+        # repository only (before running tests) but not for working directory
+        # despite --publish.
+        mock_act_arch_pkg_rpm.publish.assert_has_calls(
+            [call(staging=True), call(staging=True)])
+        mock_act_arch_pkg_oci.publish.assert_has_calls(
+            [call(staging=True), call(staging=True)])
+
+        # Remove temporary working repo and unregister its deletion at exit
+        shutil.rmtree(working_repo)
+        atexit.unregister(shutil.rmtree)
+
+
+class ControllerProjectActionVMTest(RiftProjectTestCase):
+    """
+    Tests class for Controller action vm
+    """
     @patch('rift.Controller.VM')
     def test_vm_arch_option(self, mock_vm_class):
         """Test vm --arch option required with multiple supported archs."""
@@ -694,6 +1691,11 @@ rename to packages/pkgnew/sources/pkgnew-1.0.tar.gz
         # Remove mock build environments
         self.clean_mock_environments()
 
+
+class ControllerProjectActionSignTest(RiftProjectTestCase):
+    """
+    Tests class for Controller action sign
+    """
     def test_action_sign(self):
         """ Test sign package """
         gpg_home = os.path.join(self.projdir, '.gnupg')
@@ -775,6 +1777,10 @@ rename to packages/pkgnew/sources/pkgnew-1.0.tar.gz
         # Remove temporary GPG home with generated key
         shutil.rmtree(gpg_home)
 
+class ControllerProjectActionSyncTest(RiftProjectTestCase):
+    """
+    Tests class for Controller action sync
+    """
     @patch('rift.sync.RepoSyncBase.run')
     @patch('sys.stdout', new_callable=StringIO)
     def test_action_sync_skip_repo_wo_params(self, mock_stdout, mock_reposyncbase_run):

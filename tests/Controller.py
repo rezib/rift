@@ -576,10 +576,9 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
             self.assertTrue(
                 os.path.exists(f"{working_repo}/{arch}/pkg-1.0-1.noarch.rpm")
             )
-        # Check presence of container image (FIXME: multi-arch?)
-        self.assertTrue(
-            os.path.exists(f"{working_repo}/oci/pkg_1.0-1.tar")
-        )
+            self.assertTrue(
+                os.path.exists(f"{working_repo}/oci/pkg_1.0-1.{arch}.tar")
+            )
 
         # Remove mock build environments
         self.clean_mock_environments()

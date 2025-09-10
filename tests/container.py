@@ -13,14 +13,6 @@ from rift import RiftError
 class ContainerTest(RiftProjectTestCase):
     """Tests class for ContainerRuntime"""
 
-    def test_manifest(self):
-        self.make_pkg()
-        package = PackageOCI('pkg', self.config, self.staff, self.modules)
-        package.load()
-        actionable_package = package.for_arch('x86_64')
-        container = ContainerRuntime(self.config)
-        self.assertEqual(container.manifest(actionable_package), 'pkg:1.0-1')
-
     def test_tag(self):
         self.make_pkg()
         package = PackageOCI('pkg', self.config, self.staff, self.modules)
@@ -40,7 +32,7 @@ class ContainerTest(RiftProjectTestCase):
         container.build(actionable_package, 'pkg_1.0')
         mock_run_command.assert_called_once_with(
             ['podman', '--root', container.rootdir, 'build',
-             '--arch', 'amd64', '--manifest', 'pkg:1.0-1',
+             '--arch', 'amd64',
              '--annotation', 'org.opencontainers.image.version=1.0-1',
              '--annotation', 'org.opencontainers.image.title=pkg',
              '--annotation', 'org.opencontainers.image.vendir=rift',
@@ -89,5 +81,5 @@ class ContainerTest(RiftProjectTestCase):
             container.archive(actionable_package, '/path/to/container.tar'),
             archive_result)
         mock_run_command.assert_called_once_with(
-            ['podman', '--root', container.rootdir, 'manifest', 'push',
-            'pkg:1.0-1', 'oci-archive:/path/to/container.tar:pkg:1.0-1'])
+            ['podman', '--root', container.rootdir, 'push', 'pkg:1.0-1-x86_64',
+             'oci-archive:/path/to/container.tar:pkg:1.0-1-x86_64'])

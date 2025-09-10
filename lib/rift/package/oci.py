@@ -265,5 +265,5 @@ class ActionableArchPackageOCI(ActionableArchPackage):
         message("Publishing container image...")
         self.repos.ensure_created()
         archive_path = os.path.join(self.repos.path,
-            f"{self.name}_{self.package.version}-{self.package.release}.tar")
+            f"{self.name}_{self.package.version}-{self.package.release}.{self.arch}.tar")
         self.runtime.archive(self, archive_path)

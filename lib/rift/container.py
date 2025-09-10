@@ -48,16 +48,12 @@ class ContainerRuntime:
         self.config = config
         self.rootdir = f"/tmp/rift-containers-{getpass.getuser()}"
 
-    def manifest(self, actionable_pkg):
-        """Return container manifest for the provided actionable package."""
-        return (
-            f"{actionable_pkg.name}:{actionable_pkg.package.version}-"
-            f"{actionable_pkg.package.release}"
-        )
-
     def tag(self, actionable_pkg):
         """Return container tag for the provided actionable package."""
-        return f"{self.manifest(actionable_pkg)}-{actionable_pkg.arch}"
+        return (
+            f"{actionable_pkg.name}:{actionable_pkg.package.version}-"
+            f"{actionable_pkg.package.release}-{actionable_pkg.arch}"
+        )
 
     def build(self, actionable_pkg, sources_topdir):
         """Execute command to build OCI package container image."""
@@ -65,7 +61,6 @@ class ContainerRuntime:
             self.config.get('containers').get('command'),
             '--root', self.rootdir, 'build',
             '--arch', self.ARCHS_MAP[actionable_pkg.arch],
-            '--manifest', self.manifest(actionable_pkg),
             '--annotation',
             f"org.opencontainers.image.version={actionable_pkg.package.version}"
             f"-{actionable_pkg.package.release}",
@@ -103,7 +98,7 @@ class ContainerRuntime:
         cmd = [
             self.config.get('containers').get('command'),
             '--root', self.rootdir,
-            'manifest', 'push', self.manifest(actionable_pkg),
-            f"oci-archive:{path}:{self.manifest(actionable_pkg)}"
+            'push', self.tag(actionable_pkg),
+            f"oci-archive:{path}:{self.tag(actionable_pkg)}"
         ]
         return run_command(cmd)

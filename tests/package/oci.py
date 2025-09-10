@@ -317,7 +317,7 @@ class ActionableArchPackageOCITest(RiftProjectTestCase):
         self.pkg.publish()
         self.pkg.repos.ensure_created.assert_called_once()
         mock_container_runtime.return_value.archive.assert_called_once_with(
-            self.pkg, '/oci/pkg_1.0-1.tar')
+            self.pkg, '/oci/pkg_1.0-1.x86_64.tar')
 
     @patch('rift.package.oci.ContainerRuntime')
     def test_publish_staging(self, mock_container_runtime):

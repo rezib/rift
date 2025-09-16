@@ -35,6 +35,7 @@ Manage OCI archive repository structure.
 """
 
 import os
+import glob
 import logging
 
 from rift.repository._base import ArchRepositoriesBase
@@ -62,5 +63,10 @@ class ArchRepositoriesOCI(ArchRepositoriesBase):
             os.mkdir(self.path)
 
     def delete_matching(self, package):
-        pass
-        # FIXME
+        """
+        Delete OCI images of provided package name from OCI archives repository.
+        """
+        found_imgs = glob.glob(f"{self.path}/{package}_*.{self.arch}.tar")
+        for found_img in found_imgs:
+            logging.info("Deleting OCI image %s", found_img)
+            os.unlink(found_img)

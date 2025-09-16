@@ -147,6 +147,16 @@ class ActionableArchPackageOCI(ActionableArchPackage):
 
     def build(self, **kwargs):
         """Build container image of an OCI package."""
+        # Unfortunately, podman does not support signatures on OCI images, only
+        # on images pushed in remote registries. Warn signature is skipped when
+        # requested.
+        if kwargs.get('sign', False):
+            logging.warning(
+                "Signing OCI container image is not supported, skipping %s OCI "
+                "package signature",
+                self.name
+            )
+
         sources_topdir = self._setup_sources()
         message(f"Building container image '{self.name}' on "
                 f"architecture {self.arch}")

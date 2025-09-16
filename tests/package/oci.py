@@ -273,6 +273,18 @@ class ActionableArchPackageOCITest(RiftProjectTestCase):
         mock_container_runtime.return_value.build.assert_not_called()
 
     @patch('rift.package.oci.ContainerRuntime')
+    def test_build_sign_warn(self, mock_container_runtime):
+        self.setup_package()
+        self.pkg.package.load()
+        with self.assertLogs(level='WARNING') as log:
+            self.pkg.build(sign=True)
+        self.assertIn(
+            'WARNING:root:Signing OCI container image is not supported, '
+            'skipping pkg OCI package signature',
+            log.output
+        )
+
+    @patch('rift.package.oci.ContainerRuntime')
     def test_test_success(self, mock_container_runtime):
         self.setup_package()
         self.pkg.run_local_test = Mock(return_value=RunResult(0, None, None))

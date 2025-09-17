@@ -299,6 +299,7 @@ class RiftProjectTestCase(RiftTestCase):
         subpackages=[],
         variants=None,
         src_top_dir=None,
+        test_local=False,
     ):
         # By default, make package in RPM format
         if formats is None:
@@ -392,7 +393,10 @@ class RiftProjectTestCase(RiftTestCase):
         # ./tests/0_test.sh
         test_file = os.path.join(testsdir, "0_test.sh")
         with open(test_file, "w") as fh:
-            fh.write("#!/bin/sh\ntrue")
+            fh.write('#!/bin/sh\n')
+            if test_local:
+                fh.write('# *** RIFT LOCAL ***\n')
+            fh.write('true')
 
     def clean_mock_environments(self):
         """Remove mock build environments."""

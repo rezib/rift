@@ -2,16 +2,18 @@
 # Copyright (C) 2025-2026 CEA
 #
 import os
+import textwrap
 
 from rift import RiftError
 from rift.package import Package
 from rift.package._base import (
+    ActionableArchPackage,
+    Test,
     _SOURCES_DIR,
     _META_FILE,
     _TESTS_DIR,
-    ActionableArchPackage,
 )
-from ..TestUtils import RiftProjectTestCase
+from ..TestUtils import RiftProjectTestCase, make_temp_file
 from rift.Gerrit import Review
 
 
@@ -159,3 +161,39 @@ class ActionableArchPackageTest(RiftProjectTestCase):
 
     def test_init_concrete(self):
         ActionableArchPackageTestingConcrete(self.pkg, 'x86_64')
+
+
+class TestTest(RiftProjectTestCase):
+    def test_init(self):
+        """ Test with analyzed command """
+        command = make_temp_file(
+            textwrap.dedent("""\
+                #!/bin/sh
+                # fake test
+                /bin/true
+                """),
+            suffix='.sh'
+        )
+        test = Test(command.name)
+        self.assertEqual(test.command, command.name)
+        self.assertFalse(test.local)
+        self.assertEqual(
+            test.name, os.path.splitext(os.path.basename(command.name))[0])
+
+    def test_init_local(self):
+        """ Test with analyzed command to run locally """
+        command = make_temp_file(
+            textwrap.dedent("""\
+                #!/bin/sh
+                #
+                # *** RIFT LOCAL ***
+                #
+                /bin/true
+                """),
+            suffix='.sh'
+        )
+        with self.assertLogs(level='DEBUG') as logs:
+            test = Test(command.name)
+        self.assertTrue(test.local)
+        self.assertIn(
+            f"DEBUG:root:Test '{test.name}' detected as local", logs.output)

@@ -37,11 +37,13 @@ Class to manipulate packages and package tests with Rift.
 import glob
 import logging
 import os
+import shlex
 import yaml
 
 from rift import RiftError
 from rift.Config import OrderedLoader
 from rift.utils import message
+from rift.run import run_command
 from rift.repository import ProjectArchRepositories
 
 _META_FILE = 'info.yaml'
@@ -293,6 +295,22 @@ class ActionableArchPackage:
     def test(self, **kwargs):
         """Test package. Must be overriden in concrete format classes."""
         raise NotImplementedError
+
+    def run_local_test(self, test, funcs=None):
+        """
+        Run a test command on local host. Dict of shell functions can be
+        provided. Shell will be initialized with these functions before running
+        the test.
+        """
+        cmd = ''
+        if not funcs:
+            funcs = {}
+        for func, code in funcs.items():
+            cmd += f"{func}() {{ {code}; }}; export -f {func}; "
+        cmd += shlex.quote(test.command)
+
+        logging.debug("Running local test command %s", cmd)
+        return run_command(cmd, capture_output=True, shell=True)
 
     def publish(self, **kwargs):
         """Publish package. Must be overriden in concrete format classes."""

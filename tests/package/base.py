@@ -3,6 +3,7 @@
 #
 import os
 import textwrap
+from unittest.mock import patch
 
 from rift import RiftError
 from rift.package import Package
@@ -101,6 +102,35 @@ class ActionableArchPackageTest(RiftProjectTestCase):
         """ Test test method not implemented on abstract class """
         with self.assertRaises(NotImplementedError):
             self.pkg.test()
+
+    @patch('rift.package._base.run_command')
+    def test_run_local_test(self, mock_run_command):
+        command = make_temp_file(
+            textwrap.dedent("""\
+                #!/bin/sh
+                /bin/true
+                """),
+            suffix='.sh'
+        )
+        test = Test(command.name)
+        self.pkg.run_local_test(test)
+        mock_run_command.assert_called_once_with(
+            command.name, capture_output=True, shell=True)
+
+    @patch('rift.package._base.run_command')
+    def test_run_local_test_with_funcs(self, mock_run_command):
+        command = make_temp_file(
+            textwrap.dedent("""\
+                #!/bin/sh
+                /bin/true
+                """),
+            suffix='.sh'
+        )
+        test = Test(command.name)
+        self.pkg.run_local_test(test, { 'hey': 'echo hey!'})
+        mock_run_command.assert_called_once_with(
+            f"hey() {{ echo hey!; }}; export -f hey; {command.name}",
+            capture_output=True, shell=True)
 
     def test_publish_not_implemented(self):
         """ Test publish method not implemented on abstract class """

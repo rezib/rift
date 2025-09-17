@@ -250,7 +250,10 @@ class ActionableArchPackageRPM(ActionableArchPackage):
             case = TestCase(test.name, self.name, self.arch, self.package.format)
             now = time.time()
             message(f"Running test '{case.fullname}' on architecture '{self.arch}'")
-            proc = vm.run_test(test)
+            if test.local:
+                proc = self.run_local_test(test, vm.local_test_funcs())
+            else:
+                proc = vm.run_test(test)
             if proc.returncode == 0:
                 results.add_success(case, time.time() - now, out=proc.out, err=proc.err)
                 message(f"Test '{case.fullname}' on architecture {self.arch}: OK")

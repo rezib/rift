@@ -6,7 +6,8 @@ import textwrap
 
 from rift import RiftError
 from rift.package import Package
-from rift.package._base import Test, _SOURCES_DIR, _META_FILE, _TESTS_DIR
+from rift.package._base import ActionableArchPackage, Test, _SOURCES_DIR, _META_FILE, _TESTS_DIR
+from rift.repository.rpm import ArchRepositoriesRPM
 from ..TestUtils import RiftProjectTestCase, make_temp_file
 from rift.Gerrit import Review
 
@@ -72,6 +73,43 @@ class PackageTest(RiftProjectTestCase):
                       f"{pkgname}.spec")
         with self.assertRaises(NotImplementedError):
             pkg.analyze(Review(), pkg.dir)
+
+
+class ActionableArchPackageTest(RiftProjectTestCase):
+    def setUp(self):
+        super().setUp()
+        pkgname = 'pkg'
+        self._pkg = Package(pkgname, self.config, self.staff,
+            self.modules, 'rpm', f"{pkgname}.spec")
+        self.pkg = ActionableArchPackage(self._pkg, 'x86_64')
+
+    def test_init(self):
+        """ Test initializer set attributes """
+        self.assertEqual(self.pkg.name, 'pkg')
+        self.assertEqual(self.pkg.buildfile, self._pkg.buildfile)
+        self.assertEqual(self.pkg.config, self.config)
+        self.assertEqual(self.pkg.package, self._pkg)
+        self.assertEqual(self.pkg.arch, 'x86_64')
+        self.assertIsInstance(self.pkg.repos, ArchRepositoriesRPM)
+
+    def test_build_not_implemented(self):
+        """ Test build method not implemented on abstract class """
+        with self.assertRaises(NotImplementedError):
+            self.pkg.build()
+
+    def test_test_not_implemented(self):
+        """ Test test method not implemented on abstract class """
+        with self.assertRaises(NotImplementedError):
+            self.pkg.test()
+
+    def test_publish_not_implemented(self):
+        """ Test publish method not implemented on abstract class """
+        with self.assertRaises(NotImplementedError):
+            self.pkg.publish()
+
+    def test_clean(self):
+        """ Test clean method no-op on abstract class """
+        self.pkg.clean()
 
 
 class TestTest(RiftProjectTestCase):

@@ -40,6 +40,7 @@ import os
 from abc import ABC, abstractmethod
 
 import shlex
+import re
 import yaml
 
 from rift import RiftError
@@ -264,7 +265,10 @@ class Package(ABC):
         """An iterator over Test objects for each test files."""
         testspattern = os.path.join(self.testsdir, '*.sh')
         for testpath in glob.glob(testspattern):
-            yield Test(testpath)
+            test = Test(testpath)
+            # Skip the test if restricted to other specific package formats.
+            if not test.formats or self.format in test.formats:
+                yield test
 
     def add_changelog_entry(self, maintainer, comment, bump):
         """Must be implemented in concrete children classes when supported."""
@@ -342,15 +346,17 @@ class Test():
     """
     Wrapper around test scripts or test commands.
 
-    It analyzes if test script is flagged as local one or if it should be run
-    inside the VM.
+    It analyzes if test script is flagged as local one or restricted to
+    specific package formats.
     """
 
     _LOCAL_PATTERN = '*** RIFT LOCAL ***'
+    _FORMAT_PATTERN = r'\*\*\* RIFT FORMAT (\S+) \*\*\*'
 
     def __init__(self, command, name=None):
         self.command = command
         self.local = False
+        self.formats = []
         self.name = name
         if os.path.exists(self.command):
             self.name = name or os.path.splitext(os.path.basename(command))[0]
@@ -358,11 +364,19 @@ class Test():
 
     def _analyze(self, blocksize=4096):
         """
-        Look for special LOCAL PATTERN in file header and flag the file
-        accordingly.
+        Look for special patterns (local or format restrictions) in file header
+        and flag the test accordingly.
         """
         with open(self.command, 'rt', encoding='utf-8') as ftest:
             data = ftest.read(blocksize)
             if self._LOCAL_PATTERN in data:
                 logging.debug("Test '%s' detected as local", self.name)
                 self.local = True
+            self.formats = re.findall(self._FORMAT_PATTERN, data)
+            # Log debug message if the test is restricted to specific package
+            # formats.
+            if self.formats:
+                logging.debug(
+                    "Test '%s' restricted to specific formats: %s",
+                    self.name, ', '.join(self.formats)
+                )

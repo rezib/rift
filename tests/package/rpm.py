@@ -479,7 +479,8 @@ class ActionableArchPackageRPMTest(RiftProjectTestCase):
         mock_vm_obj = mock_vm.return_value
         mock_vm_obj.running.return_value = False
         mock_vm_obj.run_test.return_value = RunResult(0, None, None)
-        self.setup_package(tests=[PackageTestDef(name='0_test.sh', local=True)])
+        self.setup_package(
+            tests=[PackageTestDef(name='0_test.sh', local=True, formats=[])])
         self.pkg.run_local_test = Mock(return_value=RunResult(0, None, None))
         results = self.pkg.test()
         self.assertIsInstance(results, TestResults)

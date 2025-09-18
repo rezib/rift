@@ -129,7 +129,7 @@ Description for package {{ subpackage.name }}
 """
 
 SubPackage = namedtuple("SubPackage", ["name"])
-PackageTestDef = namedtuple("PackageTestDef", ["name", "local"])
+PackageTestDef = namedtuple("PackageTestDef", ["name", "local", "formats"])
 
 
 class RiftTestCase(unittest.TestCase):
@@ -339,7 +339,7 @@ class RiftProjectTestCase(RiftTestCase):
         # Add ./tests/0_test.sh by default
         if not tests:
             tests = [
-                PackageTestDef(name='0_test.sh', local=False)
+                PackageTestDef(name='0_test.sh', local=False, formats=[])
             ]
         for test in tests:
             test_file = os.path.join(testsdir, test.name)
@@ -347,6 +347,8 @@ class RiftProjectTestCase(RiftTestCase):
                 fh.write('#!/bin/sh\n')
                 if test.local:
                     fh.write('# *** RIFT LOCAL ***\n')
+                for _format in test.formats:
+                    fh.write(f"# *** RIFT FORMAT {_format} ***\n")
                 fh.write('true')
 
     def clean_mock_environments(self):

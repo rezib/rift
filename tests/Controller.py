@@ -474,6 +474,42 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         shutil.rmtree(working_repo)
         atexit.unregister(shutil.rmtree)
 
+    @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
+    def test_action_build_formats(self, mock_pkg_rpm):
+
+        # Declare supported archs.
+        self.config.set('arch', ['x86_64', 'aarch64'])
+        self.update_project_conf()
+
+        # Create fake package without build requirement
+        self.make_pkg(build_requires=[])
+
+        # Get PackageRPM instances mock
+        mock_pkg_rpm_objs = mock_pkg_rpm.return_value
+        # Initialize PackageRPM object attributes
+        PackageRPM.__init__(
+            mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
+        # Make PackageRPM.supports_arch() return True for all archs
+        mock_pkg_rpm_objs.supports_arch.return_value = True
+
+        # Mock ActionableArchPackageRPM objects
+        mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
+
+        self.assertEqual(
+            main(['build', 'pkg', '--formats', 'rpm']), 0)
+
+        # Check RPM package supports_arch() method is called for all supported
+        # archs.
+        for arch in self.config.get('arch'):
+            mock_pkg_rpm_objs.supports_arch.assert_any_call(arch)
+
+        # Check actionable RPM package build(), publish() and clean() methods
+        # are called for all supported arch (ie. twice).
+        mock_act_arch_pkg_rpm.build.assert_has_calls(
+            [call(sign=False, staging=None), call(sign=False, staging=None)])
+        mock_act_arch_pkg_rpm.clean.assert_has_calls([call(), call()])
+
     def test_action_build_publish_functional(self):
         """Functional RPM build and publish test"""
         # Declare supported archs and check qemu-user-static is available for
@@ -2025,6 +2061,22 @@ class ControllerArgumentsTest(RiftTestCase):
         parser = make_parser()
         opts = parser.parse_args(args)
         self.assertFalse(opts.updaterepo)
+
+    def test_parse_args_build(self):
+        """ Test build command options parsing """
+        parser = make_parser()
+
+        args = ['build']
+        opts = parser.parse_args(args)
+        self.assertIsNone(opts.formats)
+
+        args = ['build', '--formats', 'rpm']
+        opts = parser.parse_args(args)
+        self.assertCountEqual(opts.formats, ['rpm'])
+
+        args = ['build', '--formats', 'fail']
+        with self.assertRaises(SystemExit):
+            opts = parser.parse_args(args)
 
     def test_make_parser_vm(self):
         """ Test vm command options parsing """

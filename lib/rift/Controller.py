@@ -60,6 +60,10 @@ from rift.patches import get_packages_from_patch
 from rift.utils import message, banner
 
 
+# Rift supported package formats
+RIFT_SUPPORTED_FORMATS = ('rpm',)
+
+
 def make_parser():
     """Create command line parser"""
 
@@ -134,6 +138,9 @@ def make_parser():
                         help='write junit result file')
     subprs.add_argument('--dont-update-repo', dest='updaterepo', action='store_false',
                         help='do not update repository metadata when publishing a package')
+    subprs.add_argument('-F', '--formats', nargs='+',
+                        choices=RIFT_SUPPORTED_FORMATS,
+                        help='restrict build to specific package formats')
 
     # Sign options
     subprs = subparsers.add_parser('sign', help='Sign RPM package with GPG key.')
@@ -596,6 +603,16 @@ def build_pkgs(args, pkgs, arch, staging):
     results = TestResults()
 
     for pkg in pkgs:
+
+        # Skip package if format is not selected by user
+        if args.formats and pkg.format not in args.formats:
+            logging.info(
+                "Skipping build of %s package %s due to restriction on package "
+                "formats",
+                pkg.format, pkg.name
+            )
+            continue
+
         # Load package and report possible failure
         case = TestCase('build', pkg.name, _DEFAULT_VARIANT, arch, pkg.format)
         now = time.time()

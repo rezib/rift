@@ -12,7 +12,7 @@ from rift.TestResults import TestResults
 from rift.Config import _DEFAULT_VARIANT
 from rift.Gerrit import Review
 
-from ..TestUtils import RiftProjectTestCase, make_temp_file, gen_rpm_spec
+from ..TestUtils import RiftProjectTestCase, PackageTestDef, make_temp_file, gen_rpm_spec
 
 
 class PackageRPMTest(RiftProjectTestCase):
@@ -404,8 +404,8 @@ class ActionableArchPackageRPMTest(RiftProjectTestCase):
     """
     Tests class for ActionableArchPackageRPM
     """
-    def setup_package(self, variants=None, test_local=False):
-        self.make_pkg(variants=variants, test_local=test_local)
+    def setup_package(self, variants=None, tests=None):
+        self.make_pkg(variants=variants, tests=tests)
         _pkg = PackageRPM('pkg', self.config, self.staff, self.modules)
         _pkg.load()
         self.pkg = ActionableArchPackageRPM(_pkg, 'x86_64')
@@ -479,7 +479,7 @@ class ActionableArchPackageRPMTest(RiftProjectTestCase):
         mock_vm_obj = mock_vm.return_value
         mock_vm_obj.running.return_value = False
         mock_vm_obj.run_test.return_value = RunResult(0, None, None)
-        self.setup_package(test_local=True)
+        self.setup_package(tests=[PackageTestDef(name='0_test.sh', local=True)])
         self.pkg.run_local_test = Mock(return_value=RunResult(0, None, None))
         results = self.pkg.test()
         self.assertIsInstance(results, TestResults)

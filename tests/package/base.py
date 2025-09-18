@@ -43,6 +43,16 @@ class PackageTest(RiftProjectTestCase):
         self.assertEqual(pkg.reason, 'Missing feature')
         self.assertEqual(pkg.origin, 'Vendor')
 
+    def test_tests(self):
+        """ Test Package tests method """
+        self.make_pkg()
+        pkg = Package('pkg', self.config, self.staff, self.modules, 'rpm', 'pkg.spec')
+        pkg.load()
+        tests = [test for test in pkg.tests()]
+        self.assertEqual(len(tests), 1)
+        self.assertIsInstance(tests[0], Test)
+        self.assertEqual(tests[0].name, '0_test')
+
     def test_subpackages(self):
         """ Test Package subpackages (not implemented) """
         pkgname = 'pkg'

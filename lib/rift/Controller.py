@@ -47,7 +47,7 @@ from rift.annex import Annex, is_binary, is_pointer
 from rift.Config import Config, Staff, Modules, _DEFAULT_VARIANT
 from rift.Gerrit import Review
 from rift.auth import Auth
-from rift.package import ProjectPackages
+from rift.package import RIFT_SUPPORTED_FORMATS, ProjectPackages
 from rift.repository import ProjectArchRepositories, StagingRepository
 from rift.graph import PackagesDependencyGraph
 from rift.RPM import RPM, Spec
@@ -134,6 +134,9 @@ def make_parser():
                         help='write junit result file')
     subprs.add_argument('--dont-update-repo', dest='updaterepo', action='store_false',
                         help='do not update repository metadata when publishing a package')
+    subprs.add_argument('-F', '--formats', nargs='+',
+                        choices=RIFT_SUPPORTED_FORMATS,
+                        help='restrict build to specific package formats')
 
     # Sign options
     subprs = subparsers.add_parser('sign', help='Sign RPM package with GPG key.')
@@ -596,6 +599,16 @@ def build_pkgs(args, pkgs, arch, staging):
     results = TestResults()
 
     for pkg in pkgs:
+
+        # Skip package if format is not selected by user
+        if args.formats and pkg.format not in args.formats:
+            logging.info(
+                "Skipping build of %s package %s due to restriction on package "
+                "formats",
+                pkg.format, pkg.name
+            )
+            continue
+
         # Load package and report possible failure
         case = TestCase('build', pkg.name, _DEFAULT_VARIANT, arch, pkg.format)
         now = time.time()

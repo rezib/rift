@@ -157,6 +157,9 @@ def make_parser():
                         help='do not run auto tests')
     subprs.add_argument('--junit', metavar='FILENAME',
                         help='write junit result file')
+    subprs.add_argument('-F', '--formats', nargs='+',
+                        choices=RIFT_SUPPORTED_FORMATS,
+                        help='restrict tests to specific package formats')
 
     # Validate options
     subprs = subparsers.add_parser('validate', help='Fully validate package')
@@ -731,6 +734,15 @@ def action_test(args, config):
 
     for arch in config.get('arch'):
         for pkg in ProjectPackages.list(config, staff, modules, args.packages):
+
+            # Skip package if format is not selected by user
+            if args.formats and pkg.format not in args.formats:
+                logging.info(
+                    "Skipping tests %s package %s due to restriction on "
+                    "package formats",
+                    pkg.format, pkg.name
+                )
+                continue
 
             # Load package and report possible failure
             now = time.time()

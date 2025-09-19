@@ -2094,16 +2094,6 @@ class ControllerProjectActionChangelogTest(RiftProjectTestCase):
     Tests class for Controller action changelog
     """
 
-    def test_action_changelog_without_pkg(self):
-        """changelog without package fails """
-        with self.assertRaisesRegex(SystemExit, "2"):
-            main(['changelog'])
-
-    def test_action_changelog_without_comment(self):
-        """changelog without comment fails """
-        with self.assertRaisesRegex(SystemExit, "2"):
-            main(['changelog', 'pkg'])
-
     def test_action_changelog_without_maintainer(self):
         """changelog without maintainer """
         with self.assertRaisesRegex(RiftError, "You must specify a maintainer"):
@@ -2121,6 +2111,20 @@ class ControllerProjectActionChangelogTest(RiftProjectTestCase):
         self.make_pkg()
         self.assertEqual(
             main(['changelog', 'pkg', '-c', 'basic change', '-t', 'Myself']), 0)
+        spec = Spec(filepath=self.buildfiles[0])
+        spec.load()
+        self.assertEqual(spec.changelog_name, 'Myself <buddy@somewhere.org> - 1.0-1')
+        self.assertEqual(spec.version, '1.0')
+        self.assertEqual(spec.release, '1')
+
+    def test_action_changelog_formats(self):
+        """simple changelog"""
+        self.make_pkg()
+        self.assertEqual(
+            main(
+                ['changelog', 'pkg', '-c', 'basic change', '-t', 'Myself',
+                 '--formats', 'rpm']
+            ), 0)
         spec = Spec(filepath=self.buildfiles[0])
         spec.load()
         self.assertEqual(spec.changelog_name, 'Myself <buddy@somewhere.org> - 1.0-1')
@@ -2219,6 +2223,30 @@ class ControllerArgumentsTest(RiftTestCase):
         self.assertCountEqual(opts.formats, ['rpm'])
 
         args = ['query', '--formats', 'fail']
+        with self.assertRaises(SystemExit):
+            opts = parser.parse_args(args)
+
+    def test_parse_args_changelog(self):
+        """ Test changelog command options parsing """
+        parser = make_parser()
+
+        args = ['changelog']
+        with self.assertRaises(SystemExit):
+            opts = parser.parse_args(args)
+
+        args = ['changelog', 'pkg']
+        with self.assertRaises(SystemExit):
+            opts = parser.parse_args(args)
+
+        args = ['changelog', 'pkg', '-c', 'comment']
+        opts = parser.parse_args(args)
+        self.assertIsNone(opts.formats)
+
+        args = ['changelog', 'pkg', '-c', 'comment', '--formats', 'rpm']
+        opts = parser.parse_args(args)
+        self.assertCountEqual(opts.formats, ['rpm'])
+
+        args = ['changelog', 'pkg', '-c', 'comment', '--formats', 'fail']
         with self.assertRaises(SystemExit):
             opts = parser.parse_args(args)
 

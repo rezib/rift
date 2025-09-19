@@ -272,6 +272,9 @@ def make_parser():
                         action='store_false', help="Don't load specfile info")
     subprs.add_argument('-H', '--no-header', dest='headers',
                         action='store_false', help='Hide table headers')
+    subprs.add_argument('-F', '--formats', nargs='+',
+                        choices=RIFT_SUPPORTED_FORMATS,
+                        help='Restrict query to specific package formats')
 
     # Add changelog entry
     subprs = subparsers.add_parser('changelog',
@@ -1095,6 +1098,16 @@ def action_query(args, config):
                         f"(supported keys are: {', '.join(supported_keys)})")
 
     for pkg in pkglist:
+
+        # Skip package if format is not selected by user
+        if args.formats and pkg.format not in args.formats:
+            logging.info(
+                "Skipping query %s package %s due to restriction on "
+                "package formats",
+                pkg.format, pkg.name
+            )
+            continue
+
         logging.debug('Loading package %s', pkg.name)
         try:
             pkg.load()

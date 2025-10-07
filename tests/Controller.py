@@ -17,9 +17,11 @@ from .TestUtils import (
     gen_rpm_spec,
     read_file,
     host_rpmlint,
+    command_available,
     RiftTestCase,
     RiftProjectTestCase,
     SubPackage,
+    EXPECTED_HADOLINT_EXEC,
 )
 
 from .VM import GLOBAL_CACHE, VALID_IMAGE_URL, PROXY
@@ -387,6 +389,30 @@ class ControllerProjectActionCheckTest(RiftProjectTestCase):
         self.make_pkg()
         with self.assertRaisesRegex(RiftError, "/dev/fail does not exist"):
             main(['check', 'spec', '-f', '/dev/fail'])
+
+    def test_check_containerfile_without_file(self):
+        """check containerfile without file fails"""
+        with self.assertRaisesRegex(
+            RiftError, r"You must specifiy a file path \(-f\)"):
+            main(['check', 'containerfile'])
+
+    def test_check_containerfile(self):
+        """simple check containerfile"""
+        self.make_pkg(formats=['oci'])
+        with self.assertLogs(level='INFO') as log:
+            main(
+                ['check', 'containerfile', '-f', self.buildfiles[0]]
+            )
+        self.assertIn(
+            'INFO:root:Containerfile is OK.',
+            log.output
+        )
+
+    def test_check_containerfile_not_found(self):
+        """check containerfile file not found fails"""
+        self.make_pkg()
+        with self.assertRaisesRegex(RiftError, "Unable to find Containerfile /dev/fail"):
+            main(['check', 'containerfile', '-f', '/dev/fail'])
 
 
 class ControllerProjectActionValiddiffTest(RiftProjectTestCase):
@@ -2879,6 +2905,10 @@ class ControllerProjectActionGerritTest(RiftProjectTestCase):
     @patch('rift.Controller.Review')
     def test_gerrit_multiformats(self, mock_review, mock_mock):
         """simple gerrit with multiformats package"""
+        if not command_available(EXPECTED_HADOLINT_EXEC):
+            self.skipTest("hadolint executable not found")
+        self.config.update({'containers': { 'linter': EXPECTED_HADOLINT_EXEC }})
+        self.update_project_conf()
         self.make_pkg()
         patch = make_temp_file(
             textwrap.dedent("""
@@ -2921,11 +2951,10 @@ class ControllerProjectActionGerritTest(RiftProjectTestCase):
                 for line in log.output
             )
         )
-        # Check presence of log message to indicate unable to analyze OCI
-        # buildfile.
+        # Check presence of debug log to indicate analysis of OCI buildfile.
         self.assertIn(
-            'INFO:root:Skipping package format oci which does not support '
-            'static analysis',
+            f"DEBUG:root:Running hadolint: {EXPECTED_HADOLINT_EXEC} "
+            f"{self.buildfiles[1]}",
             log.output
         )
         # Check review has not been invalidated but pushed
@@ -2967,11 +2996,10 @@ class ControllerProjectActionGerritTest(RiftProjectTestCase):
                 for line in log.output
             )
         )
-        # Check absence of log message to indicate unable to analyze OCI
-        # buildfile.
+        # Check absence of log message to indicate analysis of OCIbuildfile.
         self.assertNotIn(
-            'INFO:root:Skipping package format oci which does not support '
-            'static analysis',
+            f"DEBUG:root:Running hadolint: {EXPECTED_HADOLINT_EXEC} "
+            f"{self.buildfiles[0]}",
             log.output
         )
 
@@ -2983,6 +3011,10 @@ class ControllerProjectActionGerritTest(RiftProjectTestCase):
     @patch('rift.Controller.Review')
     def test_gerrit_oci(self, mock_review, mock_mock):
         """simple gerrit on rpm package"""
+        if not command_available(EXPECTED_HADOLINT_EXEC):
+            self.skipTest("hadolint executable not found")
+        self.config.update({'containers': { 'linter': EXPECTED_HADOLINT_EXEC }})
+        self.update_project_conf()
         self.make_pkg(formats=['oci'])
         patch = make_temp_file(
             textwrap.dedent("""
@@ -3007,11 +3039,10 @@ class ControllerProjectActionGerritTest(RiftProjectTestCase):
             f"DEBUG:root:Running rpmlint: rpmlint {self.buildfiles['pkg:rpm']}",
             log.output
         )
-        # Check presence of log message to indicate unable to analyze OCI
-        # buildfile.
+        # Check presence of debug log to indicate analysis of OCI buildfile.
         self.assertIn(
-            'INFO:root:Skipping package format oci which does not support '
-            'static analysis',
+            f"DEBUG:root:Running hadolint: {EXPECTED_HADOLINT_EXEC} "
+            f"{self.buildfiles[0]}",
             log.output
         )
 

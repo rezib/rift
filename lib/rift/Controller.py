@@ -49,6 +49,7 @@ from rift.Gerrit import Review
 from rift.package import ProjectPackages
 from rift.repository import ProjectArchRepositories
 from rift.RPM import RPM, Spec
+from rift.container import ContainerFile
 from rift.TestResults import TestCase, TestResults
 from rift.TextTable import TextTable
 from rift.VM import VM
@@ -115,7 +116,8 @@ def make_parser():
     # Check options
     subprs = subparsers.add_parser('check',
                                    help='verify various config file syntaxes')
-    subprs.add_argument('type', choices=['staff', 'modules', 'info', 'spec'],
+    subprs.add_argument('type', choices=['staff', 'modules', 'info',
+                                         'spec', 'containerfile'],
                         metavar='CHKTYPE', help='type of check')
     subprs.add_argument('-f', '--file', metavar='FILE',
                         help='path of file to check')
@@ -340,6 +342,15 @@ def action_check(args, config):
         spec = Spec(args.file, config=config)
         spec.check()
         logging.info('Spec file is OK.')
+
+    elif args.type == 'containerfile':
+
+        if args.file is None:
+            raise RiftError("You must specifiy a file path (-f)")
+
+        container_file = ContainerFile(config, args.file)
+        container_file.check()
+        logging.info('Containerfile is OK.')
 
 
 def action_annex(args, config, staff, modules):

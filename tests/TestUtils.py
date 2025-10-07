@@ -155,6 +155,15 @@ Description for package {{ name }} variant %{variant}
 - Update to {{ version }} release
 """
 
+CONTAINERFILE_TPL = """\
+FROM debian:stable
+{% for line in lines %}
+{{ line }}
+{% endfor %}
+"""
+
+EXPECTED_HADOLINT_EXEC = "hadolint-linux-x86_64"
+
 SubPackage = namedtuple("SubPackage", ["name"])
 PackageTestDef = namedtuple("PackageTestDef", ["name", "local", "formats"])
 
@@ -374,7 +383,7 @@ class RiftProjectTestCase(RiftTestCase):
         if 'oci' in formats:
             buildfile = os.path.join(self.pkgdirs[name], 'Containerfile')
             with open(buildfile, "w") as fh:
-                fh.write('FROM debian:stable')
+                fh.write(gen_containerfile())
             self.buildfiles.append(buildfile)
 
         # ./packages/pkg/sources
@@ -467,6 +476,12 @@ class RiftProjectTestCase(RiftTestCase):
 def gen_rpm_spec(**kwargs):
     return jinja2.Template(SPEC_TPL).render(**kwargs)
 
+#
+# Containerfile
+#
+def gen_containerfile(**kwargs):
+    return jinja2.Template(CONTAINERFILE_TPL).render(**kwargs)
+
 
 #
 # Temp files
@@ -486,3 +501,61 @@ def make_temp_file(text, delete=True, suffix=None):
     tmp.write(text.encode())
     tmp.flush()
     return tmp
+
+#
+# Executable commands utilities
+#
+
+def command_available(command):
+    """
+    Check if a command is available for execution, by verifying:
+    1. If it's a command name, it checks if it exists in the system PATH
+    2. If it's an absolute path, it checks if the file exists and is executable
+    3. If it's a relative path, it checks if the file exists relative to current
+      directory and is executable
+    Return True if the command is available and executable, False otherwise.
+    """
+
+    # Handle empty or None commands
+    if not command or not command.strip():
+        return False
+
+    # Check if it's an absolute path
+    if os.path.isabs(command):
+        return _is_executable_file(command)
+
+    # Check if it's a relative path (contains path separators or starts with ./)
+    if (os.sep in command or (os.altsep and os.altsep in command) or 
+        command.startswith('./') or command.startswith('../')):
+        # Resolve relative path
+        resolved_path = os.path.abspath(command)
+        return _is_executable_file(resolved_path)
+
+    # Check if it's a file in the current directory
+    if os.path.exists(command) and os.path.isfile(command):
+        return os.access(command, os.X_OK)
+
+    # It's a command name, check if it's in PATH
+    return shutil.which(command) is not None
+
+
+def _is_executable_file(file_path):
+    """
+    Check if a file exists and is executable. Return True if the file exists and
+    is executable, False otherwise.
+    """
+    try:
+        # Check if file exists
+        if not os.path.exists(file_path):
+            return False
+
+        # Check if it's a file (not a directory)
+        if not os.path.isfile(file_path):
+            return False
+
+        # Check if it's executable
+        return os.access(file_path, os.X_OK)
+
+    except (OSError, ValueError):
+        # Handle any system errors or invalid paths
+        return False

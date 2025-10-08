@@ -1107,8 +1107,8 @@ def get_packages_to_build(config, staff, modules, args):
 
     def result_position(new_build_requirements):
         """
-        Return the first index in result of packages in provided build
-        requirements list.
+        Return the index of the first package in result that appear as a build
+        requirement in new_build_requirements
         """
         for build_requirement in new_build_requirements:
             for index, package in enumerate(result):

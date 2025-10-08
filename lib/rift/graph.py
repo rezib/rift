@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2024 CEA
+# Copyright (C) 2025 CEA
 #
 # This file is part of Rift project.
 #
@@ -54,6 +54,16 @@ class PackageDependencyNode:
         self.subpackages = spec.provides
         # Parse buildrequires string in spec file to discard explicit versions
         # enforcement.
+        #
+        # Note this is currently done this way for the sake of simplicity,
+        # despite the value that could be provided by these version constraints.
+        # It could notably be interesting to extract lesser version constraints
+        # when a dependency is updated to a greater version.
+        #
+        # Currently, the automatic rebuilds of recursive reverse dependencies
+        # eventually fail at some point because of invalid versioning in this
+        # case but it could be nice to fail faster by detecting mismatching
+        # versions before the actual builds.
         self.build_requires = [
             value.group(1)
             for value
@@ -99,23 +109,12 @@ class PackagesDependencyGraph:
         """Dump graph in its current state with logging message."""
         for node in self.nodes:
             logging.info("→ %s", node.package.name)
+            logging.info("  provides: %s", str(node.subpackages))
             logging.info("  requires: %s", node.build_requires)
-            logging.info("  subpackages: %s", str(node.subpackages))
             logging.info(
-                "  rdeps: %s", str([rdep.package.name for rdep in node.rdeps])
+                "  is required by: %s",
+                str([rdep.package.name for rdep in node.rdeps])
             )
-
-    def solve(self, package):
-        """
-        Return list of recursive build requirements for the provided package.
-        """
-        self.path = []  # Start with empty path
-        for node in self.nodes:
-            if node.package.name == package.name:
-                return self._solve(node, "User request")
-
-        # Package not found in graph, return empty list.
-        return []
 
     def _dep_index(self, new, result):
         """
@@ -148,7 +147,7 @@ class PackagesDependencyGraph:
     def _solve(self, node, reason, depth=0):
         """
         Return list of recursive build requirements for the provided package
-        dependency node. The reason argument is a string to textually justify
+        dependency node. The "reason" argument is a string to textually justify
         the build requirement of the given node. The depth argument is used to
         track the depth of recursive path in the dependency graph.
         """
@@ -176,7 +175,7 @@ class PackagesDependencyGraph:
             if rdep.package.depends is not None:
                 reason = f"depends on {node.package.name}"
             else:
-                reason = "build requires on " + ", ".join(
+                reason = "build depends on " + ", ".join(
                     node.required_subpackages(rdep)
                 )
             # If reverse dependency has already been processed in the processing
@@ -184,10 +183,11 @@ class PackagesDependencyGraph:
             # processing to avoid endless loop.
             if rdep in self.path[0:depth]:
                 logging.debug(
-                    "%s   ⥀ Loop detected on node %s at depth %d",
+                    "%s   ⥀ Loop detected on node %s at depth %d: %s",
                     '  '*depth,
                     rdep.package.name,
-                    depth
+                    depth,
+                    '→'.join(node.package.name for node in self.path + [rdep]),
                 )
                 result.append(BuildRequirement(rdep.package, [reason]))
                 continue
@@ -196,7 +196,7 @@ class PackagesDependencyGraph:
                 '  '*depth,
                 rdep.package.name
             )
-            # Iterate over all recursively solve build requirements for this
+            # Iterate over all recursively solved build requirements for this
             # reverse dependency.
             build_requirements = self._solve(rdep, reason, depth+1)
             for idx, build_requirement in enumerate(build_requirements):
@@ -218,22 +218,17 @@ class PackagesDependencyGraph:
                     result.insert(position, build_requirement)
         return result
 
-    def build(self, packages):
-        """Build graph with the provided packages."""
-        tic = time.perf_counter()
-        for package in packages:
-            # Load info.yaml to check for potential explicit dependencies. Skip
-            # package with warning if unable to load.
-            try:
-                package.load()
-            except FileNotFoundError as err:
-                logging.warning("Skipping package %s unable to load: %s",
-                                package.name, err)
-                continue
-            self._insert(package)
-        toc = time.perf_counter()
-        logging.debug("Graph built in %0.4f seconds", toc - tic)
-        logging.debug("Graph size: %d", len(self.nodes))
+    def solve(self, package):
+        """
+        Return list of recursive build requirements for the provided package.
+        """
+        self.path = []  # Start with empty path
+        for node in self.nodes:
+            if node.package.name == package.name:
+                return self._solve(node, "User request")
+
+        # Package not found in graph, return empty list.
+        return []
 
     def _insert(self, package):
         """Insert package in the graph."""
@@ -244,6 +239,23 @@ class PackagesDependencyGraph:
             if node.depends_on(_node):
                 _node.rdeps.append(node)
         self.nodes.append(node)
+
+    def build(self, packages):
+        """Build graph with the provided packages."""
+        tic = time.perf_counter()
+        for package in packages:
+            # Load info.yaml to check for potential explicit dependencies. Skip
+            # package with warning if unable to load.
+            try:
+                package.load()
+            except FileNotFoundError as err:
+                logging.warning("Skipping package '%s' unable to load: %s",
+                                package.name, err)
+                continue
+            self._insert(package)
+        toc = time.perf_counter()
+        logging.debug("Graph built in %0.4f seconds", toc - tic)
+        logging.debug("Graph size: %d", len(self.nodes))
 
     @classmethod
     def from_project(cls, config, staff, modules):

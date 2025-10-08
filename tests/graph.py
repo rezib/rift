@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2020 CEA
+# Copyright (C) 2025 CEA
 #
 import os
 import shutil
@@ -47,8 +47,8 @@ class GraphTest(RiftProjectTestCase):
         # Check warning message has been emitted
         self.assertEqual(
             cm.output,
-            [ "WARNING:root:Skipping package failed unable to load: [Errno 2] "
-              "No such file or directory: "
+            [ "WARNING:root:Skipping package 'failed' unable to load: [Errno 2]"
+              " No such file or directory: "
               f"'{self.projdir}/packages/failed/info.yaml'" ]
         )
         # Check success package is successfully loaded anyway.
@@ -59,7 +59,6 @@ class GraphTest(RiftProjectTestCase):
         """ Test graph dump """
         pkg_name = 'fake'
         self.make_pkg(name=pkg_name)
-        package = Package(pkg_name, self.config, self.staff, self.modules)
         graph = PackagesDependencyGraph.from_project(
             self.config,
             self.staff,
@@ -71,9 +70,9 @@ class GraphTest(RiftProjectTestCase):
             cm.output,
             [
                 'INFO:root:→ fake',
+                "INFO:root:  provides: ['fake', 'fake-provide']",
                 "INFO:root:  requires: ['br-package']",
-                "INFO:root:  subpackages: ['fake', 'fake-provide']",
-                'INFO:root:  rdeps: []'
+                'INFO:root:  is required by: []'
             ]
         )
 
@@ -215,7 +214,7 @@ class GraphTest(RiftProjectTestCase):
         self.assertEqual(build_requirements[1].package.name, 'my-software')
         self.assertEqual(
             build_requirements[1].reasons,
-            ["build requires on libone-devel"]
+            ["build depends on libone-devel"]
         )
 
         # Rebuild of libtwo triggers rebuild of libone and my-software because
@@ -231,14 +230,14 @@ class GraphTest(RiftProjectTestCase):
         self.assertEqual(build_requirements[1].package.name, 'libone')
         self.assertEqual(
             build_requirements[1].reasons,
-            ["build requires on libtwo-devel"]
+            ["build depends on libtwo-devel"]
         )
         self.assertEqual(build_requirements[2].package.name, 'my-software')
         self.assertCountEqual(
             build_requirements[2].reasons,
             [
-                "build requires on libone-devel",
-                "build requires on libtwo-devel"
+                "build depends on libone-devel",
+                "build depends on libtwo-devel"
             ]
         )
 
@@ -304,7 +303,7 @@ class GraphTest(RiftProjectTestCase):
         self.assertEqual(build_requirements[1].package.name, 'my-software')
         self.assertEqual(
             build_requirements[1].reasons,
-            ["build requires on libone-provide"]
+            ["build depends on libone-provide"]
         )
 
     def test_loop(self):

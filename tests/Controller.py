@@ -1126,6 +1126,45 @@ rename to packages/pkgnew/sources/pkgnew-1.0.tar.gz
             [pkg.name for pkg in pkgs], ['libtwo', 'libone', 'my-software']
         )
 
+    def test_get_packages_to_build_cyclic_deps(self):
+        """ Test get_packages_to_build() returns correctly ordered list of reverse dependencies. """
+        self.make_pkg(
+            name='libone',
+            metadata={
+                'depends': 'libtwo'
+            }
+        )
+        self.make_pkg(
+            name='libtwo',
+            metadata={
+                'depends': 'libthree'
+            }
+        )
+        self.make_pkg(
+            name='libthree',
+            metadata={
+                'depends': 'libone'
+            }
+        )
+        # Enable tracking, disable --skip-deps
+        self.config.set('dependency_tracking', True)
+        args = Mock()
+        args.skip_deps = False
+        args.packages = ['libone']
+        with self.assertLogs(level="DEBUG") as cm:
+            pkgs = get_packages_to_build(
+                self.config, self.staff, self.modules, args
+            )
+        # Package libone must be present after libtwo and my-software must be
+        # present after both libtwo and libone in the order list of build
+        # requirements.
+        self.assertCountEqual(
+            [pkg.name for pkg in pkgs], ['libthree', 'libtwo', 'libone']
+        )
+        self.assertIn(
+            'DEBUG:root:       ⥀ Loop detected on node libone at depth 2: libone→libthree→libtwo→libone',
+            cm.output
+        )
 
 class ControllerArgumentsTest(RiftTestCase):
     """ Arguments parsing tests for Controller module"""

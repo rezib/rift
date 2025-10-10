@@ -49,7 +49,7 @@ from rift.Gerrit import Review
 from rift.package import ProjectPackages
 from rift.repository import ProjectArchRepositories
 from rift.RPM import RPM, Spec
-from rift.container import ContainerFile
+from rift.container import ContainerFile, ContainerArchive
 from rift.TestResults import TestCase, TestResults
 from rift.TextTable import TextTable
 from rift.VM import VM
@@ -490,7 +490,7 @@ def validate_pkgs(config, args, pkgs, arch):
         # Also publish on working repo if requested
         # XXX: All packages should be published when all of them have been validated
         if (pkg_results is None or pkg_results.global_result) and args.publish:
-            pkg_arch.publish()
+            pkg_arch.publish(sign=args.sign)
 
         # Clean build environment
         pkg_arch.clean(noquit=args.noquit)
@@ -627,7 +627,7 @@ def build_pkgs(args, pkgs, arch):
 
         # Publish
         if build_success and args.publish:
-            pkg_arch.publish(updaterepo=args.updaterepo)
+            pkg_arch.publish(updaterepo=args.updaterepo, sign=args.sign)
         else:
             logging.info("Skipping publication")
 
@@ -676,9 +676,14 @@ def action_build(args, config):
 def action_sign(args, config):
     """Action for 'sign' command."""
     for package in args.packages:
-        banner(f"Signing package {package} with GPG key")
-        rpm = RPM(package, config)
-        rpm.sign()
+        if package.endswith('.rpm'):
+            banner(f"Signing RPM package {package} with GPG key")
+            rpm = RPM(package, config)
+            rpm.sign()
+        elif package.endswith('.tar'):
+            banner(f"Signing OCI archive {package} with GPG key")
+            container_archive = ContainerArchive(config, package)
+            container_archive.sign()
     return 0
 
 def action_test(args, config):

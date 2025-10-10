@@ -14,6 +14,7 @@ import re
 from .TestUtils import (
     make_temp_dir,
     make_temp_file,
+    make_temp_tar,
     gen_rpm_spec,
     command_available,
     RiftTestCase,
@@ -848,9 +849,15 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         mock_act_arch_pkg_oci.build.assert_has_calls(
             [call(sign=False), call(sign=False)])
         mock_act_arch_pkg_rpm.publish.assert_has_calls(
-            [call(updaterepo=True), call(updaterepo=True)])
+            [
+                call(updaterepo=True, sign=False),
+                call(updaterepo=True, sign=False),
+            ])
         mock_act_arch_pkg_oci.publish.assert_has_calls(
-            [call(updaterepo=True), call(updaterepo=True)])
+            [
+                call(updaterepo=True, sign=False),
+                call(updaterepo=True, sign=False),
+            ])
         mock_act_arch_pkg_rpm.clean.assert_has_calls([call(), call()])
         mock_act_arch_pkg_oci.clean.assert_has_calls([call(), call()])
 
@@ -1905,9 +1912,19 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Check actionable RPM and OCI package publish(staging) and
         # publish(working_dir) are called for all supported arch (ie. twice).
         mock_act_arch_pkg_rpm.publish.assert_has_calls(
-            [call(staging=True), call(), call(staging=True), call()])
+            [
+                call(staging=True),
+                call(sign=False),
+                call(staging=True),
+                call(sign=False),
+            ])
         mock_act_arch_pkg_oci.publish.assert_has_calls(
-            [call(staging=True), call(), call(staging=True), call()])
+            [
+                call(staging=True),
+                call(sign=False),
+                call(staging=True),
+                call(sign=False),
+            ])
 
         # Remove temporary working repo and unregister its deletion at exit
         shutil.rmtree(working_repo)
@@ -2119,15 +2136,16 @@ class ControllerProjectActionSignTest(RiftProjectTestCase):
     """
     Tests class for Controller action sign
     """
-    def test_action_sign(self):
-        """ Test sign package """
-        gpg_home = os.path.join(self.projdir, '.gnupg')
+
+    def setUp(self):
+        super().setUp()
+        self.gpg_home = os.path.join(self.projdir, '.gnupg')
 
         # Launch GPG agent for this test
         cmd = [
           'gpg-agent',
           '--homedir',
-          gpg_home,
+          self.gpg_home,
           '--daemon',
         ]
         subprocess.run(cmd)
@@ -2137,7 +2155,7 @@ class ControllerProjectActionSignTest(RiftProjectTestCase):
         cmd = [
             'gpg',
             '--homedir',
-            gpg_home,
+            self.gpg_home,
             '--batch',
             '--passphrase',
             '',
@@ -2150,12 +2168,25 @@ class ControllerProjectActionSignTest(RiftProjectTestCase):
         self.config.options.update(
             {
                 'gpg': {
-                    'keyring': gpg_home,
+                    'keyring': self.gpg_home,
                     'key': gpg_key,
                 }
             }
         )
         self.update_project_conf()
+
+    def tearDown(self):
+        # Kill GPG agent launched for the test
+        cmd = ['gpgconf', '--homedir', self.gpg_home, '--kill', 'gpg-agent']
+        subprocess.run(cmd)
+
+        # Remove temporary GPG home with generated key
+        shutil.rmtree(self.gpg_home)
+
+        super().tearDown()
+
+    def test_action_sign_rpm(self):
+        """ Test sign RPM package """
 
         # Path of RPM packages assets
         tests_dir = os.path.dirname(os.path.abspath(__file__))
@@ -2179,7 +2210,7 @@ class ControllerProjectActionSignTest(RiftProjectTestCase):
         self.assertFalse(src_rpm.is_signed)
 
         # Launch rift sign
-        os.environ['GNUPGHOME'] = gpg_home
+        os.environ['GNUPGHOME'] = self.gpg_home
         self.assertEqual(main(['sign', copy_bin_rpm, copy_src_rpm]), 0)
         del os.environ['GNUPGHOME']
 
@@ -2189,16 +2220,28 @@ class ControllerProjectActionSignTest(RiftProjectTestCase):
         self.assertTrue(bin_rpm.is_signed)
         self.assertTrue(src_rpm.is_signed)
 
-        # Kill GPG agent launched for the test
-        cmd = ['gpgconf', '--homedir', gpg_home, '--kill', 'gpg-agent']
-        subprocess.run(cmd)
-
         # Remove copy of packages assets
         os.unlink(copy_bin_rpm)
         os.unlink(copy_src_rpm)
 
-        # Remove temporary GPG home with generated key
-        shutil.rmtree(gpg_home)
+    def test_action_sign_oci_archive(self):
+        """ Test sign OCI archive """
+        # Create temporary tarball to emulate OCI archive
+        tmp_tar = make_temp_tar()
+
+        # Check rift sign runs succesfully
+        self.assertEqual(main(['sign', tmp_tar]), 0)
+
+        # Check detached signature has been successfully created
+        sig = f"{tmp_tar}.gpg"
+        self.assertTrue(os.path.exists(sig))
+
+        # Remove signature
+        os.unlink(sig)
+
+        # Remove temporary tarball
+        os.unlink(tmp_tar)
+
 
 class ControllerProjectActionSyncTest(RiftProjectTestCase):
     """

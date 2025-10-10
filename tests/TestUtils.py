@@ -15,6 +15,8 @@ import tarfile
 import time
 import io
 from collections import OrderedDict
+import random
+import string
 
 import shutil
 import jinja2
@@ -501,6 +503,34 @@ def make_temp_file(text, delete=True, suffix=None):
     tmp.write(text.encode())
     tmp.flush()
     return tmp
+
+def make_temp_tar():
+    """ Create temporary tarball with one random file"""
+    # Create temporary file
+    with tempfile.NamedTemporaryFile(
+        delete=False, mode="w+", suffix=".txt"
+    ) as tmp_inner:
+        tmp_inner.write(
+            ''.join(
+                random.choices(
+                    string.ascii_letters + string.digits, k=2**10
+                )
+            )
+        )
+        inner_path = tmp_inner.name
+
+    # Create tarball archive
+    with tempfile.NamedTemporaryFile(
+        delete=False, suffix=".tar"
+    ) as tmp_tar:
+        tar_path = tmp_tar.name
+        with tarfile.open(fileobj=tmp_tar, mode="w:") as tar:
+            tar.add(inner_path, arcname=os.path.basename(inner_path))
+
+    # Remove temporary file
+    os.unlink(inner_path)
+
+    return tar_path
 
 #
 # Executable commands utilities

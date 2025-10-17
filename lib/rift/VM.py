@@ -650,7 +650,7 @@ class VM():
 
     def start(self):
         """
-        Start VM if not already running. Return rue if VM is actually started,
+        Start VM if not already running. Return True if VM is actually started,
         False if already running.
         """
         if self.running():

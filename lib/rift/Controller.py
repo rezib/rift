@@ -638,10 +638,6 @@ def validate_pkgs(config, args, pkgs, arch):
 
         message('Preparing Mock environment...')
         mock = Mock(config, arch, config.get('version'))
-
-        for repo in repos.all:
-            logging.debug("Mock with repo %s: %s", repo.name, repo.url)
-
         mock.init(repos.all)
 
         try:

@@ -69,6 +69,7 @@ class Package():
         self.origin = None
         self.ignore_rpms = None
         self.rpmnames = None
+        self.depends = None
         self.exclude_archs = None
 
         # Static paths
@@ -170,6 +171,13 @@ class Package():
             self.exclude_archs = [data.get('exclude_archs')]
         else:
             self.exclude_archs = data.get('exclude_archs', [])
+
+        depends = data.get('depends')
+        if depends is not None:
+            if isinstance(depends, str):
+                self.depends = [depends]
+            else:
+                self.depends = depends
 
         self.check_info()
 

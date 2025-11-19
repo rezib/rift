@@ -70,6 +70,7 @@ class Package():
         self.ignore_rpms = None
         self.rpmnames = None
         self.depends = None
+        self.exclude_archs = None
 
         # Static paths
         pkgdir = os.path.join(self._config.get('packages_dir'), self.name)
@@ -132,6 +133,8 @@ class Package():
             data['rpm_names'] = self.rpmnames
         if self.ignore_rpms:
             data['ignore_rpms'] = self.ignore_rpms
+        if self.exclude_archs:
+            data['exclude_archs'] = self.exclude_archs
 
         with open(self.metafile, 'w', encoding='utf-8') as fyaml:
             yaml.dump({'package': data}, fyaml, default_flow_style=False)
@@ -164,6 +167,10 @@ class Package():
             self.ignore_rpms = [data.get('ignore_rpms')]
         else:
             self.ignore_rpms = data.get('ignore_rpms', [])
+        if isinstance(data.get('exclude_archs'), str):
+            self.exclude_archs = [data.get('exclude_archs')]
+        else:
+            self.exclude_archs = data.get('exclude_archs', [])
 
         depends = data.get('depends')
         if depends is not None:
@@ -204,6 +211,13 @@ class Package():
         requires.
         """
         return mock.build_rpms(srpm, sign)
+
+    def supports_arch(self, arch):
+        """
+        Return True if package does not exclude any architecture or the given
+        arch is not listed in excluded architectures.
+        """
+        return not self.exclude_archs or arch not in self.exclude_archs
 
     @classmethod
     def list(cls, config, staff, modules, names=None):

@@ -52,7 +52,7 @@ class AnnexTest(RiftTestCase):
         # Create a Annex for the tests
         os.mkdir(_TEST_ANNEX_PATH)
         self.config.annex = _TEST_ANNEX_PATH
-        self.annex = Annex(self.config, path=_TEST_ANNEX_PATH)
+        self.annex = Annex(self.config, annex_path=_TEST_ANNEX_PATH)
 
         self.source = make_temp_file(textwrap.dedent("""
         This file is an annex test
@@ -137,7 +137,7 @@ class AnnexTest(RiftTestCase):
     def test_init(self):
         """ Test local annex initialisation """
 
-        self.assertEqual(self.annex.path, _TEST_ANNEX_PATH)
+        self.assertEqual(self.annex.annex_path, _TEST_ANNEX_PATH)
 
     def test_is_pointer_valid_identifier(self):
         """ Test if is_pointer correctly detect a valid identifier """
@@ -192,35 +192,30 @@ class AnnexTest(RiftTestCase):
             self.annex.get_by_path(source_file.name, '/dev/null')
 
     def test_list(self):
-        """ Test list method """
+        """Test the list method"""
 
         source_size = os.stat(self.source.name).st_size
-        source_insertion_time =  datetime.datetime.strptime(time.strftime('%c'), '%c').timestamp()
-        # Get the current time with the %c format and convert it to unix timestamp to
-        # have the same method as annex.list (in terms of precision)
+        source_insertion_time = time.time()
         self.annex.push(self.source.name)
 
-        # Check if the file pointer is present in the annex list output
-        # by checking it's attributes
         for filename, size, insertion_time, names in self.annex.list():
             self.assertEqual(get_digest_from_path(self.source.name), filename)
             self.assertEqual(source_size, size)
-            # As tests can take time to run, accept less or equal 1 second shift
-            self.assertAlmostEqual(source_insertion_time, insertion_time, delta=1)
-            self.assertTrue(os.path.basename(self.source.name) in names.keys())
+            self.assertAlmostEqual(source_insertion_time, insertion_time, delta=1) # delta for potentials delay
+        self.assertTrue(os.path.basename(self.source.name) in names)
 
     def test_push(self):
         """ Test push method """
 
         # Push the file into the annex
         self.annex.push(self.source.name)
-        digest_path = os.path.join(self.annex.path, self.source_digest)
+        digest_path = os.path.join(self.annex.annex_path, self.source_digest)
 
         # Check if the file is correctly created
         # and pushed into the annex
         self.assertTrue(os.path.exists(digest_path))
         self.assertTrue(os.path.exists(os.path.join(
-            self.annex.path,
+            self.annex.annex_path,
             get_info_from_digest(self.source_digest))
         ))
 

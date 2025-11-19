@@ -7,11 +7,12 @@ import shutil
 import atexit
 from unittest.mock import patch, Mock
 import subprocess
+import textwrap
 from io import StringIO
+import textwrap
 
-from unidiff import parse_unidiff
 from TestUtils import (
-    make_temp_file, make_temp_dir, RiftTestCase, RiftProjectTestCase, SubPackage
+    make_temp_file, make_temp_dir, gen_rpm_spec, RiftTestCase, RiftProjectTestCase, SubPackage
 )
 
 from VM import GLOBAL_CACHE, VALID_IMAGE_URL, PROXY
@@ -23,7 +24,7 @@ from rift.Controller import (
     make_parser,
 )
 from rift.Package import Package
-from rift.RPM import RPM
+from rift.RPM import RPM, Spec
 from rift.run import RunResult
 from rift import RiftError
 
@@ -47,21 +48,149 @@ class ControllerTest(RiftTestCase):
         self.assert_except(SystemExit, "0", main, ['--version'])
 
 
-class ControllerProjectTest(RiftProjectTestCase):
+class ControllerProjectActionCreateTest(RiftProjectTestCase):
     """
-    Tests class for Controller
+    Tests class for Controller action create
     """
 
-    def _check_qemuuserstatic(self):
-        """Skip the test if none qemu-$arch-static executable is found for all
-        architectures declared in project configuration."""
-        if not any(
-            [
-                os.path.exists(f"/usr/bin/qemu-{arch}-static")
-                for arch in self.config.get('arch')
-            ]
-        ):
-            self.skipTest("qemu-user-static is not available")
+    def test_create_missing_pkg_module_reason(self):
+        """create without package, module or reason fails"""
+        for cmd in (['create', '-m', 'Great module', '-r', 'Good reason'],
+                    ['create', 'pkg', '-r', 'Good reason'],
+                    ['create', 'pkg', '-m', 'Great module']):
+            with self.assertRaisesRegex(SystemExit, "2"):
+                main(cmd)
+
+    def test_create_missing_maintainer(self):
+        """create without maintainer"""
+        with self.assertRaisesRegex(RiftError, "You must specify a maintainer"):
+            main(['create', 'pkg', '-m', 'Great module', '-r', 'Good reason'])
+
+    def test_create(self):
+        """simple create"""
+        main(['create', 'pkg', '-m', 'Great module', '-r', 'Good reason',
+              '--maintainer', 'Myself'])
+        pkg = Package('pkg', self.config, self.staff, self.modules)
+        pkg.load()
+        self.assertEqual(pkg.module, 'Great module')
+        self.assertEqual(pkg.reason, 'Good reason')
+        self.assertCountEqual(pkg.maintainers, ['Myself'])
+        os.unlink(pkg.metafile)
+        os.rmdir(os.path.dirname(pkg.metafile))
+
+    def test_create_unknown_maintainer(self):
+        """create with unknown maintainer fails"""
+        with self.assertRaisesRegex(
+            RiftError, "Maintainer 'Fail' is not defined"):
+            main(['create', 'pkg', '-m', 'Great module', '-r', 'Good reason',
+                  '--maintainer', 'Fail'])
+
+
+class ControllerProjectActionImportTest(RiftProjectTestCase):
+    """
+    Tests class for Controller action import
+    """
+    @property
+    def src_rpm(self):
+        return os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), 'materials', 'pkg-1.0-1.src.rpm'
+        )
+
+    @property
+    def bin_rpm(self):
+        return os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), 'materials', 'pkg-1.0-1.noarch.rpm'
+        )
+
+    def test_import_missing_pkg_module_reason(self):
+        """import without package, module or reason fails"""
+        for cmd in (['import', '-m', 'Great module', '-r', 'Good reason'],
+                    ['import', 'pkg.src.rpm', '-r', 'Good reason'],
+                    ['import', 'pkg.src.rpm', '-m', 'Great module']):
+            with self.assertRaisesRegex(SystemExit, "2"):
+                main(cmd)
+
+    def test_import_missing_maintainer(self):
+        """import without maintainer"""
+        with self.assertRaisesRegex(RiftError, "You must specify a maintainer"):
+            main(['import', self.src_rpm, '-m', 'Great module', '-r', 'Good reason'])
+
+    def test_import_bin_rpm(self):
+        """import binary rpm"""
+        with self.assertRaisesRegex(
+            RiftError,
+            ".*pkg-1.0-1.noarch.rpm is not a source RPM$"):
+            main(['import', self.bin_rpm, '-m', 'Great module',
+                  '-r', 'Good reason', '--maintainer', 'Myself'])
+
+    def test_import(self):
+        """simple import"""
+        main(['import', self.src_rpm, '-m', 'Great module', '-r', 'Good reason',
+              '--maintainer', 'Myself'])
+        pkg = Package('pkg', self.config, self.staff, self.modules)
+        pkg.load()
+        self.assertEqual(pkg.module, 'Great module')
+        self.assertEqual(pkg.reason, 'Good reason')
+        self.assertCountEqual(pkg.maintainers, ['Myself'])
+        spec = Spec(filepath=pkg.specfile)
+        spec.load()
+        self.assertEqual(spec.changelog_name, 'Myself <buddy@somewhere.org> - 1.0-1')
+        self.assertEqual(spec.version, '1.0')
+        self.assertEqual(spec.release, '1')
+        self.assertTrue(os.path.exists(f"{pkg.specfile}.orig"))
+        shutil.rmtree(os.path.dirname(pkg.metafile))
+
+    def test_import_unknown_maintainer(self):
+        """import with unknown maintainer fails"""
+        with self.assertRaisesRegex(
+            RiftError, "Maintainer 'Fail' is not defined"):
+            main(['import', self.src_rpm, '-m', 'Great module',
+                    '-r', 'Good reason', '--maintainer', 'Fail'])
+
+
+class ControllerProjectActionReimportTest(RiftProjectTestCase):
+    """
+    Tests class for Controller actionre import
+    """
+    @property
+    def src_rpm(self):
+        return os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), 'materials', 'pkg-1.0-1.src.rpm'
+        )
+
+    @property
+    def bin_rpm(self):
+        return os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), 'materials', 'pkg-1.0-1.noarch.rpm'
+        )
+
+    def test_reimport_missing_maintainer(self):
+        """reimport without maintainer"""
+        with self.assertRaisesRegex(RiftError, "You must specify a maintainer"):
+            main(['reimport', self.src_rpm, '-m', 'Great module', '-r', 'Good reason'])
+
+    def test_reimport(self):
+        """simple reimport"""
+        self.make_pkg(name='pkg')
+        main(['reimport', self.src_rpm, '--maintainer', 'Myself'])
+        pkg = Package('pkg', self.config, self.staff, self.modules)
+        pkg.load()
+        self.assertEqual(pkg.module, 'Great module')
+        self.assertEqual(pkg.reason, 'Missing feature')
+        self.assertCountEqual(pkg.maintainers, ['Myself'])
+        spec = Spec(filepath=pkg.specfile)
+        spec.load()
+        self.assertEqual(spec.changelog_name, 'Myself <buddy@somewhere.org> - 1.0-1')
+        self.assertEqual(spec.version, '1.0')
+        self.assertEqual(spec.release, '1')
+        self.assertTrue(os.path.exists(f"{pkg.specfile}.orig"))
+        os.unlink(f"{pkg.specfile}.orig")
+
+
+class ControllerProjectActionQueryTest(RiftProjectTestCase):
+    """
+    Tests class for Controller action query
+    """
 
     def test_action_query(self):
         """simple 'rift query' is ok """
@@ -80,347 +209,73 @@ class ControllerProjectTest(RiftProjectTestCase):
         self.make_pkg(name='pkg2', metadata={})
         self.assertEqual(main(['query']), 0)
 
-    def test_validdiff_readme(self):
-        """ Should allow README files """
-        self.make_pkg()
-        patch_template = """
-commit 0ac8155e2655321ceb28bbf716ff66d1a9e30f29 (HEAD -> master)
-Author: Myself <buddy@somewhere.org>
-Date:   Thu Apr 25 14:30:41 2019 +0200
+    @patch('sys.stdout', new_callable=StringIO)
+    def test_action_query_output_default(self, mock_stdout):
+        self.make_pkg(name="pkg1")
+        self.make_pkg(name="pkg2", version='2.1', release='3')
+        self.assertEqual(main(['query']), 0)
+        self.assertIn(
+            "NAME MODULE       MAINTAINERS VERSION RELEASE MODULEMANAGER",
+            mock_stdout.getvalue())
+        self.assertIn(textwrap.dedent("""
+            ---- ------       ----------- ------- ------- -------------
+            pkg1 Great module Myself      1.0     1       buddy@somewhere.org
+            pkg2 Great module Myself      2.1     3       buddy@somewhere.org
+            """),
+            mock_stdout.getvalue())
 
-    packages: document 'pkg'
+    @patch('sys.stdout', new_callable=StringIO)
+    def test_action_query_output_format(self, mock_stdout):
+        self.make_pkg(name="pkg1")
+        self.make_pkg(name="pkg2", version='2.1', release='3')
+        self.assertEqual(
+            main([
+                'query', '--format',
+                '%name %module %origin %reason %tests %version %arch %release '
+                '%changelogname %changelogtime %maintainers %modulemanager '
+                '%buildrequires']), 0)
+        self.assertIn(
+            "NAME MODULE       ORIGIN REASON          TESTS VERSION ARCH   "
+            "RELEASE CHANGELOGNAME                      CHANGELOGTIME "
+            "MAINTAINERS MODULEMANAGER       BUILDREQUIRES",
+            mock_stdout.getvalue())
+        self.assertIn(textwrap.dedent("""
+            ---- ------       ------ ------          ----- ------- ----   ------- -------------                      ------------- ----------- -------------       -------------
+            pkg1 Great module Vendor Missing feature 0     1.0     noarch 1       Myself <buddy@somewhere.org> 1.0-1 2019-02-26    Myself      buddy@somewhere.org br-package
+            pkg2 Great module Vendor Missing feature 0     2.1     noarch 3       Myself <buddy@somewhere.org> 2.1-3 2019-02-26    Myself      buddy@somewhere.org br-package
+            """),
+            mock_stdout.getvalue())
 
-diff --git a/packages/pkg/{0} b/packages/pkg/{0}
-new file mode 100644
-index 0000000..e845566
---- /dev/null
-+++ b/packages/pkg/{0}
-@@ -0,0 +1 @@
-+README
-"""
 
-        for fmt in '', 'rst', 'md', 'txt':
-            filename = 'README'
-            if fmt:
-                filename = "{0}.{1}".format(filename, fmt)
-            patch = make_temp_file(patch_template.format(filename))
-            self.assertEqual(main(['validdiff', patch.name]), 0)
+class ControllerProjectTest(RiftProjectTestCase):
+    """
+    Tests class for Controller
+    """
 
-    def test_validdiff_binary(self):
-        """ Should fail if source file is a binary file """
-        pkgname = 'pkg'
-        pkgvers = 1.0
-        self.make_pkg(name=pkgname, version=pkgvers)
-        pkgsrc = os.path.join('packages', 'pkgname', 'sources',
-                              '{0}-{1}.tar.gz'.format(pkgname, pkgvers))
-        patch = make_temp_file("""
-commit 0ac8155e2655321ceb28bbf716ff66d1a9e30f29 (HEAD -> master)
-Author: Myself <buddy@somewhere.org>
-Date:   Thu Apr 25 14:30:41 2019 +0200
+    def _check_qemuuserstatic(self):
+        """Skip the test if none qemu-$arch-static executable is found for all
+        architectures declared in project configuration."""
+        if not any(
+            [
+                os.path.exists(f"/usr/bin/qemu-{arch}-static")
+                for arch in self.config.get('arch')
+            ]
+        ):
+            self.skipTest("qemu-user-static is not available")
 
-    packages: update 'pkg' sources
-
-diff --git /dev/null b/{0}
-index fcd49dd..91ef207 100644
-Binary files a/sources/a.tar.gz and b/sources/a.tar.gz differ
-""".format(pkgsrc))
-        self.assert_except(RiftError, "Binary file detected: {0}".format(pkgsrc),
-                           main, ['validdiff', patch.name])
-
-    def test_validdiff_binary_with_content(self):
-        """ Should fail if source file is a binary file (diff --binary) """
-        pkgname = 'pkg'
-        pkgvers = 1.0
-        self.make_pkg(name=pkgname, version=pkgvers)
-        pkgsrc = os.path.join('packages', 'pkgname', 'sources',
-                              '{0}-{1}.tar.gz'.format(pkgname, pkgvers))
-        patch = make_temp_file("""
-commit 0ac8155e2655321ceb28bbf716ff66d1a9e30f29 (HEAD -> master)
-Author: Myself <buddy@somewhere.org>
-Date:   Thu Apr 25 14:30:41 2019 +0200
-
-    packages: update 'pkg' sources
-
-diff --git /dev/null b/{0}
-index 6cd0ff6ec591f7f51a3479d7b66c6951a2b4afa9..91ef2076b67f3158ec1670fa7b88d88b2816aa91 100644
-GIT binary patch
-literal 8
-PcmZQ%;Sf+z_{{#tQ1BL-x
-
-literal 4
-LcmZQ%;Sc}}-05kv|
-""".format(pkgsrc))
-        self.assert_except(RiftError, "Binary file detected: {0}".format(pkgsrc),
-                           main, ['validdiff', patch.name])
-
-    def test_validdiff_package_removed(self):
-        """ Test detect removed package in patch"""
-        pkgname = 'pkg'
-        pkgvers = 1.0
-        self.make_pkg(name=pkgname, version=pkgvers)
-        pkgsrc = os.path.join('packages', 'pkgname', 'sources',
-                              '{0}-{1}.tar.gz'.format(pkgname, pkgvers))
-        patch = make_temp_file("""
-diff --git a/packages/pkg/info.yaml b/packages/pkg/info.yaml
-deleted file mode 100644
-index 32ac08e..0000000
---- a/packages/pkg/info.yaml
-+++ /dev/null
-@@ -1,6 +0,0 @@
--package:
--    maintainers:
--        - Myself
--    module: Great module
--    origin: Vendor
--    reason: Missing feature
-diff --git a/packages/pkg/pkg.spec b/packages/pkg/pkg.spec
-deleted file mode 100644
-index b92c49d..0000000
---- a/packages/pkg/pkg.spec
-+++ /dev/null
-@@ -1,24 +0,0 @@
--Name:    pkg
--Version:        1.0
--Release:        1
--Summary:        A package
--Group:          System Environment/Base
--License:        GPL
--URL:            http://nowhere.com/projects/%{{name}}/
--Source0:        %{{name}}-%{{version}}.tar.gz
--BuildArch:      noarch
--BuildRequires:  br-package
--Requires:       another-package
--Provides:       pkg-provide
--%description
--A package
--%prep
--%build
--# Nothing to build
--%install
--# Nothing to install
--%files
--# No files
--%changelog
--* Tue Feb 26 2019 Myself <buddy@somewhere.org> - 1.0-1
--- Update to 1.0 release
-diff --git a/{0} b/{0}
-deleted file mode 100644
-index 43bf48d..0000000
---- a/{0}
-+++ /dev/null
-@@ -1 +0,0 @@
--ACACACACACACACAC
-\ No newline at end of file
-""".format(pkgsrc))
-
-        with open(patch.name) as p:
-            (updated, removed) = get_packages_from_patch(
-                p, self.config, self.modules, self.staff
-            )
-            self.assertEqual(len(updated), 0)
-            self.assertEqual(len(removed), 1)
-            self.assertTrue('pkg' in removed.keys())
-
-    def test_validdiff_on_tests_directory(self):
-        """ Test if package tests directory structure is fine """
-        patch = make_temp_file("""
-diff --git a/packages/pkg/tests/sources/deep/source.c b/packages/pkg/tests/sources/deep/source.c
-new file mode 100644
-index 0000000..68344bf
---- /dev/null
-+++ b/packages/pkg/tests/sources/deep/source.c
-@@ -0,0 +1,4 @@
-+#include <stdlib.h>
-+int main(int argc, char **argv){
-+    exit(0);
-+}
-\ No newline at end of file
-""")
-        # Ensure package exists
-        self.make_pkg('pkg')
-        with open(patch.name, 'r') as f:
-            (updated, removed) = get_packages_from_patch(
-                f, self.config, self.modules, self.staff
-            )
-            self.assertEqual(len(updated), 1)
-            self.assertEqual(len(removed), 0)
-            self.assertTrue('pkg' in updated.keys())
-
-    def test_validdiff_on_invalid_file(self):
-        """Test invalid project file is detected in patch"""
-        patch = make_temp_file("""
-commit 0ac8155e2655321ceb28bbf716ff66d1a9e30f29 (HEAD -> master)
-Author: Myself <buddy@somewhere.org>
-Date:   Thu Apr 25 14:30:41 2019 +0200
-
-    project wrong file
-
-diff --git a/wrong b/wrong
-new file mode 100644
-index 0000000..68344bf
---- a/wrong
-+++ b/wrong
-@@ -0,0 +1 @@
-+README
-""")
-        self.assert_except(RiftError, "Unknown file pattern: wrong",
-                           main, ['validdiff', patch.name])
-
-    def test_validdiff_on_invalid_pkg_file(self):
-        """Test invalid package file is detected in patch"""
-        patch = make_temp_file("""
-commit 0ac8155e2655321ceb28bbf716ff66d1a9e30f29 (HEAD -> master)
-Author: Myself <buddy@somewhere.org>
-Date:   Thu Apr 25 14:30:41 2019 +0200
-
-    packages: Wrong file
-
-diff --git a/packages/pkg/wrong b/packages/pkg/wrong
-new file mode 100644
-index 0000000..68344bf
---- a/packages/pkg/wrong
-+++ b/packages/pkg/wrong
-@@ -0,0 +1 @@
-+README
-""")
-        self.assert_except(RiftError, "Unknown file pattern in 'pkg' directory: packages/pkg/wrong",
-                           main, ['validdiff', patch.name])
-
-    def test_validdiff_on_info(self):
-        patch = make_temp_file("""
-commit 0ac8155e2655321ceb28bbf716ff66d1a9e30f29 (HEAD -> master)
-Author: Myself <buddy@somewhere.org>
-Date:   Thu Apr 25 14:30:41 2019 +0200
-
-    packages: update 'pkg' infos
-
-diff --git a/packages/pkg/info.yaml b/packages/pkg/info.yaml
-new file mode 100644
-index 0000000..68344bf
---- a/packages/pkg/info.yaml
-+++ b/packages/pkg/info.yaml
-@@ -2,5 +2,5 @@ package:
-   maintainers:
-   - Myself
-   module: Great module
--  origin: Somewhere
-+  origin: Elsewhere
-   reason: Missing feature
-""")
-        self.make_pkg()
-        self.assertEqual(main(['validdiff', patch.name]), 0)
-        # For this patch, get_packages_from_patch() must not return updated nor
-        # removed packages.
-        with open(patch.name, 'r') as p:
-            (updated, removed) = get_packages_from_patch(
-                p, config=self.config, modules=self.modules, staff=self.staff
-            )
-        self.assertEqual(len(updated), 0)
-        self.assertEqual(len(removed), 0)
-
-    def test_validdiff_on_modules(self):
-        patch = make_temp_file("""
-commit 0ac8155e2655321ceb28bbf716ff66d1a9e30f29 (HEAD -> master)
-Author: Myself <buddy@somewhere.org>
-Date:   Thu Apr 25 14:30:41 2019 +0200
-
-    modules: add 'Section'
-
-diff --git a/packages/modules.yaml b/packages/modules.yaml
-new file mode 100644
-index 0000000..68344bf
---- a/packages/modules.yaml
-+++ b/packages/modules.yaml
-@@ -0,0 +3 @@
-+modules:
-+  User Tools:
-+    manager: John Doe
-""")
-        self.assertEqual(main(['validdiff', patch.name]), 0)
-        # For this patch, get_packages_from_patch() must not return updated nor
-        # removed packages.
-        with open(patch.name, 'r') as p:
-            (updated, removed) = get_packages_from_patch(
-                p, config=self.config, modules=self.modules, staff=self.staff
-            )
-        self.assertEqual(len(updated), 0)
-        self.assertEqual(len(removed), 0)
-
-    def test_rename_package(self):
-        """ Test if renaming a package trigger a build """
-        pkgname = 'pkg'
-        pkgvers = 1.0
-        self.make_pkg(name=pkgname, version=pkgvers)
-        patch = make_temp_file("""
-diff --git a/packages/pkg/pkg.spec b/packages/pkgnew/pkgnew.spec
-similarity index 100%
-rename from packages/pkg/pkg.spec
-rename to packages/pkgnew/pkgnew.spec
-diff --git a/packages/pkg/info.yaml b/packages/pkgnew/info.yaml
-similarity index 100%
-rename from packages/pkg/info.yaml
-rename to packages/pkgnew/info.yaml
-diff --git a/packages/pkg/sources/pkg-1.0.tar.gz b/packages/pkgnew/sources/pkgnew-1.0.tar.gz
-similarity index 100%
-rename from packages/pkg/sources/pkg-1.0.tar.gz
-rename to packages/pkgnew/sources/pkgnew-1.0.tar.gz
-""")
-        # For this patch, get_packages_from_patch() must return an updated
-        # package named pkgnew.
-        with open(patch.name, 'r') as p:
-            (updated, removed) = get_packages_from_patch(
-                p, config=self.config, modules=self.modules, staff=self.staff
-            )
-        self.assertEqual(len(updated), 1)
-        self.assertEqual(len(removed), 0)
-        self.assertTrue('pkgnew' in updated.keys())
-
-    def test_rename_and_update_package(self):
-        """ Test if renaming and updating a package trigger a build """
-        pkgname = 'pkg'
-        pkgvers = 1.0
-        self.make_pkg(name=pkgname, version=pkgvers)
-        patch = make_temp_file("""
-commit f8c1a88ea96adfccddab0bf43c0a90f05ab26dc5 (HEAD -> playground)
-Author: Myself <buddy@somewhere.org>
-Date:   Thu Apr 25 14:30:41 2019 +0200
-
-    packages: rename 'pkg' to 'pkgnew'
-
-diff --git a/packages/pkg/info.yaml b/packages/pkgnew/info.yaml
-similarity index 100%
-rename from packages/pkg/info.yaml
-rename to packages/pkgnew/info.yaml
-diff --git a/packages/pkg/pkg.spec b/packages/pkgnew/pkgnew.spec
-similarity index 93%
-rename from packages/pkg/pkg.spec
-rename to packages/pkgnew/pkgnew.spec
-index b92c49d..0fa690c 100644
---- a/packages/pkg/pkg.spec
-+++ b/packages/pkgnew/pkgnew.spec
-@@ -1,6 +1,6 @@
--Name:    pkg
-+Name:    pkgnew
- Version:        1.0
--Release:        1
-+Release:        2
- Summary:        A package
- Group:          System Environment/Base
- License:        GPL
-diff --git a/packages/pkg/sources/pkg-1.0.tar.gz b/packages/pkgnew/sources/pkgnew-1.0.tar.gz
-similarity index 100%
-rename from packages/pkg/sources/pkg-1.0.tar.gz
-rename to packages/pkgnew/sources/pkgnew-1.0.tar.gz
-""")
-        # For this patch, get_packages_from_patch() must return an updated
-        # package named pkgnew.
-        with open(patch.name, 'r') as p:
-            (updated, removed) = get_packages_from_patch(
-                p, config=self.config, modules=self.modules, staff=self.staff
-            )
-        self.assertEqual(len(updated), 1)
-        self.assertEqual(len(removed), 0)
-        self.assertTrue('pkgnew' in updated.keys())
+    @patch('rift.Controller.remove_packages')
+    @patch('rift.Controller.validate_pkgs')
+    @patch('rift.Controller.get_packages_from_patch')
+    def test_action_validdiff(self, mock_get_packages_from_patch,
+                              mock_validate_pkgs, mock_remove_packages):
+        """ Test validdiff action calls expected functions """
+        mock_get_packages_from_patch.return_value = (
+            {'pkg': Package('pkg', self.config, self.staff, self.modules)}, {}
+        )
+        self.assertEqual(main(['validdiff', '/dev/null']), 0)
+        mock_get_packages_from_patch.assert_called_once()
+        mock_validate_pkgs.assert_called_once()
+        mock_remove_packages.assert_called_once()
 
     @patch('rift.Controller.ProjectArchRepositories')
     def test_remove_packages(self, mock_parepository_class):
@@ -1165,6 +1020,138 @@ rename to packages/pkgnew/sources/pkgnew-1.0.tar.gz
             'DEBUG:root:       ⥀ Loop detected on node libone at depth 2: libone→libthree→libtwo→libone',
             cm.output
         )
+
+class ControllerProjectActionGerritTest(RiftProjectTestCase):
+    """
+    Tests class for Controller action gerrit
+    """
+
+    def test_gerrit_missing_patch_change_patchset(self):
+        """gerrit without patch, change or patchset fails"""
+        for cmd in (['gerrit', '--change', '1', '--patchset', '2'],
+                    ['gerrit', '--patchset', '2', '/dev/null'],
+                    ['gerrit', '--change', '1', '/dev/null']):
+            with self.assertRaisesRegex(SystemExit, "2"):
+                main(cmd)
+
+    @patch('rift.Controller.Review')
+    def test_gerrit(self, mock_review):
+        """simple gerrit"""
+        self.make_pkg()
+        patch = make_temp_file(
+            textwrap.dedent("""
+                diff --git a/packages/pkg/pkg.spec b/packages/pkg/pkg.spec
+                index d1a0d0e7..b3e36379 100644
+                --- a/packages/pkg/pkg.spec
+                +++ b/packages/pkg/pkg.spec
+                @@ -1,6 +1,6 @@
+                 Name:    pkg
+                 Version:        1.0
+                -Release:        1
+                +Release:        2
+                 Summary:        A package
+                 Group:          System Environment/Base
+                 License:        GPL
+                """))
+        main(['gerrit', '--change', '1', '--patchset', '2', patch.name])
+        # Check review has not been invalidated and pushed
+        mock_review.return_value.invalidate.assert_not_called()
+        mock_review.return_value.push.assert_called_once()
+
+    @patch('rift.Controller.Review')
+    def test_gerrit_review_invalidated(self, mock_review):
+        """gerrit review invalidated"""
+        # Make package and inject rpmlint error ($RPM_BUILD_ROOT and
+        # RPM_SOURCE_DIR in buildsteps) in RPM spec file, with both rpmlint v1
+        # and v2.
+        self.make_pkg()
+        with open(self.pkgspecs['pkg'], "w") as spec:
+            spec.write(
+                gen_rpm_spec(
+                    name='pkg',
+                    version='1.0',
+                    release='2',
+                    arch='noarch',
+                    buildsteps="$RPM_SOURCE_DIR\n$RPM_BUILD_ROOT",
+                )
+            )
+        patch = make_temp_file(
+            textwrap.dedent("""
+                diff --git a/packages/pkg/pkg.spec b/packages/pkg/pkg.spec
+                index d1a0d0e7..b3e36379 100644
+                --- a/packages/pkg/pkg.spec
+                +++ b/packages/pkg/pkg.spec
+                @@ -1,6 +1,6 @@
+                 Name:    pkg
+                 Version:        1.0
+                -Release:        1
+                +Release:        2
+                 Summary:        A package
+                 Group:          System Environment/Base
+                 License:        GPL
+                """))
+        main(['gerrit', '--change', '1', '--patchset', '2', patch.name])
+        # Check review has been invalidated and pushed
+        mock_review.return_value.invalidate.assert_called_once()
+        mock_review.return_value.push.assert_called_once()
+
+
+class ControllerProjectActionChangelogTest(RiftProjectTestCase):
+    """
+    Tests class for Controller action changelog
+    """
+
+    def test_action_changelog_without_pkg(self):
+        """changelog without package fails """
+        with self.assertRaisesRegex(SystemExit, "2"):
+            main(['changelog'])
+
+    def test_action_changelog_without_comment(self):
+        """changelog without comment fails """
+        with self.assertRaisesRegex(SystemExit, "2"):
+            main(['changelog', 'pkg'])
+
+    def test_action_changelog_without_maintainer(self):
+        """changelog without maintainer """
+        with self.assertRaisesRegex(RiftError, "You must specify a maintainer"):
+            main(['changelog', 'pkg', '-c', 'basic change'])
+
+    def test_action_changelog_pkg_not_found(self):
+        """changelog package not found"""
+        with self.assertRaisesRegex(
+            RiftError,
+            "Package 'pkg' directory does not exist"):
+            main(['changelog', 'pkg', '-c', 'basic change', '-t', 'Myself'])
+
+    def test_action_changelog(self):
+        """simple changelog"""
+        self.make_pkg()
+        self.assertEqual(
+            main(['changelog', 'pkg', '-c', 'basic change', '-t', 'Myself']), 0)
+        spec = Spec(filepath=self.pkgspecs['pkg'])
+        spec.load()
+        self.assertEqual(spec.changelog_name, 'Myself <buddy@somewhere.org> - 1.0-1')
+        self.assertEqual(spec.version, '1.0')
+        self.assertEqual(spec.release, '1')
+
+    def test_action_changelog_bump(self):
+        """simple changelog with bump"""
+        self.make_pkg()
+        self.assertEqual(
+            main(['changelog', 'pkg', '-c', 'basic change', '-t', 'Myself', '--bump']),
+            0)
+        spec = Spec(filepath=self.pkgspecs['pkg'])
+        spec.load()
+        self.assertEqual(spec.changelog_name, 'Myself <buddy@somewhere.org> - 1.0-2')
+        self.assertEqual(spec.version, '1.0')
+        self.assertEqual(spec.release, '2')
+
+    def test_action_changelog_unknown_maintainer(self):
+        """changelog with unknown maintainer"""
+        self.make_pkg()
+        with self.assertRaises(TypeError):
+            main(['changelog', 'pkg', '-c', 'basic change', '-t', 'Fail'])
+
 
 class ControllerArgumentsTest(RiftTestCase):
     """ Arguments parsing tests for Controller module"""

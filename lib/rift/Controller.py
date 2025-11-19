@@ -49,6 +49,7 @@ from rift import RiftError, __version__
 from rift.Annex import Annex, is_binary
 from rift.Config import Config, Staff, Modules
 from rift.Gerrit import Review
+from rift.auth import Auth
 from rift.Mock import Mock
 from rift.Package import Package, Test
 from rift.Repository import LocalRepository, ProjectArchRepositories
@@ -216,6 +217,9 @@ def make_parser():
     subsubprs.add_argument('--dest', metavar='PATH', required=True,
                            help='destination path')
 
+    # Auth options
+    subprs = subparsers.add_parser('auth', help='Authenticate to an IDP for privileged actions')
+
     # VM options
     subprs = subparsers.add_parser('vm', help='Manipulate VM process')
     subprs.add_argument('-a', '--arch', help='CPU architecture of the VM')
@@ -264,6 +268,11 @@ def make_parser():
                         help='maintainer name from staff.yaml')
     subprs.add_argument('--bump', dest='bump', action='store_true',
                         help='also bump the release number')
+
+    # GitLab review
+    subprs = subparsers.add_parser('gitlab', add_help=False,
+                                   help='Check specfiles for GitLab')
+    subprs.add_argument('patch', metavar='PATCH', type=argparse.FileType('r'))
 
     # Gerrit review
     subprs = subparsers.add_parser('gerrit', add_help=False,
@@ -358,8 +367,8 @@ def action_annex(args, config, staff, modules):
                 message(f"{srcfile}: not an annex pointer, ignoring")
 
     elif args.annex_cmd == 'delete':
-        annex.delete(args.id)
-        message(f"{args.id} has been deleted")
+        if annex.delete(args.id):
+            message(f"{args.id} has been deleted")
 
     elif args.annex_cmd == 'get':
         annex.get(args.id, args.dest)
@@ -370,7 +379,25 @@ def action_annex(args, config, staff, modules):
         output_file = annex.backup(
             Package.list(config, staff, modules), args.output_file
         )
+
         message(f"Annex backup is available here: {output_file}")
+
+def action_auth(args, config):
+    """Action for 'auth' sub-commands."""
+    auth_obj = Auth(config)
+
+    if auth_obj.authenticate():
+        msg = "succesfully authenticated"
+
+        t = auth_obj.get_expiration_timestr()
+        if t != "":
+            msg += f"; token expires in {t}"
+        else:
+            msg += "; token expiration time is unknown"
+
+        message(msg)
+    else:
+        message("error: authentication failed")
 
 def _vm_start(vm):
     if vm.running():
@@ -921,6 +948,19 @@ def action_validdiff(args, config):
 
     return rc
 
+def action_gitlab(args, config, staff, modules):
+    """Review a patchset for GitLab (specfiles)"""
+
+    # Parse matching diff and specfiles in it
+    for f in parse_unidiff(args.patch):
+        path = f.path
+        names = path.split(os.path.sep)
+        if names[0] == config.get('packages_dir'):
+            pkg = Package(names[1], config, staff, modules)
+            if os.path.abspath(path) == pkg.specfile and not f.is_deleted_file:
+                spec = Spec(pkg.specfile, config=config)
+                spec.check()
+
 def action_gerrit(args, config, staff, modules):
     """Review a patchset for Gerrit (specfiles)"""
 
@@ -1041,6 +1081,11 @@ def action(config, args):
     # ANNEX
     if args.command == 'annex':
         action_annex(args, config, *staff_modules(config))
+        return
+
+    # AUTH
+    if args.command == 'auth':
+        action_auth(args, config)
         return
 
     # VM
@@ -1184,6 +1229,10 @@ def action(config, args):
         Spec(pkg.specfile,
              config=config).add_changelog_entry(author, args.comment,
                                                 bump=getattr(args, 'bump', False))
+
+    # GITLAB
+    elif args.command == 'gitlab':
+        return action_gitlab(args, config, *staff_modules(config))
 
     # GERRIT
     elif args.command == 'gerrit':

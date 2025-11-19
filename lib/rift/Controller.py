@@ -382,7 +382,7 @@ def action_annex(args, config, staff, modules):
 
         message(f"Annex backup is available here: {output_file}")
 
-def action_auth(args, config):
+def action_auth(config):
     """Action for 'auth' sub-commands."""
     auth_obj = Auth(config)
 
@@ -399,7 +399,7 @@ def action_auth(args, config):
     else:
         message("error: authentication failed")
 
-        
+
 class BasicTest(Test):
     """
     Auto-generated test for a Package.
@@ -555,7 +555,7 @@ def test_pkgs(config, args, pkgs, arch, extra_repos=None):
             results.add_failure(case, time.time() - now, err=str(ex))
             continue
 
-        if not spec.supports_arch(arch):
+        if not pkg.supports_arch(arch) or not spec.supports_arch(arch):
             logging.info(
                 "Skipping test on architecture %s not supported by "
                 "package %s",
@@ -601,7 +601,7 @@ def validate_pkgs(config, args, pkgs, arch):
             results.add_failure(case, time.time() - now, err=str(ex))
             continue  # skip current package
 
-        if not spec.supports_arch(arch):
+        if not pkg.supports_arch(arch) or not spec.supports_arch(arch):
             logging.info(
                 "Skipping validation on architecture %s not supported by "
                 "package %s",
@@ -769,7 +769,7 @@ def build_pkgs(config, args, pkgs, arch):
             results.add_failure(case, time.time() - now, err=str(ex))
             continue  # skip current package
 
-        if not spec.supports_arch(arch):
+        if not pkg.supports_arch(arch) or not spec.supports_arch(arch):
             logging.info(
                 "Skipping build on architecture %s not supported by "
                 "package %s",
@@ -961,7 +961,8 @@ def action_gerrit(args, config, staff, modules):
         names = filepath.split(os.path.sep)
         if names[0] == config.get('packages_dir'):
             pkg = Package(names[1], config, staff, modules)
-            if filepath == pkg.specfile and not patchedfile.is_deleted_file:
+            if (filepath == os.path.relpath(pkg.specfile) and
+                not patchedfile.is_deleted_file):
                 Spec(pkg.specfile, config=config).analyze(review, pkg.dir)
 
     # Push review
@@ -1057,6 +1058,44 @@ def action_changelog(args, config):
     
     return 0
   
+def action_create_import(args, config):
+    """Action for 'create', 'import' and 'reimport' commands."""
+    if args.command == 'create':
+        pkgname = args.name
+    elif args.command in ('import', 'reimport'):
+        rpm = RPM(args.file, config)
+        if not rpm.is_source:
+            raise RiftError(f"{args.file} is not a source RPM")
+        pkgname = rpm.name
+
+    if args.maintainer is None:
+        raise RiftError("You must specify a maintainer")
+
+    pkg = Package(pkgname, config, *staff_modules(config))
+    if args.command == 'reimport':
+        pkg.load()
+
+    if args.module:
+        pkg.module = args.module
+    if args.maintainer not in pkg.maintainers:
+        pkg.maintainers.append(args.maintainer)
+    if args.reason:
+        pkg.reason = args.reason
+    if args.origin:
+        pkg.origin = args.origin
+
+    pkg.check_info()
+    pkg.write()
+
+    if args.command in ('create', 'import'):
+        message(f"Package '{pkg.name}' has been created")
+
+    if args.command in ('import', 'reimport'):
+        rpm.extract_srpm(pkg.dir, pkg.sourcesdir)
+        message(f"Package '{pkg.name}' has been {args.command}ed")
+
+    return 0
+
 def action_query(args, config):
     """Action for 'query' command."""
     staff, modules = staff_modules(config)
@@ -1159,7 +1198,7 @@ def action(config, args):
 
     # AUTH
     if args.command == 'auth':
-        action_auth(args, config)
+        action_auth(config)
         return
 
     # VM
@@ -1168,40 +1207,7 @@ def action(config, args):
 
     # CREATE/IMPORT/REIMPORT
     if args.command in ['create', 'import', 'reimport']:
-
-        if args.command == 'create':
-            pkgname = args.name
-        elif args.command in ('import', 'reimport'):
-            rpm = RPM(args.file, config)
-            if not rpm.is_source:
-                raise RiftError(f"{args.file} is not a source RPM")
-            pkgname = rpm.name
-
-        if args.maintainer is None:
-            raise RiftError("You must specify a maintainer")
-
-        pkg = Package(pkgname, config, *staff_modules(config))
-        if args.command == 'reimport':
-            pkg.load()
-
-        if args.module:
-            pkg.module = args.module
-        if args.maintainer not in pkg.maintainers:
-            pkg.maintainers.append(args.maintainer)
-        if args.reason:
-            pkg.reason = args.reason
-        if args.origin:
-            pkg.origin = args.origin
-
-        pkg.check_info()
-        pkg.write()
-
-        if args.command in ('create', 'import'):
-            message(f"Package '{pkg.name}' has been created")
-
-        if args.command in ('import', 'reimport'):
-            rpm.extract_srpm(pkg.dir, pkg.sourcesdir)
-            message(f"Package '{pkg.name}' has been {args.command}ed")
+        return action_create_import(args, config)
 
     # BUILD
     elif args.command == 'build':

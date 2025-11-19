@@ -7,11 +7,12 @@ import shutil
 import atexit
 from unittest.mock import patch, Mock
 import subprocess
+import textwrap
 from io import StringIO
 import textwrap
 
 from TestUtils import (
-    make_temp_dir, RiftTestCase, RiftProjectTestCase
+    make_temp_file, make_temp_dir, gen_rpm_spec, RiftTestCase, RiftProjectTestCase
 )
 
 from VM import GLOBAL_CACHE, VALID_IMAGE_URL, PROXY
@@ -43,6 +44,145 @@ class ControllerTest(RiftTestCase):
     def test_main_version(self):
         """simple 'rift --version'"""
         self.assert_except(SystemExit, "0", main, ['--version'])
+
+
+class ControllerProjectActionCreateTest(RiftProjectTestCase):
+    """
+    Tests class for Controller action create
+    """
+
+    def test_create_missing_pkg_module_reason(self):
+        """create without package, module or reason fails"""
+        for cmd in (['create', '-m', 'Great module', '-r', 'Good reason'],
+                    ['create', 'pkg', '-r', 'Good reason'],
+                    ['create', 'pkg', '-m', 'Great module']):
+            with self.assertRaisesRegex(SystemExit, "2"):
+                main(cmd)
+
+    def test_create_missing_maintainer(self):
+        """create without maintainer"""
+        with self.assertRaisesRegex(RiftError, "You must specify a maintainer"):
+            main(['create', 'pkg', '-m', 'Great module', '-r', 'Good reason'])
+
+    def test_create(self):
+        """simple create"""
+        main(['create', 'pkg', '-m', 'Great module', '-r', 'Good reason',
+              '--maintainer', 'Myself'])
+        pkg = Package('pkg', self.config, self.staff, self.modules)
+        pkg.load()
+        self.assertEqual(pkg.module, 'Great module')
+        self.assertEqual(pkg.reason, 'Good reason')
+        self.assertCountEqual(pkg.maintainers, ['Myself'])
+        os.unlink(pkg.metafile)
+        os.rmdir(os.path.dirname(pkg.metafile))
+
+    def test_create_unknown_maintainer(self):
+        """create with unknown maintainer fails"""
+        with self.assertRaisesRegex(
+            RiftError, "Maintainer 'Fail' is not defined"):
+            main(['create', 'pkg', '-m', 'Great module', '-r', 'Good reason',
+                  '--maintainer', 'Fail'])
+
+
+class ControllerProjectActionImportTest(RiftProjectTestCase):
+    """
+    Tests class for Controller action import
+    """
+    @property
+    def src_rpm(self):
+        return os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), 'materials', 'pkg-1.0-1.src.rpm'
+        )
+
+    @property
+    def bin_rpm(self):
+        return os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), 'materials', 'pkg-1.0-1.noarch.rpm'
+        )
+
+    def test_import_missing_pkg_module_reason(self):
+        """import without package, module or reason fails"""
+        for cmd in (['import', '-m', 'Great module', '-r', 'Good reason'],
+                    ['import', 'pkg.src.rpm', '-r', 'Good reason'],
+                    ['import', 'pkg.src.rpm', '-m', 'Great module']):
+            with self.assertRaisesRegex(SystemExit, "2"):
+                main(cmd)
+
+    def test_import_missing_maintainer(self):
+        """import without maintainer"""
+        with self.assertRaisesRegex(RiftError, "You must specify a maintainer"):
+            main(['import', self.src_rpm, '-m', 'Great module', '-r', 'Good reason'])
+
+    def test_import_bin_rpm(self):
+        """import binary rpm"""
+        with self.assertRaisesRegex(
+            RiftError,
+            ".*pkg-1.0-1.noarch.rpm is not a source RPM$"):
+            main(['import', self.bin_rpm, '-m', 'Great module',
+                  '-r', 'Good reason', '--maintainer', 'Myself'])
+
+    def test_import(self):
+        """simple import"""
+        main(['import', self.src_rpm, '-m', 'Great module', '-r', 'Good reason',
+              '--maintainer', 'Myself'])
+        pkg = Package('pkg', self.config, self.staff, self.modules)
+        pkg.load()
+        self.assertEqual(pkg.module, 'Great module')
+        self.assertEqual(pkg.reason, 'Good reason')
+        self.assertCountEqual(pkg.maintainers, ['Myself'])
+        spec = Spec(filepath=pkg.specfile)
+        spec.load()
+        self.assertEqual(spec.changelog_name, 'Myself <buddy@somewhere.org> - 1.0-1')
+        self.assertEqual(spec.version, '1.0')
+        self.assertEqual(spec.release, '1')
+        self.assertTrue(os.path.exists(f"{pkg.specfile}.orig"))
+        shutil.rmtree(os.path.dirname(pkg.metafile))
+
+    def test_import_unknown_maintainer(self):
+        """import with unknown maintainer fails"""
+        with self.assertRaisesRegex(
+            RiftError, "Maintainer 'Fail' is not defined"):
+            main(['import', self.src_rpm, '-m', 'Great module',
+                    '-r', 'Good reason', '--maintainer', 'Fail'])
+
+
+class ControllerProjectActionReimportTest(RiftProjectTestCase):
+    """
+    Tests class for Controller actionre import
+    """
+    @property
+    def src_rpm(self):
+        return os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), 'materials', 'pkg-1.0-1.src.rpm'
+        )
+
+    @property
+    def bin_rpm(self):
+        return os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), 'materials', 'pkg-1.0-1.noarch.rpm'
+        )
+
+    def test_reimport_missing_maintainer(self):
+        """reimport without maintainer"""
+        with self.assertRaisesRegex(RiftError, "You must specify a maintainer"):
+            main(['reimport', self.src_rpm, '-m', 'Great module', '-r', 'Good reason'])
+
+    def test_reimport(self):
+        """simple reimport"""
+        self.make_pkg(name='pkg')
+        main(['reimport', self.src_rpm, '--maintainer', 'Myself'])
+        pkg = Package('pkg', self.config, self.staff, self.modules)
+        pkg.load()
+        self.assertEqual(pkg.module, 'Great module')
+        self.assertEqual(pkg.reason, 'Missing feature')
+        self.assertCountEqual(pkg.maintainers, ['Myself'])
+        spec = Spec(filepath=pkg.specfile)
+        spec.load()
+        self.assertEqual(spec.changelog_name, 'Myself <buddy@somewhere.org> - 1.0-1')
+        self.assertEqual(spec.version, '1.0')
+        self.assertEqual(spec.release, '1')
+        self.assertTrue(os.path.exists(f"{pkg.specfile}.orig"))
+        os.unlink(f"{pkg.specfile}.orig")
 
 
 class ControllerProjectActionQueryTest(RiftProjectTestCase):
@@ -695,6 +835,81 @@ class ControllerProjectTest(RiftProjectTestCase):
             "/tmp/rift/output, parent directory /tmp/rift does not exist."
         ):
             main(['sync'])
+
+
+class ControllerProjectActionGerritTest(RiftProjectTestCase):
+    """
+    Tests class for Controller action gerrit
+    """
+
+    def test_gerrit_missing_patch_change_patchset(self):
+        """gerrit without patch, change or patchset fails"""
+        for cmd in (['gerrit', '--change', '1', '--patchset', '2'],
+                    ['gerrit', '--patchset', '2', '/dev/null'],
+                    ['gerrit', '--change', '1', '/dev/null']):
+            with self.assertRaisesRegex(SystemExit, "2"):
+                main(cmd)
+
+    @patch('rift.Controller.Review')
+    def test_gerrit(self, mock_review):
+        """simple gerrit"""
+        self.make_pkg()
+        patch = make_temp_file(
+            textwrap.dedent("""
+                diff --git a/packages/pkg/pkg.spec b/packages/pkg/pkg.spec
+                index d1a0d0e7..b3e36379 100644
+                --- a/packages/pkg/pkg.spec
+                +++ b/packages/pkg/pkg.spec
+                @@ -1,6 +1,6 @@
+                 Name:    pkg
+                 Version:        1.0
+                -Release:        1
+                +Release:        2
+                 Summary:        A package
+                 Group:          System Environment/Base
+                 License:        GPL
+                """))
+        main(['gerrit', '--change', '1', '--patchset', '2', patch.name])
+        # Check review has not been invalidated and pushed
+        mock_review.return_value.invalidate.assert_not_called()
+        mock_review.return_value.push.assert_called_once()
+
+    @patch('rift.Controller.Review')
+    def test_gerrit_review_invalidated(self, mock_review):
+        """gerrit review invalidated"""
+        # Make package and inject rpmlint error ($RPM_BUILD_ROOT and
+        # RPM_SOURCE_DIR in buildsteps) in RPM spec file, with both rpmlint v1
+        # and v2.
+        self.make_pkg()
+        with open(self.pkgspecs['pkg'], "w") as spec:
+            spec.write(
+                gen_rpm_spec(
+                    name='pkg',
+                    version='1.0',
+                    release='2',
+                    arch='noarch',
+                    buildsteps="$RPM_SOURCE_DIR\n$RPM_BUILD_ROOT",
+                )
+            )
+        patch = make_temp_file(
+            textwrap.dedent("""
+                diff --git a/packages/pkg/pkg.spec b/packages/pkg/pkg.spec
+                index d1a0d0e7..b3e36379 100644
+                --- a/packages/pkg/pkg.spec
+                +++ b/packages/pkg/pkg.spec
+                @@ -1,6 +1,6 @@
+                 Name:    pkg
+                 Version:        1.0
+                -Release:        1
+                +Release:        2
+                 Summary:        A package
+                 Group:          System Environment/Base
+                 License:        GPL
+                """))
+        main(['gerrit', '--change', '1', '--patchset', '2', patch.name])
+        # Check review has been invalidated and pushed
+        mock_review.return_value.invalidate.assert_called_once()
+        mock_review.return_value.push.assert_called_once()
 
 
 class ControllerProjectActionChangelogTest(RiftProjectTestCase):

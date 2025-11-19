@@ -128,7 +128,7 @@ def _validate_patched_file(patched_file, config, modules, staff):
         return False
 
     if names[0] == "gitlab-ci":
-        logging.debug("Ignoring gitlab ci file: %s" % filepath)
+        logging.debug("Ignoring gitlab ci file: %s", filepath)
         return False
 
     if patched_file.binary:

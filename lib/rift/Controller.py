@@ -382,7 +382,7 @@ def action_annex(args, config, staff, modules):
 
         message(f"Annex backup is available here: {output_file}")
 
-def action_auth(args, config):
+def action_auth(config):
     """Action for 'auth' sub-commands."""
     auth_obj = Auth(config)
 
@@ -399,7 +399,7 @@ def action_auth(args, config):
     else:
         message("error: authentication failed")
 
-        
+
 class BasicTest(Test):
     """
     Auto-generated test for a Package.
@@ -1059,9 +1059,9 @@ def action_create_import(args, config):
     if args.command in ('import', 'reimport'):
         rpm.extract_srpm(pkg.dir, pkg.sourcesdir)
         message(f"Package '{pkg.name}' has been {args.command}ed")
-        
+
     return 0
-  
+
 def action_query(args, config):
     """Action for 'query' command."""
     staff, modules = staff_modules(config)
@@ -1164,7 +1164,7 @@ def action(config, args):
 
     # AUTH
     if args.command == 'auth':
-        action_auth(args, config)
+        action_auth(config)
         return
 
     # VM

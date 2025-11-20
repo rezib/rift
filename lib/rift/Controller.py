@@ -353,7 +353,7 @@ def action_annex(args, config, staff, modules):
             try:
                 timestr = time.strftime('%x %X', time.localtime(mtime))
                 print(fmt % (filename, size, timestr, ','.join(names)))
-                
+
             except TypeError:
                 print(fmt % (filename, size, mtime, ','.join(names)))
 
@@ -1097,9 +1097,9 @@ def action_changelog(args, config):
     Spec(pkg.specfile,
             config=config).add_changelog_entry(author, args.comment,
                                             bump=getattr(args, 'bump', False))
-    
+
     return 0
-  
+
 def action_create_import(args, config):
     """Action for 'create', 'import' and 'reimport' commands."""
     if args.command == 'create':

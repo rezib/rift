@@ -4,10 +4,11 @@
 
 import os
 import shutil
-from unittest.mock import patch
+from unittest.mock import Mock, call, patch
 
-from TestUtils import make_temp_dir, RiftTestCase
-from rift.Repository import ConsumableRepository, LocalRepository, ProjectArchRepositories
+from ..TestUtils import make_temp_dir, RiftTestCase
+from rift.repository.rpm import ConsumableRepository, LocalRepository, ArchRepositoriesRPM
+from rift.package.rpm import PackageRPM
 from rift.Config import _DEFAULT_REPO_CMD, Config
 from rift.RPM import RPM
 from rift import RiftError
@@ -84,7 +85,7 @@ class LocalRepositoryTest(RiftTestCase):
         ):
             repo.rpms_dir('fail')
 
-    @patch('rift.Repository.Popen')
+    @patch('rift.repository.rpm.Popen')
     def test_create(self, mock_popen):
         """ Test LocalRepository create """
         # Emulate successful createrepo execution
@@ -99,7 +100,7 @@ class LocalRepositoryTest(RiftTestCase):
         self.assertTrue(os.path.exists(repo.rpms_dir(arch)))
         shutil.rmtree(local_repo_path)
 
-    @patch('rift.Repository.Popen')
+    @patch('rift.repository.rpm.Popen')
     def test_create_failure(self, mock_popen):
         """ Test LocalRepository create failure """
         # Emulate createrepo execution failure
@@ -114,7 +115,7 @@ class LocalRepositoryTest(RiftTestCase):
             repo.create()
         shutil.rmtree(local_repo_path)
 
-    @patch('rift.Repository.Popen')
+    @patch('rift.repository.rpm.Popen')
     def test_update(self, mock_popen):
         """ Test LocalRepository update """
         # Emulate successful createrepo execution
@@ -134,7 +135,7 @@ class LocalRepositoryTest(RiftTestCase):
         self.assertEqual(mock_popen.call_count, 2)
         shutil.rmtree(local_repo_path)
 
-    @patch('rift.Repository.Popen')
+    @patch('rift.repository.rpm.Popen')
     def test_update_failure(self, mock_popen):
         """ Test LocalRepository update failure """
         # Emulate createrepo execution failure
@@ -156,7 +157,7 @@ class LocalRepositoryTest(RiftTestCase):
         """
         Add packages from tests materials to repository and return RPM objects.
         """
-        tests_dir = os.path.dirname(os.path.abspath(__file__))
+        tests_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
         # Add source and binary packages from tests materials
         src_rpm = RPM(
             os.path.join(tests_dir, 'materials', 'pkg-1.0-1.src.rpm')
@@ -337,9 +338,9 @@ class ConsumableRepositoryTest(RiftTestCase):
         repo =  ConsumableRepository('http://some/where/x86_64')
         self.assertEqual(repo.generic_url('x86_64'), 'http://some/where/$basearch')
 
-class ProjectArchRepositoriesTest(RiftTestCase):
+class ArchRepositoriesRPMTest(RiftTestCase):
     """
-    Tests class for ProjectArchRepositories
+    Tests class for ArchRepositoriesRPM
     """
     def setUp(self):
         self.config = Config()
@@ -352,7 +353,7 @@ class ProjectArchRepositoriesTest(RiftTestCase):
                 'priority': 90,
             }
         }
-        repos = ProjectArchRepositories(self.config, 'x86_64')
+        repos = ArchRepositoriesRPM(self.config, None, 'x86_64')
         self.assertEqual(repos.working, None)
         self.assertEqual(len(repos.supplementaries), 1)
         self.assertEqual(len(repos.all), 1)
@@ -362,9 +363,8 @@ class ProjectArchRepositoriesTest(RiftTestCase):
     def test_working(self):
         """Test working repository without supplementary repository"""
         working_repo_path = make_temp_dir()
-        self.config.options['working_repo'] = working_repo_path
         self.config.options['repos'] = {}
-        repos = ProjectArchRepositories(self.config, 'x86_64')
+        repos = ArchRepositoriesRPM(self.config, working_repo_path, 'x86_64')
         self.assertIsInstance(repos.working, LocalRepository)
         self.assertEqual(len(repos.supplementaries), 0)
         self.assertEqual(len(repos.all), 1)
@@ -376,7 +376,6 @@ class ProjectArchRepositoriesTest(RiftTestCase):
     def test_working_and_supplementaries(self):
         """Test working repository and two supplementary repositories"""
         working_repo_path = make_temp_dir()
-        self.config.options['working_repo'] = working_repo_path
         self.config.options['repos'] = {
             'os': {
                 'url': 'file:///rift/packages/x86_64/os',
@@ -387,7 +386,7 @@ class ProjectArchRepositoriesTest(RiftTestCase):
                 'priority': 90,
             },
         }
-        repos = ProjectArchRepositories(self.config, 'x86_64')
+        repos = ArchRepositoriesRPM(self.config, working_repo_path, 'x86_64')
         self.assertIsInstance(repos.working, LocalRepository)
         self.assertEqual(len(repos.supplementaries), 2)
         self.assertEqual(len(repos.all), 3)
@@ -399,7 +398,7 @@ class ProjectArchRepositoriesTest(RiftTestCase):
 
     def test_extra(self):
         """Test extra repository"""
-        repos = ProjectArchRepositories(
+        repos = ArchRepositoriesRPM(
             self.config,
             'x86_64',
             extra=ConsumableRepository('/nowhere', name='hello'),
@@ -412,10 +411,10 @@ class ProjectArchRepositoriesTest(RiftTestCase):
     def test_can_publish(self):
         """Test ProjectArchRepositories.can_publish() method"""
         working_repo_path = make_temp_dir()
-        repos = ProjectArchRepositories(self.config, 'x86_64')
+        repos = ArchRepositoriesRPM(self.config, 'x86_64')
         self.assertFalse(repos.can_publish())
         self.config.options['working_repo'] = working_repo_path
-        repos = ProjectArchRepositories(self.config, 'x86_64')
+        repos = ArchRepositoriesRPM(self.config, 'x86_64')
         self.assertTrue(repos.can_publish())
         shutil.rmtree(working_repo_path)
 
@@ -426,7 +425,7 @@ class ProjectArchRepositoriesTest(RiftTestCase):
                 working_repo_path, '$arch'
         )
         self.config.options['repos'] = {}
-        repos = ProjectArchRepositories(self.config, 'x86_64')
+        repos = ArchRepositoriesRPM(self.config, 'x86_64')
         self.assertIsInstance(repos.working, LocalRepository)
         self.assertEqual(repos.working.consumables['x86_64'].name, 'working')
         self.assertEqual(
@@ -443,9 +442,9 @@ class ProjectArchRepositoriesTest(RiftTestCase):
         self.config.options['x86_64'] = {
             'working_repo': other_working_repo_path
         }
-        repos = ProjectArchRepositories(self.config, 'x86_64')
+        repos = ArchRepositoriesRPM(self.config, 'x86_64')
         self.assertEqual(repos.working.path, other_working_repo_path)
-        repos = ProjectArchRepositories(self.config, 'aarch64')
+        repos = ArchRepositoriesRPM(self.config, 'aarch64')
         self.assertEqual(
             repos.working.path, os.path.join(working_repo_path, 'aarch64')
         )
@@ -464,7 +463,7 @@ class ProjectArchRepositoriesTest(RiftTestCase):
                 'priority': 90,
             },
         }
-        repos = ProjectArchRepositories(self.config, 'x86_64')
+        repos = ArchRepositoriesRPM(self.config, None, 'x86_64')
         self.assertEqual(repos.supplementaries[0].name, 'os')
         self.assertEqual(
             repos.supplementaries[0].url,
@@ -492,7 +491,7 @@ class ProjectArchRepositoriesTest(RiftTestCase):
                 'priority': 90,
             },
         }
-        repos = ProjectArchRepositories(self.config, 'x86_64')
+        repos = ArchRepositoriesRPM(self.config, None, 'x86_64')
         self.assertEqual(repos.supplementaries[0].name, 'other-os')
         self.assertEqual(
             repos.supplementaries[0].url,
@@ -504,7 +503,7 @@ class ProjectArchRepositoriesTest(RiftTestCase):
             'file:///rift/other/packages/extra'
         )
 
-        repos = ProjectArchRepositories(self.config, 'aarch64')
+        repos = ArchRepositoriesRPM(self.config, None, 'aarch64')
         self.assertEqual(repos.supplementaries[0].name, 'os')
         self.assertEqual(
             repos.supplementaries[0].url,
@@ -515,3 +514,27 @@ class ProjectArchRepositoriesTest(RiftTestCase):
             repos.supplementaries[1].url,
             'file:///rift/packages/aarch64/extra'
         )
+
+    def test_delete_matching(self):
+        """Test delete_matching() call expected method on working repo"""
+        working_repo_path = make_temp_dir()
+        repos = ArchRepositoriesRPM(self.config, working_repo_path, 'x86_64')
+        repos.working = Mock(spec=LocalRepository)
+        repos.working.search.return_value = []
+        repos.delete_matching('pkg')
+        repos.working.search.assert_called_once_with('pkg')
+        repos.working.delete.assert_not_called()
+        repos.working.update.assert_called_once()
+        shutil.rmtree(working_repo_path)
+
+    def test_delete_matching_not_found(self):
+        """Test delete_matching() call expected method on working repo when package not found"""
+        working_repo_path = make_temp_dir()
+        repos = ArchRepositoriesRPM(self.config, working_repo_path, 'x86_64')
+        repos.working = Mock(spec=LocalRepository)
+        repos.working.search.return_value = ['/path/to/pkg.rpm', '/path/to/pkg.src.rpm']
+        repos.delete_matching('pkg')
+        repos.working.search.assert_called_once_with('pkg')
+        repos.working.delete.assert_has_calls([call('/path/to/pkg.rpm'), call('/path/to/pkg.src.rpm')])
+        repos.working.update.assert_called_once()
+        shutil.rmtree(working_repo_path)

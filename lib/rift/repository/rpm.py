@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2014-2016 CEA
+# Copyright (C) 2014-2025 CEA
 #
 # This file is part of Rift project.
 #
@@ -41,6 +41,7 @@ import glob
 from subprocess import Popen, PIPE, STDOUT, run, CalledProcessError
 
 from rift import RiftError
+from rift.repository._base import ArchRepositoriesBase
 from rift.RPM import RPM, Spec
 from rift.TempDir import TempDir
 from rift.Config import _DEFAULT_REPO_CMD
@@ -259,25 +260,23 @@ class LocalRepository:
         os.remove(rpm.filepath)
 
 
-class ProjectArchRepositories:
+class ArchRepositoriesRPM(ArchRepositoriesBase):
     """
     Manipulate repositories defined in a project for a particular architecture.
     """
-    def __init__(self, config, arch, extra=None):
-
+    def __init__(self, config, working_dir, arch):
+        super().__init__(working_dir, arch)
         self.working = None
         self.arch = arch
-        if config.get('working_repo'):
+        if self.working_dir:
             self.working = LocalRepository(
-                path=config.get('working_repo', arch=arch),
+                path=self.working_dir,
                 config=config,
                 name='working',
                 options={"module_hotfixes": "true"},
             )
             self.working.create()
         self.supplementaries = []
-        if extra:
-            self.supplementaries.append(extra)
         repos = config.get('repos', arch=arch)
         if repos:
             for name, data in repos.items():
@@ -306,9 +305,13 @@ class ProjectArchRepositories:
             ) + self.supplementaries
         )
 
-    def can_publish(self):
+    def delete_matching(self, package):
         """
-        Return True if it is possible to publish packages in project
-        repositories, ie. if working repository is defined.
+        Search for package matching given name in working local repository and
+        remove all files belonging to this package in this repository.
         """
-        return self.working is not None
+        found_pkgs = self.working.search(package)
+        for found_pkg in found_pkgs:
+            self.working.delete(found_pkg)
+        # Update repository metadata
+        self.working.update()

@@ -7,7 +7,7 @@ import atexit
 from unittest.mock import patch, Mock
 
 import platform
-from TestUtils import RiftTestCase, RiftProjectTestCase, make_temp_dir
+from .TestUtils import RiftTestCase, RiftProjectTestCase, make_temp_dir
 from rift.Config import (
     Config,
     _DEFAULT_VM_ADDRESS,
@@ -17,7 +17,7 @@ from rift.Config import (
     _DEFAULT_VM_PORT_RANGE_MIN,
     _DEFAULT_VM_PORT_RANGE_MAX,
 )
-from rift.Repository import ConsumableRepository
+from rift.repository.rpm import ConsumableRepository
 from rift.VM import VM, ARCH_EFI_BIOS, gen_virtiofs_args
 from rift import RiftError
 
@@ -362,6 +362,13 @@ class VMTest(RiftTestCase):
         vm.spawn.assert_not_called()
         vm.ready.assert_not_called()
         vm.prepare.assert_not_called()
+
+    def test_local_test_funcs(self):
+        vm = VM(self.config, platform.machine())
+        funcs = vm.local_test_funcs()
+        self.assertIsInstance(funcs, dict)
+        self.assertCountEqual(funcs.keys(), ['cm_cmd', 'vm_wait', 'vm_reboot'])
+
 
 class VMBuildTest(RiftProjectTestCase):
     """

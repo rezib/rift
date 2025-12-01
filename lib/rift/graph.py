@@ -39,7 +39,7 @@ from collections import namedtuple
 import logging
 import re
 
-from rift.Package import Package
+from rift.package import ProjectPackages
 from rift.RPM import Spec
 
 BuildRequirement = namedtuple("BuildRequirement", ["package", "reasons"])
@@ -264,5 +264,5 @@ class PackagesDependencyGraph:
         if list is not provided.
         """
         graph = cls()
-        graph.build(Package.list(config, staff, modules))
+        graph.build(ProjectPackages.list(config, staff, modules))
         return graph

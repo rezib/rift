@@ -1049,6 +1049,16 @@ class ControllerProjectTest(RiftProjectTestCase):
             get_packages_in_graph(args, self.config, self.staff, self.modules),
             ['libone', 'my-software']
         )
+        # When module arg is not set and packages args is empty,
+        # get_packages_in_graph() must return an empty list. This empty list
+        # eventually means all projects packages when passed to
+        # PackagesDependencyGraph.draw().
+        args.module = None
+        args.packages = []
+        self.assertCountEqual(
+            get_packages_in_graph(args, self.config, self.staff, self.modules),
+            []
+        )
         args.module = 'fail'
         args.packages = []
         with self.assertRaisesRegex(RiftError, r"^Invalid module name fail$"):

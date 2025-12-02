@@ -1117,6 +1117,7 @@ def action_graph(args, config, staff, modules):
     PackagesDependencyGraph.from_project(config, staff, modules).draw(
         args.with_external, get_packages_in_graph(args, config, staff, modules)
     )
+    return 0
 
 def get_packages_in_graph(args, config, staff, modules):
     """
@@ -1377,8 +1378,8 @@ def action(config, args):
         return action_sync(args, config)
 
     # GRAPH
-    elif args.command == 'graph':
-        action_graph(args, config, *staff_modules(config))
+    if args.command == 'graph':
+        return action_graph(args, config, *staff_modules(config))
 
     return 0
 

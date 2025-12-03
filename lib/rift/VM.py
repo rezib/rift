@@ -443,7 +443,7 @@ class VM():
 
             echo '{userline}' >> /etc/passwd
             echo '{groupline}' >> /etc/group
-            
+
             # Mount shared fs (9p, virtiofs,...)
             mkdir {' '.join(mkdirs)}
             {fstab_cmd}
@@ -587,13 +587,14 @@ class VM():
         """
         Wait until VM is ready to accept commands.
 
-        Return False if it is not ready after 25 seconds.
+        Return False if it is not ready after 50 seconds for x86_64 and 200
+        seconds for aarch64.
         """
         sleeping_time = 5
         if self.arch == 'aarch64': # VM very long to boot in emulation mode
             sleeping_time = 20
 
-        for _ in range(1, 5):
+        for _ in range(1, 10):
             # Check if Qemu process is really running
             if self._vm.poll() is not None:
                 raise RiftError(f"Unable to get VM running {self._vm.stderr.read().decode()}")

@@ -1208,7 +1208,9 @@ class ControllerProjectActionChangelogTest(RiftProjectTestCase):
     def test_action_changelog_unknown_maintainer(self):
         """changelog with unknown maintainer"""
         self.make_pkg()
-        with self.assertRaises(TypeError):
+        with self.assertRaisesRegex(
+            RiftError, "Unknown maintainer Fail, cannot be found in staff"
+        ):
             main(['changelog', 'pkg', '-c', 'basic change', '-t', 'Fail'])
 
 

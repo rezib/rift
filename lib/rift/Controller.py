@@ -711,7 +711,7 @@ def validate_pkgs(config, args, pkgs, arch):
 
     return results
 
-def vm_build(vm, args, config):
+def vm_build(vm, args):
     """Build VM image."""
     if not args.deploy and args.output is None:
         raise RiftError(
@@ -722,7 +722,12 @@ def vm_build(vm, args, config):
             "Both --deploy and -o,--output options cannot be used together"
         )
     if args.deploy:
-        output = config.get('vm').get('image')
+        if vm.image_is_remote():
+            raise RiftError(
+                "Cannot build VM image with remote image URL and --deploy option, "
+                "-o, --output option must be used"
+            )
+        output = vm.image_local
     else:
         output = args.output
     message(f"Building new vm image {output}")
@@ -784,7 +789,7 @@ def action_vm(args, config):
     elif args.vm_cmd == 'stop':
         ret = vm.cmd('poweroff').returncode
     elif args.vm_cmd == 'build':
-        ret = vm_build(vm, args, config)
+        ret = vm_build(vm, args)
     return ret
 
 def build_pkgs(config, args, pkgs, arch, staging):

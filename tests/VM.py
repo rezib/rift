@@ -4,10 +4,16 @@
 import os
 import shutil
 import atexit
-from unittest.mock import patch, Mock
+import urllib
+from unittest.mock import patch, Mock, PropertyMock
 
 import platform
-from TestUtils import RiftTestCase, RiftProjectTestCase, make_temp_dir
+from TestUtils import (
+    RiftTestCase,
+    RiftProjectTestCase,
+    make_temp_dir,
+    make_temp_file
+)
 from rift.Config import (
     Config,
     _DEFAULT_VM_ADDRESS,
@@ -61,7 +67,7 @@ class VMTest(RiftTestCase):
         self.assertEqual(vm.memory, _DEFAULT_VM_MEMORY)
         self.assertEqual(vm.arch_efi_bios, ARCH_EFI_BIOS)
         self.assertEqual(vm.address, _DEFAULT_VM_ADDRESS)
-        self.assertEqual(vm._image, None)
+        self.assertEqual(vm._image_src, None)
         self.assertEqual(vm.qemu, 'qemu-system-x86_64')
         self.assertEqual(vm._repos, [])
         self.assertTrue(vm.tmpmode)
@@ -100,7 +106,7 @@ class VMTest(RiftTestCase):
         self.assertEqual(vm.memory, vm_custom_memory)
         self.assertEqual(vm.arch_efi_bios, '/my_bios')
         self.assertEqual(vm.address, '192.168.0.5')
-        self.assertEqual(vm._image, '/my_image')
+        self.assertEqual(vm._image_src, urllib.parse.urlparse('/my_image'))
         self.assertEqual(vm.qemu, '/my_custom_qemu')
         self.assertTrue(vm.port >= _DEFAULT_VM_PORT_RANGE_MIN)
         self.assertTrue(vm.port <= _DEFAULT_VM_PORT_RANGE_MAX)
@@ -131,6 +137,66 @@ class VMTest(RiftTestCase):
         self.config.set('version', '2.0')
         vm3 = VM(self.config, 'x86_64')
         self.assertNotEqual(vm1.vmid, vm3.vmid)
+
+    def test_image_local(self):
+        vm = VM(self.config, platform.machine())
+        expected_values = {
+            # absolute local path
+            ('/absolute/path/to/my_image.qcow2', '/absolute/path/to/my_image.qcow2'),
+            # relative local path
+            ('../relative/path/to/my_image.qcow2', '../relative/path/to/my_image.qcow2'),
+            # file URI
+            ('file:///absolute/path/to/my_image.qcow2', '/absolute/path/to/my_image.qcow2'),
+            # remote URI http
+            ('http://localhost/path/to/my_image.qcow2', f"/tmp/rift-vm-local-image-{vm.vmid}.qcow2"),
+            # remote URI https
+            ('https://localhost/path/to/my_image.qcow2', f"/tmp/rift-vm-local-image-{vm.vmid}.qcow2"),
+        }
+        for expected_value in expected_values:
+            self.config.set(
+                'vm',
+                {
+                    'image': expected_value[0],
+                }
+            )
+            vm = VM(self.config, platform.machine())
+            self.assertEqual(vm.image_local, expected_value[1])
+
+    def test_image_local_unsupported_scheme(self):
+        self.config.set(
+            'vm',
+            {
+                'image': 'fail://localhost/path/to/my_image.qcow2',
+            }
+        )
+        vm = VM(self.config, platform.machine())
+        with self.assertRaisesRegex(
+            RiftError, "^Unsupported VM image URL scheme fail$"
+        ):
+            _ = vm.image_local
+
+    def test_image_is_remote(self):
+        expected_values = {
+            # absolute local path
+            ('/absolute/path/to/my_image.qcow2', False),
+            # relative local path
+            ('../relative/path/to/my_image.qcow2', False),
+            # file URI
+            ('file:///absolute/path/to/my_image.qcow2', False),
+            # remote URI http
+            ('http://localhost/path/to/my_image.qcow2', True),
+            # remote URI https
+            ('https://localhost/path/to/my_image.qcow2', True),
+        }
+        for expected_value in expected_values:
+            self.config.set(
+                'vm',
+                {
+                    'image': expected_value[0],
+                }
+            )
+            vm = VM(self.config, 'x86_64')
+            self.assertEqual(vm.image_is_remote(), expected_value[1])
 
     def test_default_port(self):
         """Check VM default port uniqueness and range conformity"""
@@ -335,19 +401,128 @@ class VMTest(RiftTestCase):
                           'virtio-net-device,netdev=hostnet0']
         self.assertEqual(args, expected_args_aarch64)
 
+    @patch('rift.VM.download_file')
+    @patch('rift.VM.message')
+    def test_download(self, mock_message, mock_download_file):
+        """Test VM download"""
+        url = 'http://localhost/path/to/my_image.qcow2'
+        self.config.set(
+            'vm',
+            {
+                'image': url,
+            }
+        )
+        with patch(
+            'rift.VM.VM.image_local', new_callable=PropertyMock
+        ) as mock_image_local:
+            vm = VM(self.config, platform.machine())
+            tmpfile = make_temp_file("")
+            mock_image_local.return_value = tmpfile.name
+            os.unlink(vm.image_local)
+            self.assertFalse(os.path.exists(vm.image_local))
+            vm._download(False)
+            mock_message.assert_called_once_with(f"Download remote VM image {url}")
+            mock_download_file.assert_called_once_with(url, vm.image_local)
+
+    @patch('rift.VM.download_file')
+    @patch('rift.VM.message')
+    def test_download_skip_exists(self, mock_message, mock_download_file):
+        """Test VM download skipped when local copy is present"""
+        url = 'http://localhost/path/to/my_image.qcow2'
+        self.config.set(
+            'vm',
+            {
+                'image': url,
+            }
+        )
+        with patch(
+            'rift.VM.VM.image_local', new_callable=PropertyMock
+        ) as mock_image_local:
+            vm = VM(self.config, platform.machine())
+            tmpfile = make_temp_file("")
+            mock_image_local.return_value = tmpfile.name
+            self.assertTrue(os.path.exists(vm.image_local))
+            with self.assertLogs(level='DEBUG') as cm:
+                vm._download(False)
+            mock_message.assert_not_called()
+            mock_download_file.assert_not_called()
+        self.assertIn(
+            'DEBUG:root:Local copy of VM image is present, skipping download of remote '
+            'image',
+            cm.output
+        )
+
+    @patch('rift.VM.download_file')
+    @patch('rift.VM.message')
+    def test_download_force(self, mock_message, mock_download_file):
+        """Test VM download force remove local image when present"""
+        url = 'http://localhost/path/to/my_image.qcow2'
+        self.config.set(
+            'vm',
+            {
+                'image': url,
+            }
+        )
+        with patch(
+            'rift.VM.VM.image_local', new_callable=PropertyMock
+        ) as mock_image_local:
+            vm = VM(self.config, platform.machine())
+            tmpfile = make_temp_file("")
+            mock_image_local.return_value = tmpfile.name
+            self.assertTrue(os.path.exists(vm.image_local))
+            with self.assertLogs(level='DEBUG') as cm:
+                vm._download(True)
+            mock_message.assert_called_once_with(f"Download remote VM image {url}")
+            mock_download_file.assert_called_once_with(url, vm.image_local)
+        self.assertIn(
+            'INFO:root:Remove VM image local copy and force re-download for remote '
+            'image',
+            cm.output
+        )
+
+    @patch('rift.VM.download_file')
+    @patch('rift.VM.message')
+    def test_download_skip_local(self, mock_message, mock_download_file):
+        """Test VM download is no-op with local images"""
+        url = '/path/to/my_image.qcow2'
+        self.config.set(
+            'vm',
+            {
+                'image': url,
+            }
+        )
+        vm = VM(self.config, platform.machine())
+        vm._download(False)
+        mock_message.assert_not_called()
+        mock_download_file.assert_not_called()
+
     @patch('rift.VM.message')
     def test_start(self, mock_message):
         """Test VM start not running"""
         vm = VM(self.config, platform.machine())
         vm.running = Mock(return_value=False)
+        vm._download = Mock()
         vm.spawn = Mock()
         vm.ready = Mock()
         vm.prepare = Mock()
-        self.assertTrue(vm.start())
+        self.assertTrue(vm.start(force=False))
+        vm._download.assert_called_once_with(False)
         mock_message.assert_called_once_with("Launching VM ...")
         vm.spawn.assert_called_once()
         vm.ready.assert_called_once()
         vm.prepare.assert_called_once()
+
+    @patch('rift.VM.message')
+    def test_start_force(self, mock_message):
+        """Test VM force start not running"""
+        vm = VM(self.config, platform.machine())
+        vm.running = Mock(return_value=False)
+        vm._download = Mock()
+        vm.spawn = Mock()
+        vm.ready = Mock()
+        vm.prepare = Mock()
+        self.assertTrue(vm.start(force=True))
+        vm._download.assert_called_once_with(True)
 
     @patch('rift.VM.message')
     def test_start_running(self, mock_message):
@@ -357,7 +532,7 @@ class VMTest(RiftTestCase):
         vm.spawn = Mock()
         vm.ready = Mock()
         vm.prepare = Mock()
-        self.assertFalse(vm.start())
+        self.assertFalse(vm.start(False))
         mock_message.assert_called_once_with("VM is already running")
         vm.spawn.assert_not_called()
         vm.ready.assert_not_called()
@@ -394,7 +569,7 @@ class VMBuildTest(RiftProjectTestCase):
             f"^Cloud images cache directory {vm.images_cache} does not "
             "exist$",
         ):
-            vm.build(self.valid_url, False, False, vm._image)
+            vm.build(self.valid_url, False, False, vm.image_local)
 
     def test_build_wrong_url(self):
         """Test VM build with URL error"""
@@ -403,14 +578,14 @@ class VMBuildTest(RiftProjectTestCase):
             RiftError,
             f"^URL error while downloading {self.wrong_url}: .*$",
         ):
-            vm.build(self.wrong_url, False, False, vm._image)
+            vm.build(self.wrong_url, False, False, vm.image_local)
         with self.assertRaisesRegex(
             RiftError,
             f"^HTTP error while downloading {self.valid_url}.unfound: HTTP "
             "Error 404: Not Found$",
         ):
             vm.build(
-                self.valid_url + '.unfound', False, False, vm._image
+                self.valid_url + '.unfound', False, False, vm.image_local
             )
 
     def test_build_missing_cloudinit_tpl(self):
@@ -422,21 +597,21 @@ class VMBuildTest(RiftProjectTestCase):
             "^Unable to find cloud-init template file "
             f"{vm.cloud_init_tpl}$",
         ):
-            vm.build(self.valid_url, False, False, vm._image)
+            vm.build(self.valid_url, False, False, vm.image_local)
 
     def test_build_ok(self):
         """Test VM basic build"""
         self._check_qemuimg()
         vm = VM(self.config, 'x86_64')
-        vm.build(self.valid_url, False, False, vm._image)
-        self.assertEqual(os.path.exists(vm._image), True)
+        vm.build(self.valid_url, False, False, vm.image_local)
+        self.assertEqual(os.path.exists(vm.image_local), True)
 
     def test_build_ok_copymode(self):
         """Test VM build OK with copymode enabled"""
         vm = VM(self.config, 'x86_64')
         vm.copymode = 1
-        vm.build(self.valid_url, False, False, vm._image)
-        self.assertEqual(os.path.exists(vm._image), True)
+        vm.build(self.valid_url, False, False, vm.image_local)
+        self.assertEqual(os.path.exists(vm.image_local), True)
 
     @patch('rift.VM.input')
     def test_build_overwrite(self, mock_input):
@@ -444,10 +619,10 @@ class VMBuildTest(RiftProjectTestCase):
         self._check_qemuimg()
         vm = VM(self.config, 'x86_64')
         # create empty output image
-        open(vm._image, 'w').close()
+        open(vm.image_local, 'w').close()
         mock_input.side_effect = 'yes'
-        vm.build(self.valid_url, False, False, vm._image)
-        self.assertEqual(os.path.exists(vm._image), True)
+        vm.build(self.valid_url, False, False, vm.image_local)
+        self.assertEqual(os.path.exists(vm.image_local), True)
         mock_input.assert_called_once()
 
     def test_build_with_build_script(self):
@@ -456,8 +631,8 @@ class VMBuildTest(RiftProjectTestCase):
         vm = VM(self.config, 'x86_64')
         with open(vm.build_post_script, 'w') as fh:
             fh.write("#!/bin/bash\n/bin/true\n")
-        vm.build(self.valid_url, False, False, vm._image)
-        self.assertEqual(os.path.exists(vm._image), True)
+        vm.build(self.valid_url, False, False, vm.image_local)
+        self.assertEqual(os.path.exists(vm.image_local), True)
 
     def test_build_with_build_script_error(self):
         """Test VM build with build script error"""
@@ -466,9 +641,9 @@ class VMBuildTest(RiftProjectTestCase):
         with open(vm.build_post_script, 'w') as fh:
             fh.write("#!/bin/bash\n/bin/false\n")
         with self.assertRaisesRegex(
-            RiftError, f"^Error while running build post script$"
+            RiftError, "^Error while running build post script$"
         ):
-            vm.build(self.valid_url, False, False, vm._image)
+            vm.build(self.valid_url, False, False, vm.image_local)
         vm.stop()
 
     def test_build_aarch64(self):
@@ -481,4 +656,4 @@ class VMBuildTest(RiftProjectTestCase):
             '..', 'vendor', 'QEMU_EFI.silent.fd'
         )
         self.valid_url = VALID_IMAGE_URL[vm.arch]
-        vm.build(self.valid_url, False, False, vm._image)
+        vm.build(self.valid_url, False, False, vm.image_local)

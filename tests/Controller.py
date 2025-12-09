@@ -452,23 +452,25 @@ class ControllerProjectTest(RiftProjectTestCase):
         """simple 'rift vm build' is ok """
 
         mock_vm_objects = mock_vm_class.return_value
+        mock_vm_objects.image_is_remote.return_value = False
+        mock_vm_objects.image_local = 'test.qcow2'
 
         main(['vm', 'build', 'http://image', '--deploy'])
         # check VM class has been instanciated
         mock_vm_class.assert_called()
 
         mock_vm_objects.build.assert_called_once_with(
-            'http://image', False, False, self.config.get('vm').get('image')
+            'http://image', False, False, 'test.qcow2'
         )
         mock_vm_objects.build.reset_mock()
         main(['vm', 'build', 'http://image', '--deploy', '--force'])
         mock_vm_objects.build.assert_called_once_with(
-            'http://image', True, False, self.config.get('vm').get('image')
+            'http://image', True, False, 'test.qcow2'
         )
         mock_vm_objects.build.reset_mock()
         main(['vm', 'build', 'http://image', '--deploy', '--keep'])
         mock_vm_objects.build.assert_called_once_with(
-            'http://image', False, True, self.config.get('vm').get('image')
+            'http://image', False, True, 'test.qcow2'
         )
         mock_vm_objects.build.reset_mock()
         main(
@@ -496,6 +498,15 @@ class ControllerProjectTest(RiftProjectTestCase):
                     'OUTPUT.img',
                 ]
             )
+        # Test --deploy with remote image
+        mock_vm_objects.image_is_remote.return_value = True
+        with self.assertRaisesRegex(
+            RiftError,
+            "^Cannot build VM image with remote image URL and --deploy option, -o, "
+            "--output option must be used$"
+        ):
+            main(['vm', 'build', 'http://image', '--deploy'])
+
 
     def test_vm_build_and_validate(self):
         """Test VM build and validate package"""
@@ -1214,6 +1225,16 @@ class ControllerArgumentsTest(RiftTestCase):
         args = ['vm', '--arch', 'x86_64']
         opts = parser.parse_args(args)
         self.assertEqual(opts.command, 'vm')
+
+        args = ['vm', 'start']
+        opts = parser.parse_args(args)
+        self.assertEqual(opts.vm_cmd, 'start')
+        self.assertFalse(opts.force)
+
+        args = ['vm', 'start', '--force']
+        opts = parser.parse_args(args)
+        self.assertEqual(opts.vm_cmd, 'start')
+        self.assertTrue(opts.force)
 
         args = ['vm', 'connect']
         opts = parser.parse_args(args)

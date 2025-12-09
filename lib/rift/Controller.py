@@ -231,6 +231,8 @@ def make_parser():
     subprs_vm = subprs.add_subparsers(dest='vm_cmd', title='possible commands')
     subprs_vm.add_parser('connect', help='connect to running VM')
     subsubprs = subprs_vm.add_parser('start', help='launch a new VM')
+    subsubprs.add_argument('--force', action='store_true',
+                           help='ignore local copy and force download of remote image')
     subsubprs.add_argument('--notemp', action='store_false', dest='tmpimg',
                            default=True, help='modify the real VM image')
     subprs_vm.add_parser('stop', help='stop the running VM')
@@ -783,7 +785,7 @@ def action_vm(args, config):
         ret = vm.copy(args.source, args.dest)
     elif args.vm_cmd == 'start':
         vm.tmpmode = args.tmpimg
-        if vm.start():
+        if vm.start(args.force):
             message("VM started. Use: rift vm connect")
             ret = 0
     elif args.vm_cmd == 'stop':

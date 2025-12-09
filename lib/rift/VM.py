@@ -379,12 +379,29 @@ class VM():
 
         return cmd
 
-    def _download(self):
+    def _download(self, force: bool):
         """
-        Download local copy of VM image if it is remote URL and local copy does not
+        Download local copy of VM image if it is remote URL. Download is skipped if
+        local copy already exists, unless force is True.
         exist.
         """
-        if self.image_is_remote() and not os.path.exists(self.image_local):
+        # Skip download is VM image URL in configuration is not remote.
+        if self.image_is_remote():
+            # Check presence of the local copy. If present and force is True, remove it
+            # to force re-download. Otherwise skip download.
+            if os.path.exists(self.image_local):
+                if force:
+                    logging.info(
+                        "Remove VM image local copy and force re-download for remote "
+                        "image"
+                    )
+                    os.unlink(self.image_local)
+                else:
+                    logging.debug(
+                        "Local copy of VM image is present, skipping download of "
+                        "remote image"
+                    )
+                    return
             message(f"Download remote VM image {self._image_src.geturl()}")
             # Setup proxy if defined
             setup_dl_opener(self.proxy, self.no_proxy)
@@ -698,7 +715,7 @@ class VM():
             self._tmpimg.close()
             self._tmpimg = None
 
-    def start(self):
+    def start(self, force: bool):
         """
         Start VM if not already running. Return True if VM is actually started,
         False if already running.
@@ -708,7 +725,7 @@ class VM():
             return False
 
         # Download VM image if necessary
-        self._download()
+        self._download(force)
 
         message('Launching VM ...')
         self.spawn()

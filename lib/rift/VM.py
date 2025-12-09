@@ -50,6 +50,7 @@ import select
 import struct
 import socket
 import uuid
+import urllib
 import shutil
 import atexit
 import hashlib
@@ -124,7 +125,12 @@ class VM():
         self.arch = arch
 
         vm_config = config.get('vm', arch=arch)
-        self._image = vm_config.get('image')
+        image = vm_config.get('image')
+        if image:
+            self._image_src = urllib.parse.urlparse(image)
+        else:
+            self._image_src = None
+
         self._project_dir = config.project_dir
 
         if extra_repos is None:
@@ -183,6 +189,30 @@ class VM():
             f"{os.getuid()}-{self.arch}-{self.version}".encode()
         ).hexdigest()
 
+    @property
+    def image_local(self) -> str:
+        """
+        Return local path of VM image. If the VM image URL in configuration is already a
+        local path, use it as is. Otherwise, return a deterministic local path that can
+        be re-used in successive rift runs.
+        """
+        if not self.image_is_remote():
+            return self._image_src.path
+        return os.path.join(
+            tempfile.gettempdir(), f"rift-vm-local-image-{self.vmid}.qcow2"
+        )
+
+    def image_is_remote(self) -> bool:
+        """
+        Return True if image VM image URL is an HTTP(S) URL, False if local file or
+        raise RiftError is URL scheme is not supported.
+        """
+        if self._image_src.scheme in ['', 'file']:
+            return False
+        if self._image_src.scheme in ['http', 'https']:
+            return True
+        raise RiftError(f"Unsupported VM image URL scheme {self._image_src.scheme}")
+
     def default_port(self, port_range):
         """
         Return the default port number for this VM considering its unique
@@ -198,7 +228,7 @@ class VM():
             int(self.vmid, 16) % (port_range['max'] - port_range['min'])
         ) + port_range['min']
 
-    def _mk_tmp_img(self):
+    def _mk_tmp_img(self, image):
         """Create a temp VM image to avoid modifying the real image disk."""
 
         # Create a temporary file for VM image
@@ -209,12 +239,12 @@ class VM():
         if self.copymode:
             # Copy qcow image for VM, based on temp file
             cmd = ['dd', 'status=progress', 'conv=sparse', 'bs=1M']
-            cmd += [f"if={os.path.realpath(self._image)}"]
+            cmd += [f"if={os.path.realpath(image)}"]
             cmd += [f"of={self._tmpimg.name}"]
         else:
             # Create qcow image for VM, based on temp file
             cmd = ['qemu-img', 'create', '-f', 'qcow2', '-F', 'qcow2']
-            cmd += ['-o', f"backing_file={os.path.realpath(self._image)}"]
+            cmd += ['-o', f"backing_file={os.path.realpath(image)}"]
             cmd += [self._tmpimg.name]
 
         logging.debug("Creating VM image file: %s", ' '.join(cmd))
@@ -349,16 +379,35 @@ class VM():
 
         return cmd
 
+    def _download(self):
+        """
+        Download local copy of VM image if it is remote URL and local copy does not
+        exist.
+        """
+        if self.image_is_remote() and not os.path.exists(self.image_local):
+            message(f"Download remote VM image {self._image_src.geturl()}")
+            # Setup proxy if defined
+            setup_dl_opener(self.proxy, self.no_proxy)
+            # Download VM image
+            download_file(self._image_src.geturl(), self.image_local)
 
-    def spawn(self, seed=None):
-        """Start VM process in background"""
+    def spawn(self, image=None, seed=None):
+        """
+        Start VM process in background. Path to a specific image file can be provided or
+        the default local image is used. The path to a seed ISO file can be provided as
+        well.
+        """
+
+        # Use default local image path unless specific image path is provided
+        if not image:
+            image = self.image_local
 
         # TODO: use -snapshot from qemu cmdline instead of creating temporary VM image
         if self.tmpmode:
-            self._mk_tmp_img()
+            self._mk_tmp_img(image)
             imgfile = self._tmpimg.name
         else:
-            imgfile = self._image
+            imgfile = image
 
         cmd = self._gen_qemu_args(imgfile, seed)
         fs_cmds, helper_cmds = self._make_drive_cmd()
@@ -658,6 +707,9 @@ class VM():
             message('VM is already running')
             return False
 
+        # Download VM image if necessary
+        self._download()
+
         message('Launching VM ...')
         self.spawn()
         self.ready()
@@ -851,9 +903,8 @@ class VM():
         # Build cloud-init seed iso
         seed_iso_file = self._build_seed_iso()
 
-        # Use cloud base image for current VM and start it with seed iso
-        self._image = base_image_path
-        self.spawn(seed=seed_iso_file)
+        # Start VM with base cloud base image with seed iso
+        self.spawn(image=base_image_path, seed=seed_iso_file)
 
         if not self.ready():
             # Unless keep is true, stop virtual machin and unlink temporary

@@ -144,13 +144,25 @@ class VMTest(RiftTestCase):
             # absolute local path
             ('/absolute/path/to/my_image.qcow2', '/absolute/path/to/my_image.qcow2'),
             # relative local path
-            ('../relative/path/to/my_image.qcow2', '../relative/path/to/my_image.qcow2'),
+            (
+                '../relative/path/to/my_image.qcow2',
+                '../relative/path/to/my_image.qcow2'
+            ),
             # file URI
-            ('file:///absolute/path/to/my_image.qcow2', '/absolute/path/to/my_image.qcow2'),
+            (
+                'file:///absolute/path/to/my_image.qcow2',
+                '/absolute/path/to/my_image.qcow2'
+            ),
             # remote URI http
-            ('http://localhost/path/to/my_image.qcow2', f"/tmp/rift-vm-local-image-{vm.vmid}.qcow2"),
+            (
+                'http://localhost/path/to/my_image.qcow2',
+                f"/tmp/rift-vm-local-image-{vm.vmid}_my_image.qcow2"
+            ),
             # remote URI https
-            ('https://localhost/path/to/my_image.qcow2', f"/tmp/rift-vm-local-image-{vm.vmid}.qcow2"),
+            (
+                'https://localhost/path/to/my_other_image.qcow2',
+                f"/tmp/rift-vm-local-image-{vm.vmid}_my_other_image.qcow2"
+            ),
         }
         for expected_value in expected_values:
             self.config.set(

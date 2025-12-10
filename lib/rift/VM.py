@@ -193,19 +193,20 @@ class VM():
     def image_local(self) -> str:
         """
         Return local path of VM image. If the VM image URL in configuration is already a
-        local path, use it as is. Otherwise, return a deterministic local path that can
-        be re-used in successive rift runs.
+        local path, use it as is. Otherwise, return a deterministic local path in
+        temporary directory that can be re-used in successive rift runs.
         """
         if not self.image_is_remote():
             return self._image_src.path
         return os.path.join(
-            tempfile.gettempdir(), f"rift-vm-local-image-{self.vmid}.qcow2"
+            tempfile.gettempdir(),
+            f"rift-vm-local-image-{self.vmid}_{os.path.basename(self._image_src.path)}"
         )
 
     def image_is_remote(self) -> bool:
         """
-        Return True if image VM image URL is an HTTP(S) URL, False if local file or
-        raise RiftError is URL scheme is not supported.
+        Return True if VM image URL is an HTTP(S) URL, False if local file or raise
+        RiftError is URL scheme is not supported.
         """
         if self._image_src.scheme in ['', 'file']:
             return False
@@ -383,30 +384,31 @@ class VM():
         """
         Download local copy of VM image if it is remote URL. Download is skipped if
         local copy already exists, unless force is True.
-        exist.
         """
-        # Skip download is VM image URL in configuration is not remote.
-        if self.image_is_remote():
-            # Check presence of the local copy. If present and force is True, remove it
-            # to force re-download. Otherwise skip download.
-            if os.path.exists(self.image_local):
-                if force:
-                    logging.info(
-                        "Remove VM image local copy and force re-download for remote "
-                        "image"
-                    )
-                    os.unlink(self.image_local)
-                else:
-                    logging.debug(
-                        "Local copy of VM image is present, skipping download of "
-                        "remote image"
-                    )
-                    return
-            message(f"Download remote VM image {self._image_src.geturl()}")
-            # Setup proxy if defined
-            setup_dl_opener(self.proxy, self.no_proxy)
-            # Download VM image
-            download_file(self._image_src.geturl(), self.image_local)
+        # Skip download if VM image URL in configuration is not remote.
+        if not self.image_is_remote():
+            return
+
+        # Check presence of the local copy. If present and force is True, remove it
+        # to force re-download. Otherwise skip download.
+        if os.path.exists(self.image_local):
+            if force:
+                logging.info(
+                    "Remove VM image local copy and force re-download for remote "
+                    "image"
+                )
+                os.unlink(self.image_local)
+            else:
+                logging.debug(
+                    "Local copy of VM image is present, skipping download of "
+                    "remote image"
+                )
+                return
+        message(f"Download remote VM image {self._image_src.geturl()}")
+        # Setup proxy if defined
+        setup_dl_opener(self.proxy, self.no_proxy)
+        # Download VM image
+        download_file(self._image_src.geturl(), self.image_local)
 
     def spawn(self, image=None, seed=None):
         """

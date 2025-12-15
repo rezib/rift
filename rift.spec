@@ -1,7 +1,7 @@
 %{?python_enable_dependency_generator}
 
 Name:           rift
-Version:        0.12
+Version:        %{version}
 Release:        1%{?dist}
 
 License:        CeCILL-C
@@ -42,5 +42,5 @@ flexibility in the tests environments.
 %{_datadir}/%{name}
 
 %changelog
-* Mon Dec 15 2025 Rémi Palancher <remi@rackslab.io> - 0.12-1
+* Mon Dec 15 2025 Rémi Palancher <remi@rackslab.io> - %{version}-1
 - Initial package

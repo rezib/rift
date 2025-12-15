@@ -1,0 +1,42 @@
+---
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  packages:
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:latest
+      # Option --privileged is required for mock+podman on fedora
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build source tarball
+        run: |
+          mkdir -p ~/rpmbuild/SOURCES
+          tar -czvf ~/rpmbuild/SOURCES/rift-0.12.tar.gz -C ${GITHUB_WORKSPACE}/.. rift
+
+      - name: Install mock
+        run: |
+          dnf install -y mock
+
+      - name: Build source RPM
+        run: |
+          mock --verbose --root almalinux-8-x86_64 --buildsrpm --sources ~/rpmbuild/SOURCES --spec rift.spec --resultdir ~/rpmbuild/SRPMS
+      - name: Build binary RPM
+        run: |
+          mock --verbose --root almalinux-8-x86_64 ~/rpmbuild/SRPMS/rift*.src.rpm --resultdir ~/rpmbuild/RPMS
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2.5
+        with:
+          files: |
+            ~/rpmbuild/RPMS/*.rpm

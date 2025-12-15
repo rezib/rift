@@ -39,4 +39,4 @@ jobs:
         uses: softprops/action-gh-release@v2.5.0
         with:
           files: |
-            ~/rpmbuild/RPMS/*.rpm
+            /github/home/rpmbuild/RPMS/*.rpm

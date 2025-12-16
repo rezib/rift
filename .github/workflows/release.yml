@@ -24,16 +24,20 @@ jobs:
           mkdir -p ~/rpmbuild/SOURCES
           tar -czvf ~/rpmbuild/SOURCES/rift-${{ github.ref_name }}.tar.gz -C ${GITHUB_WORKSPACE}/.. rift
 
+      - name: Set version environment variable
+        run: |
+          echo RIFT_VERSION=${${{ github.ref_name }}:1} >> "$GITHUB_ENV"
+
       - name: Install mock
         run: |
           dnf install -y mock
 
       - name: Build source RPM
         run: |
-          mock --verbose --root almalinux-8-x86_64 --define "ci_version ${{ github.ref_name }}" --buildsrpm --sources ~/rpmbuild/SOURCES --spec rift.spec --resultdir ~/rpmbuild/SRPMS
+          mock --verbose --root almalinux-8-x86_64 --define "ci_version ${RIFT_VERSION}" --buildsrpm --sources ~/rpmbuild/SOURCES --spec rift.spec --resultdir ~/rpmbuild/SRPMS
       - name: Build binary RPM
         run: |
-          mock --verbose --root almalinux-8-x86_64 --define "ci_version ${{ github.ref_name }}" ~/rpmbuild/SRPMS/rift*.src.rpm --resultdir ~/rpmbuild/RPMS
+          mock --verbose --root almalinux-8-x86_64 --define "ci_version ${RIFT_VERSION}" ~/rpmbuild/SRPMS/rift*.src.rpm --resultdir ~/rpmbuild/RPMS
 
       - name: Create release
         uses: softprops/action-gh-release@v2.5.0

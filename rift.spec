@@ -1,5 +1,7 @@
 %{?python_enable_dependency_generator}
 
+%define version %{?ci_version}%{!?ci_version:$(python3 -c "from lib.rift import __version__; print(__version__)")}
+
 Name:           rift
 Version:        %{version}
 Release:        1%{?dist}

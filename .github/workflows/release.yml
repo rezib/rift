@@ -26,7 +26,8 @@ jobs:
 
       - name: Set version environment variable
         run: |
-          echo RIFT_VERSION="${${{ github.ref_name }}:1}" >> "$GITHUB_ENV"
+          _VERSION=${{ github.ref_name }}
+          echo RIFT_VERSION="${_VERSION:1}" >> "$GITHUB_ENV"
 
       - name: Install mock
         run: |

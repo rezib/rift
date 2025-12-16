@@ -19,15 +19,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build source tarball
-        run: |
-          mkdir -p ~/rpmbuild/SOURCES
-          tar -czvf ~/rpmbuild/SOURCES/rift-${{ github.ref_name }}.tar.gz -C ${GITHUB_WORKSPACE}/.. rift
-
       - name: Set version environment variable
         run: |
           _VERSION=${{ github.ref_name }}
           echo RIFT_VERSION="${_VERSION:1}" >> "$GITHUB_ENV"
+
+      - name: Build source tarball
+        run: |
+          mkdir -p ~/rpmbuild/SOURCES
+          tar -czvf ~/rpmbuild/SOURCES/rift-${RIFT_VERSION}.tar.gz -C ${GITHUB_WORKSPACE}/.. rift
 
       - name: Install mock
         run: |

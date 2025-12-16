@@ -5,28 +5,26 @@
 import os.path
 import shutil
 import atexit
-from unittest.mock import patch, Mock
+from unittest.mock import patch, Mock, call
 import subprocess
 import textwrap
 from io import StringIO
-import textwrap
 
-from TestUtils import (
+from .TestUtils import (
     make_temp_file, make_temp_dir, gen_rpm_spec, RiftTestCase, RiftProjectTestCase, SubPackage
 )
 
-from VM import GLOBAL_CACHE, VALID_IMAGE_URL, PROXY
+from .VM import GLOBAL_CACHE, VALID_IMAGE_URL, PROXY
 from rift.Controller import (
     main,
     get_packages_in_graph,
-    get_packages_from_patch,
     get_packages_to_build,
     remove_packages,
     make_parser,
 )
-from rift.Package import Package
+from rift.package.rpm import PackageRPM, ActionableArchPackageRPM
+from rift.TestResults import TestResults
 from rift.RPM import RPM, Spec
-from rift.run import RunResult
 from rift import RiftError
 
 VALID_REPOS = {
@@ -71,8 +69,8 @@ class ControllerProjectActionCreateTest(RiftProjectTestCase):
         """simple create"""
         main(['create', 'pkg', '-m', 'Great module', '-r', 'Good reason',
               '--maintainer', 'Myself'])
-        pkg = Package('pkg', self.config, self.staff, self.modules)
-        pkg.load()
+        pkg = PackageRPM('pkg', self.config, self.staff, self.modules)
+        pkg.load_info()
         self.assertEqual(pkg.module, 'Great module')
         self.assertEqual(pkg.reason, 'Good reason')
         self.assertCountEqual(pkg.maintainers, ['Myself'])
@@ -128,17 +126,17 @@ class ControllerProjectActionImportTest(RiftProjectTestCase):
         """simple import"""
         main(['import', self.src_rpm, '-m', 'Great module', '-r', 'Good reason',
               '--maintainer', 'Myself'])
-        pkg = Package('pkg', self.config, self.staff, self.modules)
+        pkg = PackageRPM('pkg', self.config, self.staff, self.modules)
         pkg.load()
         self.assertEqual(pkg.module, 'Great module')
         self.assertEqual(pkg.reason, 'Good reason')
         self.assertCountEqual(pkg.maintainers, ['Myself'])
-        spec = Spec(filepath=pkg.specfile)
+        spec = Spec(filepath=pkg.buildfile)
         spec.load()
         self.assertEqual(spec.changelog_name, 'Myself <buddy@somewhere.org> - 1.0-1')
         self.assertEqual(spec.version, '1.0')
         self.assertEqual(spec.release, '1')
-        self.assertTrue(os.path.exists(f"{pkg.specfile}.orig"))
+        self.assertTrue(os.path.exists(f"{pkg.buildfile}.orig"))
         shutil.rmtree(os.path.dirname(pkg.metafile))
 
     def test_import_unknown_maintainer(self):
@@ -174,18 +172,18 @@ class ControllerProjectActionReimportTest(RiftProjectTestCase):
         """simple reimport"""
         self.make_pkg(name='pkg')
         main(['reimport', self.src_rpm, '--maintainer', 'Myself'])
-        pkg = Package('pkg', self.config, self.staff, self.modules)
+        pkg = PackageRPM('pkg', self.config, self.staff, self.modules)
         pkg.load()
         self.assertEqual(pkg.module, 'Great module')
         self.assertEqual(pkg.reason, 'Missing feature')
         self.assertCountEqual(pkg.maintainers, ['Myself'])
-        spec = Spec(filepath=pkg.specfile)
+        spec = Spec(filepath=pkg.buildfile)
         spec.load()
         self.assertEqual(spec.changelog_name, 'Myself <buddy@somewhere.org> - 1.0-1')
         self.assertEqual(spec.version, '1.0')
         self.assertEqual(spec.release, '1')
-        self.assertTrue(os.path.exists(f"{pkg.specfile}.orig"))
-        os.unlink(f"{pkg.specfile}.orig")
+        self.assertTrue(os.path.exists(f"{pkg.buildfile}.orig"))
+        os.unlink(f"{pkg.buildfile}.orig")
 
 
 class ControllerProjectActionQueryTest(RiftProjectTestCase):
@@ -196,7 +194,6 @@ class ControllerProjectActionQueryTest(RiftProjectTestCase):
     def test_action_query(self):
         """simple 'rift query' is ok """
         self.assertEqual(main(['query']), 0)
-
 
     def test_action_query_on_pkg(self):
         """ Test query on one package """
@@ -248,22 +245,10 @@ class ControllerProjectActionQueryTest(RiftProjectTestCase):
             mock_stdout.getvalue())
 
 
-class ControllerProjectTest(RiftProjectTestCase):
+class ControllerProjectActionValiddiffTest(RiftProjectTestCase):
     """
-    Tests class for Controller
+    Tests class for Controller action validdiff
     """
-
-    def _check_qemuuserstatic(self):
-        """Skip the test if none qemu-$arch-static executable is found for all
-        architectures declared in project configuration."""
-        if not any(
-            [
-                os.path.exists(f"/usr/bin/qemu-{arch}-static")
-                for arch in self.config.get('arch')
-            ]
-        ):
-            self.skipTest("qemu-user-static is not available")
-
     @patch('rift.Controller.remove_packages')
     @patch('rift.Controller.validate_pkgs')
     @patch('rift.Controller.get_packages_from_patch')
@@ -271,7 +256,7 @@ class ControllerProjectTest(RiftProjectTestCase):
                               mock_validate_pkgs, mock_remove_packages):
         """ Test validdiff action calls expected functions """
         mock_get_packages_from_patch.return_value = (
-            {'pkg': Package('pkg', self.config, self.staff, self.modules)}, {}
+            {'pkg': PackageRPM('pkg', self.config, self.staff, self.modules)}, {}
         )
         self.assertEqual(main(['validdiff', '/dev/null']), 0)
         mock_get_packages_from_patch.assert_called_once()
@@ -299,7 +284,7 @@ class ControllerProjectTest(RiftProjectTestCase):
 
         # Define a list of packages to remove
         pkgs_to_remove = [
-            Package('pkg', self.config, self.staff, self.modules)
+            PackageRPM('pkg', self.config, self.staff, self.modules)
         ]
 
         # Define working_repo in configuration
@@ -340,9 +325,71 @@ class ControllerProjectTest(RiftProjectTestCase):
         mock_parepository_class.assert_called_once()
         mock_parepository_class.working.assert_not_called()
 
-    @patch('rift.Controller.VM')
-    def test_action_build_test(self, mock_vm_class):
 
+class ControllerProjectActionBuildTest(RiftProjectTestCase):
+    """
+    Tests class for Controller actions build, test and validate
+    """
+    def _check_qemuuserstatic(self):
+        """Skip the test if none qemu-$arch-static executable is found for all
+        architectures declared in project configuration."""
+        if not any(
+            [
+                os.path.exists(f"/usr/bin/qemu-{arch}-static")
+                for arch in self.config.get('arch')
+            ]
+        ):
+            self.skipTest("qemu-user-static is not available")
+
+    @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
+    def test_action_build(self, mock_pkg_rpm):
+
+        # Declare supported archs.
+        self.config.set('arch', ['x86_64', 'aarch64'])
+
+        # Create temporary working repo and register its deletion at exit
+        working_repo = make_temp_dir()
+        atexit.register(shutil.rmtree, working_repo)
+
+        self.config.set('working_repo', working_repo)
+        self.update_project_conf()
+
+        # Create fake package without build requirement
+        self.make_pkg(build_requires=[])
+
+        # Get PackageRPM instances mock
+        mock_pkg_rpm_objs = mock_pkg_rpm.return_value
+        # Initialize PackageRPM object attributes
+        PackageRPM.__init__(
+            mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
+        # Make PackageRPM.supports_arch() return True for all archs
+        mock_pkg_rpm_objs.supports_arch.return_value = True
+
+        # Mock ActionableArchPackageRPM objects
+        mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
+
+        self.assertEqual(main(['build', 'pkg', '--publish']), 0)
+
+        # Check RPM package supports_arch() method is called for all supported
+        # archs.
+        for arch in self.config.get('arch'):
+            mock_pkg_rpm_objs.supports_arch.assert_any_call(arch)
+
+        # Check actionable RPM package build(), publish() and clean() methods
+        # are called for all supported arch (ie. twice).
+        mock_act_arch_pkg_rpm.build.assert_has_calls(
+            [call(sign=False, staging=None), call(sign=False, staging=None)])
+        mock_act_arch_pkg_rpm.publish.assert_has_calls(
+            [call(updaterepo=True), call(updaterepo=True)])
+        mock_act_arch_pkg_rpm.clean.assert_has_calls([call(), call()])
+
+        # Remove temporary working repo and unregister its deletion at exit
+        shutil.rmtree(working_repo)
+        atexit.unregister(shutil.rmtree)
+
+    def test_action_build_publish_functional(self):
+        """Functional RPM build and publish test"""
         # Declare supported archs and check qemu-user-static is available for
         # these architectures or skip the test.
         self.config.set('arch', ['x86_64', 'aarch64'])
@@ -359,62 +406,299 @@ class ControllerProjectTest(RiftProjectTestCase):
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        main(['build', 'pkg', '--publish'])
+        self.assertEqual(main(['build', 'pkg', '--publish']), 0)
         for arch in self.config.get('arch'):
             self.assertTrue(
                 os.path.exists(f"{working_repo}/{arch}/pkg-1.0-1.noarch.rpm")
             )
 
-        # Fake stopped VM and successful tests
-        mock_vm_objects = mock_vm_class.return_value
-        mock_vm_objects.running.return_value = False
-        mock_vm_objects.run_test.return_value = RunResult(0, None, None)
-
-        # Run test on package
-        main(['test', 'pkg'])
-
-        # Check two VM objects have been initialized for the two architectures.
-        self.assertEqual(mock_vm_class.call_count, 2)
-        # Check vm.run_test() has been called twice for basic tests on the two
-        # architectures.
-        self.assertEqual(mock_vm_objects.run_test.call_count, 2)
+        # Remove mock build environments
+        self.clean_mock_environments()
 
         # Remove temporary working repo and unregister its deletion at exit
         shutil.rmtree(working_repo)
         atexit.unregister(shutil.rmtree)
 
-        # Remove mock build environments
-        self.clean_mock_environments()
+    @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
+    def test_action_test(self, mock_pkg_rpm):
 
-    @patch('rift.Controller.VM')
-    def test_action_validate(self, mock_vm_class):
-        # Declare supported archs and check qemu-user-static is available for
-        # these architectures or skip the test.
+        # Declare supported archs.
         self.config.set('arch', ['x86_64', 'aarch64'])
-        self._check_qemuuserstatic()
-        self.config.options['repos'] = VALID_REPOS
         self.update_project_conf()
 
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        # Fake stopped VM and successful tests
-        mock_vm_objects = mock_vm_class.return_value
-        mock_vm_objects.running.return_value = False
-        mock_vm_objects.run_test.return_value = RunResult(0, None, None)
+        # Get PackageRPM instances mock
+        mock_pkg_rpm_objs = mock_pkg_rpm.return_value
+        # Initialize PackageRPM object attributes
+        PackageRPM.__init__(
+            mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
+        # Make PackageRPM.supports_arch() return True for all archs
+        mock_pkg_rpm_objs.supports_arch.return_value = True
+        # Mock ActionableArchPackageRPM objects
+        mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
+        # Make ActionableArchPackageRPM.test() return empty but successful test
+        # results.
+        mock_act_arch_pkg_rpm.test.return_value = TestResults()
+
+        # Run test on package
+        self.assertEqual(main(['test', 'pkg']), 0)
+
+        # Check RPM package supports_arch() method is called for all supported
+        # archs.
+        for arch in self.config.get('arch'):
+            mock_pkg_rpm_objs.supports_arch.assert_any_call(arch)
+
+        # Check actionable RPM package test() method is called for all
+        # supported arch (ie. twice).
+        mock_act_arch_pkg_rpm.test.assert_has_calls(
+            [call(noauto=False, noquit=False),
+             call(noauto=False, noquit=False)])
+
+    @patch('rift.Controller.create_staging_repo')
+    @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
+    def test_action_validate(self, mock_pkg_rpm, mock_create_staging_repo):
+
+        # Declare supported archs.
+        self.config.set('arch', ['x86_64', 'aarch64'])
+        self.update_project_conf()
+
+        # Create fake package without build requirement
+        self.make_pkg(build_requires=[])
+
+        # Get PackageRPM instances mock
+        mock_pkg_rpm_objs = mock_pkg_rpm.return_value
+        # Initialize PackageRPM object attributes
+        PackageRPM.__init__(
+            mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
+        # Make PackageRPM.supports_arch() return True for all archs
+        mock_pkg_rpm_objs.supports_arch.return_value = True
+        # Mock ActionableArchPackageRPM objects
+        mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
+        # MakeActionableArchPackageRPM.test() return empty but successful test
+        # results.
+        mock_act_arch_pkg_rpm.test.return_value = TestResults()
+        # Mock create_staging_repo() to assert its return value is provided to
+        # actional package methods.
+        mock_staging_repo = Mock()
+        mock_create_staging_repo.return_value = (mock_staging_repo, Mock())
 
         # Run validate on pkg
+        self.assertEqual(main(['validate', 'pkg']), 0)
+
+        # Check RPM package supports_arch() method is called for all supported
+        # archs.
+        for arch in self.config.get('arch'):
+            mock_pkg_rpm_objs.supports_arch.assert_any_call(arch)
+
+        # Check RPM package check() method is called for all supported arch
+        # (ie. twice).
+        mock_pkg_rpm_objs.check.assert_has_calls([call(), call()])
+
+        # Check actionable RPM package build(), publish(staging), test() and
+        # clean() methods are called for all supported arch (ie. twice).
+        mock_act_arch_pkg_rpm.build.assert_has_calls(
+            [call(sign=False, staging=mock_staging_repo),
+             call(sign=False, staging=mock_staging_repo)])
+        mock_act_arch_pkg_rpm.publish.assert_has_calls(
+            [call(staging=mock_staging_repo), call(staging=mock_staging_repo)])
+        mock_act_arch_pkg_rpm.test.assert_has_calls(
+            [call(noauto=False, staging=mock_staging_repo, noquit=False),
+             call(noauto=False, staging=mock_staging_repo, noquit=False)])
+        mock_act_arch_pkg_rpm.clean.assert_has_calls(
+            [call(noquit=False), call(noquit=False)])
+
+    @patch('rift.Controller.PackagesDependencyGraph')
+    def test_build_graph(self, mock_graph_class):
+        """ Test build generates graph of packages dependencies with dependency tracking enabled. """
+        # Enable dependency tracking in configuration
+        self.config.set('dependency_tracking', True)
+        self.update_project_conf()
+        main(['build', 'pkg'])
+        mock_graph_class.from_project.assert_called_once()
+
+    @patch('rift.Controller.ProjectPackages')
+    @patch('rift.Controller.PackagesDependencyGraph')
+    def test_build_graph_tracking_disabled(self, mock_graph_class, mock_project_packages_class):
+        """ Test build does not build graph of packages dependencies with dependency tracking disabled. """
+        # Return empty list of packages with Package.list() to avoid actual
+        # build iterations.
+        mock_project_packages_class.list.return_value = []
+        # By default, dependency tracking is disabled
+        main(['build', 'pkg'])
+        mock_graph_class.from_project.assert_not_called()
+
+    @patch('rift.Controller.ProjectPackages')
+    @patch('rift.Controller.PackagesDependencyGraph')
+    def test_build_graph_skip_deps(self, mock_graph_class, mock_project_packages_class):
+        """ Test build --skip-deps does not build graph of packages dependencies. """
+        # Return empty list of packages with Package.list() to avoid actual
+        # build iterations.
+        mock_project_packages_class.list.return_value = []
+        # Enable dependency tracking in configuration
+        self.config.set('dependency_tracking', True)
+        self.update_project_conf()
+        main(['build', '--skip-deps', 'pkg'])
+        mock_graph_class.from_project.assert_not_called()
+
+    @patch('rift.Controller.PackagesDependencyGraph')
+    def test_validate_graph(self, mock_graph_class):
+        """ Test validate generates graph of packages dependencies with dependency tracking enabled. """
+        # Enable dependency tracking in configuration
+        self.config.set('dependency_tracking', True)
+        self.update_project_conf()
         main(['validate', 'pkg'])
+        mock_graph_class.from_project.assert_called_once()
 
-        # Check two VM objects have been initialized for the two architectures.
-        self.assertEqual(mock_vm_class.call_count, 2)
-        # Check vm.run_test() has been called twice for basic tests on the two
-        # architectures.
-        self.assertEqual(mock_vm_objects.run_test.call_count, 2)
+    @patch('rift.Controller.ProjectPackages')
+    @patch('rift.Controller.PackagesDependencyGraph')
+    def test_validate_graph_tracking_disabled(self, mock_graph_class, mock_project_packages_class):
+        """ Test validate does not build graph of packages dependencies with dependency tracking disabled. """
+        # Return empty list of packages with Package.list() to avoid actual
+        # build iterations.
+        mock_project_packages_class.list.return_value = []
+        # By default, dependency tracking is disabled
+        main(['validate', 'pkg'])
+        mock_graph_class.from_project.assert_not_called()
 
-        # Remove mock build environments
-        self.clean_mock_environments()
+    @patch('rift.Controller.ProjectPackages')
+    @patch('rift.Controller.PackagesDependencyGraph')
+    def test_validate_graph_skip_deps(self, mock_graph_class, mock_project_packages_class):
+        """ Test validate --skip-deps does not build graph of packages dependencies. """
+        # Return empty list of packages with Package.list() to avoid actual
+        # build iterations.
+        mock_project_packages_class.list.return_value = []
+        self.config.set('dependency_tracking', True)
+        self.update_project_conf()
+        main(['validate', '--skip-deps', 'pkg'])
+        mock_graph_class.from_project.assert_not_called()
 
+    def test_get_packages_to_build_tracking_disabled(self):
+        """ Test get_packages_to_build() with tracking disabled (by default) returns user provided packages. """
+        args = Mock()
+        args.skip_deps = False
+        args.packages = ['pkg']
+        pkgs = get_packages_to_build(
+            self.config, self.staff, self.modules, args
+        )
+        self.assertEqual([pkg.name for pkg in pkgs], ['pkg'])
+
+    def test_get_packages_to_build_skip_deps(self):
+        """ Test get_packages_to_build() with skip deps (tracking enabled) returns user provided packages. """
+        self.config.set('dependency_tracking', True)
+        args = Mock()
+        args.skip_deps = True
+        args.packages = ['pkg']
+        pkgs = get_packages_to_build(
+            self.config, self.staff, self.modules, args
+        )
+        self.assertEqual([pkg.name for pkg in pkgs], ['pkg'])
+
+    def test_get_packages_to_build_no_package(self):
+        """ Test get_packages_to_build() (tracking enabled, w/o skip deps) returns empty with unexisting package. """
+        self.config.set('dependency_tracking', True)
+        args = Mock()
+        args.skip_deps = False
+        args.packages = ['pkg']
+        pkgs = get_packages_to_build(
+            self.config, self.staff, self.modules, args
+        )
+        # Package 'pkg' does not exist in project directory, graph solving must
+        # return an empty list.
+        self.assertEqual(pkgs, [])
+
+    def test_get_packages_to_build_package_order(self):
+        """ Test get_packages_to_build() returns correctly ordered list of reverse dependencies. """
+        self.make_pkg(
+            name='libone',
+            build_requires=['libtwo-devel'],
+            subpackages=[
+                SubPackage('libone-bin'),
+                SubPackage('libone-devel')
+            ]
+        )
+        self.make_pkg(
+            name='libtwo',
+            subpackages=[
+                SubPackage('libtwo-bin'),
+                SubPackage('libtwo-devel')
+            ]
+        )
+        self.make_pkg(
+            name='my-software',
+            build_requires=['libone-devel, libtwo-devel']
+        )
+        # Enable tracking, disable --skip-deps
+        self.config.set('dependency_tracking', True)
+        args = Mock()
+        args.skip_deps = False
+        args.packages = ['libone']
+        pkgs = get_packages_to_build(
+            self.config, self.staff, self.modules, args
+        )
+        self.assertEqual(
+            [pkg.name for pkg in pkgs], ['libone', 'my-software']
+        )
+        args.skip_deps = False
+        args.packages = ['libone', 'libtwo']
+        pkgs = get_packages_to_build(
+            self.config, self.staff, self.modules, args
+        )
+        # Package libone must be present after libtwo and my-software must be
+        # present after both libtwo and libone in the order list of build
+        # requirements.
+        self.assertEqual(
+            [pkg.name for pkg in pkgs], ['libtwo', 'libone', 'my-software']
+        )
+
+    def test_get_packages_to_build_cyclic_deps(self):
+        """ Test get_packages_to_build() returns correctly ordered list of reverse dependencies. """
+        self.make_pkg(
+            name='libone',
+            metadata={
+                'depends': 'libtwo'
+            }
+        )
+        self.make_pkg(
+            name='libtwo',
+            metadata={
+                'depends': 'libthree'
+            }
+        )
+        self.make_pkg(
+            name='libthree',
+            metadata={
+                'depends': 'libone'
+            }
+        )
+        # Enable tracking, disable --skip-deps
+        self.config.set('dependency_tracking', True)
+        args = Mock()
+        args.skip_deps = False
+        args.packages = ['libone']
+        with self.assertLogs(level="DEBUG") as cm:
+            pkgs = get_packages_to_build(
+                self.config, self.staff, self.modules, args
+            )
+        # Package libone must be present after libtwo and my-software must be
+        # present after both libtwo and libone in the order list of build
+        # requirements.
+        self.assertCountEqual(
+            [pkg.name for pkg in pkgs], ['libthree', 'libtwo', 'libone']
+        )
+        self.assertIn(
+            'DEBUG:root:       ⥀ Loop detected on node libone at depth 2: libone→libthree→libtwo→libone',
+            cm.output
+        )
+
+
+class ControllerProjectActionVMTest(RiftProjectTestCase):
+    """
+    Tests class for Controller action vm
+    """
     @patch('rift.Controller.VM')
     def test_vm_arch_option(self, mock_vm_class):
         """Test vm --arch option required with multiple supported archs."""
@@ -551,6 +835,11 @@ class ControllerProjectTest(RiftProjectTestCase):
         # Remove mock build environments
         self.clean_mock_environments()
 
+
+class ControllerProjectActionSignTest(RiftProjectTestCase):
+    """
+    Tests class for Controller action sign
+    """
     def test_action_sign(self):
         """ Test sign package """
         gpg_home = os.path.join(self.projdir, '.gnupg')
@@ -632,6 +921,10 @@ class ControllerProjectTest(RiftProjectTestCase):
         # Remove temporary GPG home with generated key
         shutil.rmtree(gpg_home)
 
+class ControllerProjectActionSyncTest(RiftProjectTestCase):
+    """
+    Tests class for Controller action sync
+    """
     @patch('rift.sync.RepoSyncBase.run')
     @patch('sys.stdout', new_callable=StringIO)
     def test_action_sync_skip_repo_wo_params(self, mock_stdout, mock_reposyncbase_run):
@@ -839,188 +1132,11 @@ class ControllerProjectTest(RiftProjectTestCase):
         ):
             main(['sync'])
 
-    @patch('rift.Controller.PackagesDependencyGraph')
-    def test_build_graph(self, mock_graph_class):
-        """ Test build generates graph of packages dependencies with dependency tracking enabled. """
-        # Enable dependency tracking in configuration
-        self.config.set('dependency_tracking', True)
-        self.update_project_conf()
-        main(['build', 'pkg'])
-        mock_graph_class.from_project.assert_called_once()
 
-    @patch('rift.Controller.Package')
-    @patch('rift.Controller.PackagesDependencyGraph')
-    def test_build_graph_tracking_disabled(self, mock_graph_class, mock_package_class):
-        """ Test build does not build graph of packages dependencies with dependency tracking disabled. """
-        # Return empty list of packages with Package.list() to avoid actual
-        # build iterations.
-        mock_package_class.list.return_value = []
-        # By default, dependency tracking is disabled
-        main(['build', 'pkg'])
-        mock_graph_class.from_project.assert_not_called()
-
-    @patch('rift.Controller.Package')
-    @patch('rift.Controller.PackagesDependencyGraph')
-    def test_build_graph_skip_deps(self, mock_graph_class, mock_package_class):
-        """ Test build --skip-deps does not build graph of packages dependencies. """
-        # Return empty list of packages with Package.list() to avoid actual
-        # build iterations.
-        mock_package_class.list.return_value = []
-        # Enable dependency tracking in configuration
-        self.config.set('dependency_tracking', True)
-        self.update_project_conf()
-        main(['build', '--skip-deps', 'pkg'])
-        mock_graph_class.from_project.assert_not_called()
-
-    @patch('rift.Controller.PackagesDependencyGraph')
-    def test_validate_graph(self, mock_graph_class):
-        """ Test validate generates graph of packages dependencies with dependency tracking enabled. """
-        # Enable dependency tracking in configuration
-        self.config.set('dependency_tracking', True)
-        self.update_project_conf()
-        main(['validate', 'pkg'])
-        mock_graph_class.from_project.assert_called_once()
-
-    @patch('rift.Controller.Package')
-    @patch('rift.Controller.PackagesDependencyGraph')
-    def test_validate_graph_tracking_disabled(self, mock_graph_class, mock_package_class):
-        """ Test validate does not build graph of packages dependencies with dependency tracking disabled. """
-        # Return empty list of packages with Package.list() to avoid actual
-        # build iterations.
-        mock_package_class.list.return_value = []
-        # By default, dependency tracking is disabled
-        main(['validate', 'pkg'])
-        mock_graph_class.from_project.assert_not_called()
-
-    @patch('rift.Controller.Package')
-    @patch('rift.Controller.PackagesDependencyGraph')
-    def test_validate_graph_skip_deps(self, mock_graph_class, mock_package_class):
-        """ Test validate --skip-deps does not build graph of packages dependencies. """
-        # Return empty list of packages with Package.list() to avoid actual
-        # build iterations.
-        mock_package_class.list.return_value = []
-        self.config.set('dependency_tracking', True)
-        self.update_project_conf()
-        main(['validate', '--skip-deps', 'pkg'])
-        mock_graph_class.from_project.assert_not_called()
-
-    def test_get_packages_to_build_tracking_disabled(self):
-        """ Test get_packages_to_build() with tracking disabled (by default) returns user provided packages. """
-        args = Mock()
-        args.skip_deps = False
-        args.packages = ['pkg']
-        pkgs = get_packages_to_build(
-            self.config, self.staff, self.modules, args
-        )
-        self.assertEqual([pkg.name for pkg in pkgs], ['pkg'])
-
-    def test_get_packages_to_build_skip_deps(self):
-        """ Test get_packages_to_build() with skip deps (tracking enabled) returns user provided packages. """
-        self.config.set('dependency_tracking', True)
-        args = Mock()
-        args.skip_deps = True
-        args.packages = ['pkg']
-        pkgs = get_packages_to_build(
-            self.config, self.staff, self.modules, args
-        )
-        self.assertEqual([pkg.name for pkg in pkgs], ['pkg'])
-
-    def test_get_packages_to_build_no_package(self):
-        """ Test get_packages_to_build() (tracking enabled, w/o skip deps) returns empty with unexisting package. """
-        self.config.set('dependency_tracking', True)
-        args = Mock()
-        args.skip_deps = False
-        args.packages = ['pkg']
-        pkgs = get_packages_to_build(
-            self.config, self.staff, self.modules, args
-        )
-        # Package 'pkg' does not exist in project directory, graph solving must
-        # return an empty list.
-        self.assertEqual(pkgs, [])
-
-    def test_get_packages_to_build_package_order(self):
-        """ Test get_packages_to_build() returns correctly ordered list of reverse dependencies. """
-        self.make_pkg(
-            name='libone',
-            build_requires=['libtwo-devel'],
-            subpackages=[
-                SubPackage('libone-bin'),
-                SubPackage('libone-devel')
-            ]
-        )
-        self.make_pkg(
-            name='libtwo',
-            subpackages=[
-                SubPackage('libtwo-bin'),
-                SubPackage('libtwo-devel')
-            ]
-        )
-        self.make_pkg(
-            name='my-software',
-            build_requires=['libone-devel, libtwo-devel']
-        )
-        # Enable tracking, disable --skip-deps
-        self.config.set('dependency_tracking', True)
-        args = Mock()
-        args.skip_deps = False
-        args.packages = ['libone']
-        pkgs = get_packages_to_build(
-            self.config, self.staff, self.modules, args
-        )
-        self.assertEqual(
-            [pkg.name for pkg in pkgs], ['libone', 'my-software']
-        )
-        args.skip_deps = False
-        args.packages = ['libone', 'libtwo']
-        pkgs = get_packages_to_build(
-            self.config, self.staff, self.modules, args
-        )
-        # Package libone must be present after libtwo and my-software must be
-        # present after both libtwo and libone in the order list of build
-        # requirements.
-        self.assertEqual(
-            [pkg.name for pkg in pkgs], ['libtwo', 'libone', 'my-software']
-        )
-
-    def test_get_packages_to_build_cyclic_deps(self):
-        """ Test get_packages_to_build() returns correctly ordered list of reverse dependencies. """
-        self.make_pkg(
-            name='libone',
-            metadata={
-                'depends': 'libtwo'
-            }
-        )
-        self.make_pkg(
-            name='libtwo',
-            metadata={
-                'depends': 'libthree'
-            }
-        )
-        self.make_pkg(
-            name='libthree',
-            metadata={
-                'depends': 'libone'
-            }
-        )
-        # Enable tracking, disable --skip-deps
-        self.config.set('dependency_tracking', True)
-        args = Mock()
-        args.skip_deps = False
-        args.packages = ['libone']
-        with self.assertLogs(level="DEBUG") as cm:
-            pkgs = get_packages_to_build(
-                self.config, self.staff, self.modules, args
-            )
-        # Package libone must be present after libtwo and my-software must be
-        # present after both libtwo and libone in the order list of build
-        # requirements.
-        self.assertCountEqual(
-            [pkg.name for pkg in pkgs], ['libthree', 'libtwo', 'libone']
-        )
-        self.assertIn(
-            'DEBUG:root:       ⥀ Loop detected on node libone at depth 2: libone→libthree→libtwo→libone',
-            cm.output
-        )
+class ControllerProjectActionGraphTest(RiftProjectTestCase):
+    """
+    Tests class for Controller action graph
+    """
 
     def test_get_packages_in_graph(self):
         """ Test get_packages_in_graph(). """

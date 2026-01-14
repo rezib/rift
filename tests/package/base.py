@@ -40,6 +40,22 @@ class PackageTest(RiftProjectTestCase):
         self.assertEqual(pkg.reason, 'Missing feature')
         self.assertEqual(pkg.origin, 'Vendor')
 
+    def test_subpackages(self):
+        """ Test Package subpackages (not implemented) """
+        pkgname = 'pkg'
+        pkg = Package(pkgname, self.config, self.staff, self.modules, 'rpm',
+                      f"{pkgname}.spec")
+        with self.assertRaises(NotImplementedError):
+            pkg.subpackages()
+
+    def test_build_requires(self):
+        """ Test Package build requires (not implemented) """
+        pkgname = 'pkg'
+        pkg = Package(pkgname, self.config, self.staff, self.modules, 'rpm',
+                      f"{pkgname}.spec")
+        with self.assertRaises(NotImplementedError):
+            pkg.build_requires()
+
     def test_add_changelog_entry(self):
         """ Test Package add changelog entry (not implemented) """
         pkgname = 'pkg'

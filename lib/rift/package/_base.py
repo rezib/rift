@@ -244,6 +244,14 @@ class Package(ABC):
         """Read package metadata 'info.yaml' and check its content."""
         self.load_info(infopath)
 
+    def subpackages(self):
+        """Must be implemented in concrete children classes when supported."""
+        raise NotImplementedError
+
+    def build_requires(self):
+        """Must be implemented in concrete children classes when supported."""
+        raise NotImplementedError
+
     def tests(self):
         """An iterator over Test objects for each test files."""
         testspattern = os.path.join(self.testsdir, '*.sh')

@@ -664,7 +664,6 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
             [call(noauto=False, noquit=False),
              call(noauto=False, noquit=False)])
 
-    @patch('rift.Controller.create_staging_repo')
     @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
     def test_action_test_load_failure(self, mock_pkg_rpm):
 
@@ -768,9 +767,9 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         mock_act_arch_pkg_rpm.test.assert_has_calls(
             [call(noauto=False, noquit=False)])
 
-    @patch('rift.Controller.create_staging_repo')
+    @patch('rift.Controller.StagingRepository')
     @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
-    def test_action_validate(self, mock_pkg_rpm, mock_create_staging_repo):
+    def test_action_validate(self, mock_pkg_rpm, mock_staging_repo_cls):
 
         # Declare supported archs.
         self.config.set('arch', ['x86_64', 'aarch64'])
@@ -792,10 +791,9 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # MakeActionableArchPackageRPM.test() return empty but successful test
         # results.
         mock_act_arch_pkg_rpm.test.return_value = TestResults()
-        # Mock create_staging_repo() to assert its return value is provided to
-        # actional package methods.
+        # Mock StagingRepository object.
         mock_staging_repo = Mock()
-        mock_create_staging_repo.return_value = (mock_staging_repo, Mock())
+        mock_staging_repo_cls.return_value = mock_staging_repo
 
         # Run validate on pkg
         self.assertEqual(main(['validate', 'pkg']), 0)
@@ -1082,9 +1080,9 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         mock_act_arch_pkg_rpm.test.assert_not_called()
         mock_act_arch_pkg_rpm.clean.assert_not_called()
 
-    @patch('rift.Controller.create_staging_repo')
+    @patch('rift.Controller.StagingRepository')
     @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
-    def test_action_validate_build_failure(self, mock_pkg_rpm, mock_create_staging_repo):
+    def test_action_validate_build_failure(self, mock_pkg_rpm, mock_staging_repo_cls):
 
         # Declare multiple supported archs.
         self.config.set('arch', ['x86_64', 'aarch64'])
@@ -1100,10 +1098,9 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
             mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
         # Make PackageRPM.supports_arch() return True for all archs
         mock_pkg_rpm_objs.supports_arch.return_value = True
-        # Mock create_staging_repo() to assert its return value is provided to
-        # actional package methods.
+        # Mock StagingRepository object.
         mock_staging_repo = Mock()
-        mock_create_staging_repo.return_value = (mock_staging_repo, Mock())
+        mock_staging_repo_cls.return_value = mock_staging_repo
         # Mock ActionableArchPackageRPM objects
         mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
         mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
@@ -1138,9 +1135,9 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         mock_act_arch_pkg_rpm.clean.assert_not_called()
 
 
-    @patch('rift.Controller.create_staging_repo')
+    @patch('rift.Controller.StagingRepository')
     @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
-    def test_action_validate_test_failure(self, mock_pkg_rpm, mock_create_staging_repo):
+    def test_action_validate_test_failure(self, mock_pkg_rpm, mock_staging_repo_cls):
 
         # Declare supported archs.
         self.config.set('arch', ['x86_64', 'aarch64'])
@@ -1156,10 +1153,9 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
             mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
         # Make PackageRPM.supports_arch() return True for all archs
         mock_pkg_rpm_objs.supports_arch.return_value = True
-        # Mock create_staging_repo() to assert its return value is provided to
-        # actional package methods.
+        # Mock StagingRepository object.
         mock_staging_repo = Mock()
-        mock_create_staging_repo.return_value = (mock_staging_repo, Mock())
+        mock_staging_repo_cls.return_value = mock_staging_repo
         # Mock ActionableArchPackageRPM objects
         mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
         mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
@@ -1193,10 +1189,10 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         mock_act_arch_pkg_rpm.clean.assert_has_calls(
             [call(noquit=False), call(noquit=False)])
 
-    @patch('rift.Controller.create_staging_repo')
+    @patch('rift.Controller.StagingRepository')
     @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
     def test_action_validate_skip_unsupported_arch(
-        self, mock_pkg_rpm, mock_create_staging_repo
+        self, mock_pkg_rpm, mock_staging_repo_cls
     ):
 
         # Declare multiple supported archs.
@@ -1215,10 +1211,9 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Mock ActionableArchPackageRPM objects
         mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
         mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
-        # Mock create_staging_repo() to assert its return value is provided to
-        # actional package methods.
+        # Mock StagingRepository object.
         mock_staging_repo = Mock()
-        mock_create_staging_repo.return_value = (mock_staging_repo, Mock())
+        mock_staging_repo_cls.return_value = mock_staging_repo
         # Make ActionableArchPackageRPM.test() return empty but successful test
         # results.
         mock_act_arch_pkg_rpm.test.return_value = TestResults()
@@ -1250,9 +1245,9 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
             [call(noauto=False, staging=mock_staging_repo, noquit=False)])
         mock_act_arch_pkg_rpm.clean.assert_has_calls([call(noquit=False)])
 
-    @patch('rift.Controller.create_staging_repo')
+    @patch('rift.Controller.StagingRepository')
     @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
-    def test_action_validate_publish(self, mock_pkg_rpm, mock_create_staging_repo):
+    def test_action_validate_publish(self, mock_pkg_rpm, mock_staging_repo_cls):
 
         # Declare supported archs.
         self.config.set('arch', ['x86_64', 'aarch64'])
@@ -1277,10 +1272,9 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Mock ActionableArchPackageRPM objects
         mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
         mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
-        # Mock create_staging_repo() to assert its return value is provided to
-        # actional package methods.
+        # Mock StagingRepository object.
         mock_staging_repo = Mock()
-        mock_create_staging_repo.return_value = (mock_staging_repo, Mock())
+        mock_staging_repo_cls.return_value = mock_staging_repo
         # MakeActionableArchPackageRPM.test() return empty but successful test
         # results.
         mock_act_arch_pkg_rpm.test.return_value = TestResults()
@@ -1300,9 +1294,11 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         shutil.rmtree(working_repo)
         atexit.unregister(shutil.rmtree)
 
-    @patch('rift.Controller.create_staging_repo')
+    @patch('rift.Controller.StagingRepository')
     @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
-    def test_action_validate_publish_test_failure(self, mock_pkg_rpm, mock_create_staging_repo):
+    def test_action_validate_publish_test_failure(
+        self, mock_pkg_rpm, mock_staging_repo_cls
+    ):
 
         # Declare supported archs.
         self.config.set('arch', ['x86_64', 'aarch64'])
@@ -1327,10 +1323,9 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Mock ActionableArchPackageRPM objects
         mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
         mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
-        # Mock create_staging_repo() to assert its return value is provided to
-        # actional package methods.
+        # Mock StagingRepository object.
         mock_staging_repo = Mock()
-        mock_create_staging_repo.return_value = (mock_staging_repo, Mock())
+        mock_staging_repo_cls.return_value = mock_staging_repo
         # Make ActionableArchPackageRPM.test() return results with one failure.
         test_results = TestResults()
         test_results.add_failure(TestCase('fake', 'pkg', 'x86_64'), 0, None, None)

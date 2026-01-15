@@ -592,11 +592,11 @@ class ActionableArchPackageRPMTest(RiftProjectTestCase):
     @patch('rift.package.rpm.Mock.publish')
     def test_publish_staging_repo(self, mock_mock_publish):
         """ Test ActionableArchPackageRPM publish in staging repository """
-        mock_repository = Mock()
+        mock_staging_repo = Mock()
         self.setup_package()
-        self.pkg.publish(staging=mock_repository)
-        mock_mock_publish.assert_called_once_with(mock_repository)
-        mock_repository.update.assert_called_once()
+        self.pkg.publish(staging=mock_staging_repo)
+        mock_mock_publish.assert_called_once_with(mock_staging_repo.for_format().repo)
+        mock_staging_repo.for_format().repo.update.assert_called_once()
 
     @patch('rift.package.rpm.Mock.publish')
     def test_publish_no_update(self, mock_mock_publish):

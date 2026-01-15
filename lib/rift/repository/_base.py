@@ -30,7 +30,7 @@
 # knowledge of the CeCILL license and that you accept its terms.
 #
 
-"""Module to hold abstract repository base class."""
+"""Module to hold abstract repository base classes."""
 
 class ArchRepositoriesBase:
     """
@@ -48,3 +48,10 @@ class ArchRepositoriesBase:
         classes.
         """
         raise NotImplementedError
+
+class StagingRepositoryBase:
+    """
+    Abstract base class to manipulate staging repository for a specific format.
+    """
+    def __init__(self, repo):
+        self.repo = repo

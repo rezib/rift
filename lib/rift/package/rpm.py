@@ -213,7 +213,9 @@ class ActionableArchPackageRPM(ActionableArchPackage):
         # environment.
         staging = kwargs.get('staging')
         if staging:
-            mock_repos += staging.consumables[self.arch]
+            mock_repos += staging.for_format(
+                self.package.format
+            ).repo.consumables[self.arch]
 
         message('Preparing Mock environment...')
         self.mock.init(mock_repos)
@@ -240,7 +242,9 @@ class ActionableArchPackageRPM(ActionableArchPackage):
         results = TestResults('test')
         staging = kwargs.get('staging')
         if staging:
-            extra_repos=[staging.consumables[self.arch]]
+            extra_repos = [
+                staging.for_format(self.package.format).repo.consumables[self.arch]
+            ]
         else:
             extra_repos=[]
         vm = VM(self.config, self.arch, extra_repos=extra_repos)
@@ -300,7 +304,7 @@ class ActionableArchPackageRPM(ActionableArchPackage):
     def publish(self, **kwargs):
         staging = kwargs.get('staging')
         if staging:
-            repo = staging
+            repo = staging.for_format(self.package.format).repo
         else:
             repo = self.repos.working
 

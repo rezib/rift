@@ -1987,7 +1987,14 @@ class ControllerProjectActionGraphTest(RiftProjectTestCase):
         )
         args = Mock()
         args.module = 'Great module'
+        args.formats = None
         args.packages = []
+        self.assertCountEqual(
+            get_packages_in_graph(args, self.config, self.staff, self.modules),
+            ['libone', 'libtwo']
+        )
+        # Check adding format does not change result in this case.
+        args.formats = ['rpm']
         self.assertCountEqual(
             get_packages_in_graph(args, self.config, self.staff, self.modules),
             ['libone', 'libtwo']
@@ -2288,6 +2295,29 @@ class ControllerArgumentsTest(RiftTestCase):
 
         args = ['gerrit', '--change', '1', '--patchset', '2', '/dev/null',
                 '--formats', 'fail']
+        with self.assertRaises(SystemExit):
+            opts = parser.parse_args(args)
+
+    def test_parse_args_graph(self):
+        """ Test graph command options parsing """
+        parser = make_parser()
+
+        args = ['graph']
+        opts = parser.parse_args(args)
+        self.assertFalse(opts.with_external)
+        self.assertIsNone(opts.formats)
+        self.assertIsNone(opts.module)
+        self.assertCountEqual(opts.packages, [])
+
+        args = ['graph', '--with-external', '--formats', 'rpm',
+                '--module', 'storage', 'package1', 'package2']
+        opts = parser.parse_args(args)
+        self.assertTrue(opts.with_external)
+        self.assertCountEqual(opts.formats, ['rpm'])
+        self.assertEqual(opts.module, 'storage')
+        self.assertCountEqual(opts.packages, ['package1', 'package2'])
+
+        args = ['graph', '--formats', 'fail']
         with self.assertRaises(SystemExit):
             opts = parser.parse_args(args)
 

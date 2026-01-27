@@ -42,6 +42,7 @@ import re
 
 from rift.Package import Package
 from rift.RPM import Spec
+from rift import RiftError
 
 BuildRequirement = namedtuple("BuildRequirement", ["package", "reasons"])
 
@@ -389,7 +390,14 @@ class PackagesDependencyGraph:
                 logging.warning("Skipping package '%s' unable to load: %s",
                                 package.name, err)
                 continue
-            self._insert(package)
+            try:
+                self._insert(package)
+            except RiftError as err:
+                logging.warning(
+                    "Skipping package '%s' unable to insert in graph: %s",
+                    package.name, err
+                )
+                continue
         toc = time.perf_counter()
         logging.debug("Graph built in %0.4f seconds", toc - tic)
         logging.debug("Graph size: %d", len(self.nodes))

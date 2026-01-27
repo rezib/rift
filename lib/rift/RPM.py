@@ -276,7 +276,7 @@ class Spec():
             os.environ['TZ'] = str(current_timezone)
             time.tzset()
         except ValueError as exp:
-            raise RiftError(f"{self.filepath}: {exp}") from exp
+            raise RiftError(f"{self.filepath}: {str(exp).strip()}") from exp
         self.pkgnames = [_header_values(pkg.header['name']) for pkg in spec.packages]
         # Global unique list of provides. Here dict.fromkeys() is used to remove
         # duplicates as an alternative to set() for the sake of preserving order.

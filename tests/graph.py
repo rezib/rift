@@ -32,11 +32,13 @@ class GraphTest(RiftProjectTestCase):
 
     def test_packages_unable_load(self):
         """ Test graph build with package unable to load """
-        pkgs_names = [ 'success', 'failed']
+        pkgs_names = ['success', 'failed']
         packages = {}
         for pkg_name in pkgs_names:
             self.make_pkg(name=pkg_name)
-            packages[pkg_name] = Package(pkg_name, self.config, self.staff, self.modules)
+            packages[pkg_name] = Package(
+                pkg_name, self.config, self.staff, self.modules
+            )
         # Remove info.yaml in packages failed to generate error
         os.unlink(packages['failed'].metafile)
         # Build packages graph
@@ -49,9 +51,42 @@ class GraphTest(RiftProjectTestCase):
         # Check warning message has been emitted
         self.assertEqual(
             cm.output,
-            [ "WARNING:root:Skipping package 'failed' unable to load: [Errno 2]"
-              " No such file or directory: "
-              f"'{self.projdir}/packages/failed/info.yaml'" ]
+            [
+                "WARNING:root:Skipping package 'failed' unable to load: [Errno 2]"
+                " No such file or directory: "
+                f"'{self.projdir}/packages/failed/info.yaml'"
+            ]
+        )
+        # Check success package is successfully loaded anyway.
+        self.assertEqual(len(graph.nodes), 1)
+        self.assertEqual(graph.nodes[0].package.name, 'success')
+
+    def test_packages_spec_error(self):
+        """ Test graph build with package with spec error """
+        pkgs_names = ['success', 'failed']
+        packages = {}
+        for pkg_name in pkgs_names:
+            self.make_pkg(name=pkg_name)
+            packages[pkg_name] = Package(
+                pkg_name, self.config, self.staff, self.modules
+            )
+        # Insert invalid content in failed package specfile
+        with open(packages['failed'].specfile, 'w') as fh:
+            fh.write("invalid content")
+        # Build packages graph
+        with self.assertLogs(level='WARNING') as cm:
+            graph = PackagesDependencyGraph.from_project(
+                self.config,
+                self.staff,
+                self.modules
+            )
+        # Check warning message has been emitted
+        self.assertEqual(
+            cm.output,
+            [
+                "WARNING:root:Skipping package 'failed' unable to insert in graph: "
+                f"{self.projdir}/packages/failed/failed.spec: can't parse specfile"
+            ]
         )
         # Check success package is successfully loaded anyway.
         self.assertEqual(len(graph.nodes), 1)

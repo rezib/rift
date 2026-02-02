@@ -11,6 +11,7 @@ Source:         https://github.com/cea-hpc/rift/archive/refs/tags/v%{version}.ta
 URL:            https://github.com/cea-hpc/rift
 
 BuildRequires:  python3-devel
+BuildRequires:  python3-setuptools
 Summary:        Tool to build and maintain your own RPM based repository
 BuildArch:      noarch
 Requires:       createrepo_c

@@ -107,6 +107,7 @@ jobs:
         with:
           pattern: rpm-*
           path: ~/rpmbuild/RPMS
+          merge-multiple: true
 
       - name: Test env
         run: |

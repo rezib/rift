@@ -20,7 +20,7 @@ jobs:
 
       - name: Install rpm
         run: |
-          apt -y install rpm
+          sudo apt -y install rpm
 
       - id: version
         name: Set version variable

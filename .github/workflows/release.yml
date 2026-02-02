@@ -12,10 +12,14 @@ permissions:
 jobs:
   sources:
     runs-on: ubuntu-latest
+    outputs:
+      RIFT_VERSION: ${{ steps.version.outputs.RIFT_VERSION }}
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set version environment variable
+      - id: version
+        name: Set version environment variable
         run: |
           _VERSION=${{ github.ref_name }}
           # Trim leading v prefix from tag
@@ -39,12 +43,12 @@ jobs:
         - almalinux-8-x86_64
         - almalinux-9-x86_64
         - fedora-43-x86_64
-
     runs-on: ubuntu-latest
     container:
       image: fedora:latest
       # Option --privileged is required for mock+podman on fedora
       options: --privileged
+
     steps:
       - name: Install mock
         run: |
@@ -53,7 +57,7 @@ jobs:
       - name: Build source RPM
         run: |
           mock --verbose --root ${{ matrix.buildenv }} \
-            --define "ci_version {{ needs.sources.outputs.RIFT_VERSION }}" \
+            --define "ci_version ${{ needs.sources.outputs.RIFT_VERSION }}" \
             --buildsrpm \
             --sources ~/rpmbuild/SOURCES \
             --resultdir ~/rpmbuild/SRPMS \
@@ -62,13 +66,14 @@ jobs:
       - name: Build binary RPM
         run: |
           mock --verbose --root ${{ matrix.buildenv }} \
-            --define "ci_version {{ needs.sources.outputs.RIFT_VERSION }}" \
+            --define "ci_version ${{ needs.sources.outputs.RIFT_VERSION }}" \
             --resultdir ~/rpmbuild/RPMS \
             ~/rpmbuild/SRPMS/rift*.src.rpm
 
   release:
     needs: packages
     runs-on: ubuntu-latest
+
     steps:
     - name: Create release
       uses: softprops/action-gh-release@v2.5.0

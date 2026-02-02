@@ -19,8 +19,9 @@ jobs:
         run: |
           _VERSION=${{ github.ref_name }}
           # Trim leading v prefix from tag
-          echo RIFT_VERSION="${_VERSION:1}" >> "$GITHUB_ENV"
+          echo RIFT_VERSION="${_VERSION:1}" >> "$GITHUB_OUTPUT"
 
+      # FIXME use git-archive
       - name: Build source tarball
         run: |
           mkdir -p ~/rpmbuild/SOURCES
@@ -52,7 +53,7 @@ jobs:
       - name: Build source RPM
         run: |
           mock --verbose --root ${{ matrix.buildenv }} \
-            --define "ci_version ${RIFT_VERSION}" \
+            --define "ci_version {{ needs.sources.outputs.RIFT_VERSION }}" \
             --buildsrpm \
             --sources ~/rpmbuild/SOURCES \
             --resultdir ~/rpmbuild/SRPMS \
@@ -61,7 +62,7 @@ jobs:
       - name: Build binary RPM
         run: |
           mock --verbose --root ${{ matrix.buildenv }} \
-            --define "ci_version ${RIFT_VERSION}" \
+            --define "ci_version {{ needs.sources.outputs.RIFT_VERSION }}" \
             --resultdir ~/rpmbuild/RPMS \
             ~/rpmbuild/SRPMS/rift*.src.rpm
 

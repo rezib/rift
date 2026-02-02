@@ -46,8 +46,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: srpm
-          path: |
-            ~/rpmbuild/SRPMS/*
+          path: ~/rpmbuild/SRPMS/*
 
   packages:
     needs: sources
@@ -96,8 +95,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: rpm-${{ matrix.buildenv }}
-          path: |
-            ~/rpmbuild/RPMS/*.rpm
+          path: ~/rpmbuild/RPMS/*.noarch.rpm
 
   release:
     needs: packages
@@ -108,19 +106,17 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: srpm
-          path: |
-            ~/rpmbuild/SRPMS
+          path: ~/rpmbuild/SRPMS
 
       - name: Download RPMs artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: rpm-*
-          path: |
-            ~/rpmbuild/RPMS
+          path: ~/rpmbuild/RPMS
 
       - name: Create release
         uses: softprops/action-gh-release@v2.5.0
         with:
           files: |
-            ~/rpmbuild/SRPMS/*.src.rpm
-            ~/rpmbuild/RPMS/*.rpm
+            /home/runner/rpmbuild/SRPMS/*.src.rpm
+            /home/runner/rpmbuild/RPMS/*.rpm

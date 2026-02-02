@@ -32,7 +32,7 @@ jobs:
       - name: Build source tarball
         run: |
           mkdir -p ~/rpmbuild/SOURCES
-          git archive --prefix=rift-${{ steps.version.outputs.RIFT_VERSION }} \
+          git archive --prefix=rift-${{ steps.version.outputs.RIFT_VERSION }}/ \
             --format=tar.gz ${{ github.ref_name }} \
             --output ~/rpmbuild/SOURCES/rift-${{ steps.version.outputs.RIFT_VERSION }}.tar.gz
 

@@ -95,7 +95,7 @@ jobs:
       - name: Upload RPM artifact
         uses: actions/upload-artifact@v4
         with:
-          name: rpm
+          name: rpm-${{ matrix.buildenv }}
           path: |
             ~/rpmbuild/RPMS/*.rpm
 
@@ -114,7 +114,7 @@ jobs:
       - name: Download RPMs artifacts
         uses: actions/download-artifact@v4
         with:
-          name: rpm
+          pattern: rpm-*
           path: |
             ~/rpmbuild/RPMS
 

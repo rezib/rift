@@ -41,7 +41,7 @@ complete lifecycle. It provides commands to perform the following actions:
   flexibility in the tests environments.
 
 %prep
-%autosetup -n rift
+%autosetup
 
 %build
 %py3_build

@@ -46,7 +46,6 @@ jobs:
         run: |
           pwd
           echo $HOME
-          ls -Rlh /github/home/rpmbuild
           ls -Rlh $HOME/rpmbuild
 
   packages:
@@ -66,7 +65,7 @@ jobs:
       # Option --privileged is required for mock+podman on fedora
       options: --privileged
       volumes:
-      - /github/home/rpmbuild
+      - /home/runner/rpmbuild
 
     steps:
       - uses: actions/checkout@v4
@@ -78,7 +77,8 @@ jobs:
       - name: Test env
         run: |
           pwd
-          ls -Rlh /github/home/rpmbuild
+          echo $HOME
+          ls -Rlh /home/runner/rpmbuild
 
       - name: Build binary RPM
         run: |
@@ -96,4 +96,5 @@ jobs:
       uses: softprops/action-gh-release@v2.5.0
       with:
         files: |
-          /github/home/rpmbuild/RPMS/*.rpm
+          /home/runner/rpmbuild/SRPMS/*.src.rpm
+          /home/runner/rpmbuild/RPMS/*.rpm

@@ -42,6 +42,11 @@ jobs:
             --define "ci_version ${{ steps.version.outputs.RIFT_VERSION }}" \
             -bs rift.spec
 
+      - name: Test env
+        run: |
+          pwd
+          ls -Rlh /github/home/rpmbuild
+
   packages:
     needs: sources
     strategy:

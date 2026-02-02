@@ -42,11 +42,11 @@ jobs:
             --define "ci_version ${{ steps.version.outputs.RIFT_VERSION }}" \
             -bs rift.spec
 
-      - name: Test env
-        run: |
-          pwd
-          echo $HOME
-          ls -Rlh $HOME/rpmbuild
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rpm
+          path: |
+            ~/rpmbuild/SRPMS/*
 
   packages:
     needs: sources
@@ -64,11 +64,14 @@ jobs:
       image: fedora:latest
       # Option --privileged is required for mock+podman on fedora
       options: --privileged
-      volumes:
-      - /home/runner/rpmbuild
 
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: rpm
+          path: ~/rpmbuild/SRPMS/*
 
       - name: Install mock
         run: |
@@ -78,7 +81,7 @@ jobs:
         run: |
           pwd
           echo $HOME
-          ls -Rlh /home/runner/rpmbuild
+          ls -Rlh ~/rpmbuild
 
       - name: Build binary RPM
         run: |
@@ -87,14 +90,27 @@ jobs:
             --resultdir ~/rpmbuild/RPMS \
             ~/rpmbuild/SRPMS/rift*.src.rpm
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rpm
+          path: |
+            ~/rpmbuild/RPMS/*
+
   release:
     needs: packages
     runs-on: ubuntu-latest
 
     steps:
-    - name: Create release
-      uses: softprops/action-gh-release@v2.5.0
-      with:
-        files: |
-          /home/runner/rpmbuild/SRPMS/*.src.rpm
-          /home/runner/rpmbuild/RPMS/*.rpm
+      - uses: actions/download-artifact@v4
+        with:
+          name: rpm
+          path: |
+            ~/rpmbuild/SRPMS/*
+            ~/rpmbuild/RPMS/*
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2.5.0
+        with:
+          files: |
+            ~/rpmbuild/SRPMS/*.src.rpm
+            ~/rpmbuild/RPMS/*.rpm

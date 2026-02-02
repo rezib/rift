@@ -48,6 +48,8 @@ jobs:
       image: fedora:latest
       # Option --privileged is required for mock+podman on fedora
       options: --privileged
+      volumes:
+      - /github/home/rpmbuild
 
     steps:
       - uses: actions/checkout@v4

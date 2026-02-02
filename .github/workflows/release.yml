@@ -78,12 +78,6 @@ jobs:
         run: |
           dnf install -y mock
 
-      - name: Test env
-        run: |
-          pwd
-          echo $HOME
-          ls -Rlh ~/rpmbuild
-
       - name: Build binary RPM
         run: |
           mock --verbose --root ${{ matrix.buildenv }} \
@@ -113,6 +107,10 @@ jobs:
         with:
           pattern: rpm-*
           path: ~/rpmbuild/RPMS
+
+      - name: Test env
+        run: |
+          ls -Rlh ~/rpmbuild
 
       - name: Create release
         uses: softprops/action-gh-release@v2.5.0

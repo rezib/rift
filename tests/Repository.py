@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from .TestUtils import make_temp_dir, RiftTestCase
 from rift.Repository import ConsumableRepository, LocalRepository, ProjectArchRepositories
-from rift.Config import _DEFAULT_REPO_CMD, Config
+from rift.Config import _DEFAULT_REPO_CMD, _DEFAULT_REPOS_VARIANTS, Config
 from rift.RPM import RPM
 from rift import RiftError
 
@@ -300,6 +300,36 @@ class ConsumableRepositoryTest(RiftTestCase):
     Tests class for ConsumableRepository
     """
 
+    def test_init(self):
+        repo = ConsumableRepository("http://repo")
+        self.assertEqual(repo.url, "http://repo")
+        self.assertIsNone(repo.name)
+        self.assertIsNone(repo.priority)
+        self.assertIsNone(repo.module_hotfixes)
+        self.assertIsNone(repo.excludepkgs)
+        self.assertIsNone(repo.proxy)
+        self.assertCountEqual(repo.variants, _DEFAULT_REPOS_VARIANTS)
+
+    def test_init_full(self):
+        repo = ConsumableRepository(
+            "http://repo",
+            name='testrepo',
+            priority=99,
+            options={
+                'module_hotfixes': True,
+                'excludepkgs': ['pkg1', 'pkg2'],
+                'proxy': 'http://proxy',
+            },
+            variants=['variant1', 'variant2']
+        )
+        self.assertEqual(repo.url, "http://repo")
+        self.assertEqual(repo.name, 'testrepo')
+        self.assertEqual(repo.priority, 99)
+        self.assertTrue(repo.module_hotfixes)
+        self.assertCountEqual(repo.excludepkgs, ['pkg1', 'pkg2'])
+        self.assertEqual(repo.proxy, 'http://proxy')
+        self.assertCountEqual(repo.variants, ['variant1', 'variant2'])
+
     def test_path_local_file(self):
         """ test path method """
         directory = '/somewhere'
@@ -503,3 +533,33 @@ class ProjectArchRepositoriesTest(RiftTestCase):
             repos.supplementaries[1].url,
             'file:///rift/packages/aarch64/extra'
         )
+
+    def test_for_variant(self):
+        self.config.options['repos'] = {
+            'base': {
+                'url': 'http://base/',
+            },
+            'repo1': {
+                'url': 'http://repo1',
+                'variants': ['variant1']
+            },
+            'repo2': {
+                'url': 'http://repo2',
+                'variants': ['variant2']
+            },
+            'repo3': {
+                'url': 'http://repo3',
+                'variants': ['variant1', 'variant2']
+            },
+        }
+        repos = ProjectArchRepositories(self.config, 'x86_64')
+        expected_results = {
+            'main': ['base'],
+            'variant1': ['repo1', 'repo3'],
+            'variant2': ['repo2', 'repo3'],
+        }
+        for variant, expected_result in expected_results.items():
+            self.assertCountEqual(
+                [repo.name for repo in repos.for_variant(variant)],
+                expected_result
+            )

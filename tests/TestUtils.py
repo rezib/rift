@@ -73,6 +73,21 @@ module_hotfixes={{ repo.module_hotfixes }}
 SPEC_TPL = """\
 %global foo 1.%{bar}
 %define bar 1
+
+{% if variants is not none %}
+{% for variant in variants | default([]) %}
+%bcond_with {{ variant }}
+{% endfor %}
+
+%define variant main
+
+{% for variant in variants | default([]) %}
+%if %{with {{ variant }}}
+%define variant {{ variant }}
+%endif
+{% endfor %}
+{% endif %}
+
 Name:           {{ name }}
 Version:        {{ version }}
 Release:        {{ release }}
@@ -103,6 +118,13 @@ Summary: Sub-package {{ subpackage.name }}
 Description for package {{ subpackage.name }}
 {% endfor %}
 
+{% if variants is not none %}
+%package -n {{ name }}-%{variant}
+Summary: Package variant %{variant}
+%description -n {{ name }}-%{variant}
+Description for package {{ name }} variant %{variant}
+{% endif %}
+
 %prep
 {{ prepsteps | default("") }}
 
@@ -114,7 +136,12 @@ Description for package {{ subpackage.name }}
 # Nothing to install
 {{ installsteps | default("") }}
 
+{% if variants is none %}
 %files
+{% else %}
+%files -n {{ name }}-%{variant}
+{% endif %}
+
 # No files
 {{ files | default("") }}
 
@@ -256,6 +283,7 @@ class RiftProjectTestCase(RiftTestCase):
         build_requires=['br-package'],
         requires=['another-package'],
         subpackages=[],
+        variants=None,
     ):
         # ./packages/pkg
         self.pkgdirs[name] = os.path.join(self.packagesdir, name)
@@ -287,15 +315,20 @@ class RiftProjectTestCase(RiftTestCase):
                 nfo.write(
                     "    exclude_archs: {}\n".format(metadata.get('exclude_archs'))
                 )
+            if variants:
+                nfo.write("    variants:\n")
+                for variant in variants:
+                    nfo.write(f"    - {variant}\n")
 
         # ./packages/pkg/pkg.spec
         self.pkgspecs[name] = os.path.join(self.pkgdirs[name],
                                            "{0}.spec".format(name))
+
         with open(self.pkgspecs[name], "w") as spec:
             spec.write(
                 gen_rpm_spec(name=name, version=version, release=release,
                              build_requires=build_requires, requires=requires,
-                             arch='noarch', subpackages=subpackages))
+                             arch='noarch', subpackages=subpackages, variants=variants))
         # ./packages/pkg/sources
         srcdir = os.path.join(self.pkgdirs[name], 'sources')
         os.mkdir(srcdir)

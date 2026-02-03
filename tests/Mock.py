@@ -4,16 +4,19 @@
 
 import os
 import getpass
-import logging
-import tempfile
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
-from TestUtils import make_temp_dir, RiftProjectTestCase
+from TestUtils import RiftProjectTestCase
 from rift.Mock import Mock
-from rift.Repository import ConsumableRepository
+from rift.Repository import ConsumableRepository, ProjectArchRepositories
+from rift.RPM import RPM
 from rift.TempDir import TempDir
 from rift.run import RunResult
+from rift.Config import _DEFAULT_VARIANT
 from rift import RiftError
+
+TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
+
 
 class MockTest(RiftProjectTestCase):
     """
@@ -116,3 +119,78 @@ class MockTest(RiftProjectTestCase):
                           f'--configdir={mock._tmpdir.path}',
                           f'--macro-file={macro_file}'])
         self.assertEqual(open(macro_file).readlines(), ["%my_version 1\n"])
+
+    @patch('rift.Mock.run_command')
+    def test_build_rpms(self, mock_run_command):
+        """ Test Mock build_rpms() mock build command line """
+        # Emulate successful mock execution
+        mock_run_command.return_value = RunResult(0, None, None)
+        mock = Mock(config=self.config, arch='x86_64', proj_vers=1.0)
+        # Init tmp directory
+        mock._tmpdir = TempDir('test_mock')
+        mock._tmpdir.create()
+
+        src_rpm_path = os.path.join(
+            TESTS_DIR, 'materials', 'pkg-1.0-1.src.rpm'
+        )
+        repos = ProjectArchRepositories(self.config, 'x86_64')
+        srpm = RPM(src_rpm_path)
+        mock.build_rpms(srpm, _DEFAULT_VARIANT, repos, False)
+        mock_run_command.assert_called_once_with(
+            [
+                'mock',
+                '--config-opts',
+                'print_main_output=yes',
+                f"--configdir={mock._tmpdir.path}",
+                '--no-clean',
+                '--no-cleanup-after',
+                src_rpm_path
+            ],
+            live_output=True,
+            capture_output=True,
+            merge_out_err=True,
+            cwd='/'
+        )
+
+    @patch('rift.Mock.run_command')
+    def test_build_rpms_variant(self, mock_run_command):
+        """ Test Mock build_rpms() mock build command line with variant """
+        # Emulate successful mock execution
+        mock_run_command.return_value = RunResult(0, None, None)
+        mock = Mock(config=self.config, arch='x86_64', proj_vers=1.0)
+        # Init tmp directory
+        mock._tmpdir = TempDir('test_mock')
+        mock._tmpdir.create()
+        src_rpm_path = os.path.join(
+            TESTS_DIR, 'materials', 'pkg-1.0-1.src.rpm'
+        )
+        repos = ProjectArchRepositories(self.config, 'x86_64')
+        repos.for_variant = MagicMock(
+            return_value=[
+                ConsumableRepository('http://repo1', name='variant1-repo1'),
+                ConsumableRepository('http://repo2', name='variant1-repo2'),
+            ]
+        )
+        srpm = RPM(src_rpm_path)
+        mock.build_rpms(srpm, 'variant1', repos, False)
+        mock_run_command.assert_called_once_with(
+            [
+                'mock',
+                '--config-opts',
+                'print_main_output=yes',
+                f"--configdir={mock._tmpdir.path}",
+                '--no-clean',
+                '--no-cleanup-after',
+                src_rpm_path,
+                '--with',
+                'variant1',
+                '--enablerepo',
+                'variant1-repo1',
+                '--enablerepo',
+                'variant1-repo2',
+            ],
+            live_output=True,
+            capture_output=True,
+            merge_out_err=True,
+            cwd='/'
+        )

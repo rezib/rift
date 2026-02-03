@@ -16,8 +16,8 @@ from rift.Config import Staff, Modules, Config, _DEFAULT_PKG_DIR, \
                          _DEFAULT_VM_PORT_RANGE_MAX, \
                          _DEFAULT_QEMU_CMD, _DEFAULT_REPO_CMD, \
                          _DEFAULT_SHARED_FS_TYPE, _DEFAULT_VIRTIOFSD, \
-                         _DEFAULT_SYNC_METHOD, _DEFAULT_SYNC_INCLUDE, \
-                         _DEFAULT_SYNC_EXCLUDE, _DEFAULT_DEPENDENCY_TRACKING, \
+                         _DEFAULT_SYNC_METHOD, _DEFAULT_SYNC_EXCLUDE, \
+                         _DEFAULT_REPOS_VARIANTS, _DEFAULT_DEPENDENCY_TRACKING, \
                          RiftDeprecatedConfWarning
 
 class ConfigTest(RiftTestCase):
@@ -77,7 +77,10 @@ class ConfigTest(RiftTestCase):
 
         # set a 'record'
         config.set('repos', {'os': {'url': 'http://myserver/pub'}})
-        self.assertEqual(config.get('repos'), {'os': {'url': 'http://myserver/pub'}})
+        self.assertEqual(
+            config.get('repos'),
+            {'os': {'url': 'http://myserver/pub', 'variants': _DEFAULT_REPOS_VARIANTS}}
+        )
 
         # set a 'list'
         config.set('arch', ['x86_64', 'aarch64'])
@@ -132,10 +135,12 @@ class ConfigTest(RiftTestCase):
                 'os': {
                     'url': 'file:///rift/packages/$arch/os',
                     'priority': 90,
+                    'variants': _DEFAULT_REPOS_VARIANTS,
                 },
                 'extra': {
                     'url': 'file:///rift/packages/$arch/extra',
                     'priority': 90,
+                    'variants': _DEFAULT_REPOS_VARIANTS,
                 },
             }
         )
@@ -145,10 +150,12 @@ class ConfigTest(RiftTestCase):
                 'os': {
                     'url': 'file:///rift/packages/x86_64/os',
                     'priority': 90,
+                    'variants': _DEFAULT_REPOS_VARIANTS,
                 },
                 'extra': {
                     'url': 'file:///rift/packages/x86_64/extra',
                     'priority': 90,
+                    'variants': _DEFAULT_REPOS_VARIANTS,
                 },
             }
         )
@@ -158,10 +165,12 @@ class ConfigTest(RiftTestCase):
                 'os': {
                     'url': 'file:///rift/packages/aarch64/os',
                     'priority': 90,
+                    'variants': _DEFAULT_REPOS_VARIANTS,
                 },
                 'extra': {
                     'url': 'file:///rift/packages/aarch64/extra',
                     'priority': 90,
+                    'variants': _DEFAULT_REPOS_VARIANTS,
                 },
             }
         )
@@ -413,6 +422,9 @@ class ConfigTest(RiftTestCase):
                       os:
                         url: https://os/url/file2
                         module_hotfixes: true
+                        variants:
+                        - mofed4
+                        - mofed5
                       update:
                         url: https://update/url/file2
                     """
@@ -427,6 +439,7 @@ class ConfigTest(RiftTestCase):
         self.assertTrue('extra' in repos)
         self.assertEqual(repos['os']['url'], 'https://os/url/file2')
         self.assertTrue('module_hotfixes' in repos['os'])
+        self.assertCountEqual(repos['os']['variants'], ['mofed4', 'mofed5'])
         self.assertEqual(repos['update']['url'], 'https://update/url/file2')
         self.assertEqual(repos['extra']['url'], 'https://extra/url/file1')
 

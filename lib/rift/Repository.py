@@ -43,7 +43,7 @@ from subprocess import Popen, PIPE, STDOUT, run, CalledProcessError
 from rift import RiftError
 from rift.RPM import RPM, Spec
 from rift.TempDir import TempDir
-from rift.Config import _DEFAULT_REPO_CMD
+from rift.Config import _DEFAULT_REPO_CMD, _DEFAULT_REPOS_VARIANTS
 
 class ConsumableRepository():
     """
@@ -51,7 +51,15 @@ class ConsumableRepository():
     """
     FILE_SCHEME = 'file://'
 
-    def __init__(self, url, name=None, priority=None, options=None, default_proxy=None):
+    def __init__(
+        self,
+        url,
+        name=None,
+        priority=None,
+        options=None,
+        default_proxy=None,
+        variants=None,
+    ):
         self.url = url
         self.name = name
         self.priority = priority
@@ -60,6 +68,10 @@ class ConsumableRepository():
         self.module_hotfixes = options.get('module_hotfixes')
         self.excludepkgs = options.get('excludepkgs')
         self.proxy = options.get('proxy', default_proxy)
+        if variants is None:
+            self.variants = _DEFAULT_REPOS_VARIANTS
+        else:
+            self.variants = variants
 
     def is_file(self):
         """True if repository URL looks like a file URI."""
@@ -272,7 +284,9 @@ class ProjectArchRepositories:
                 path=config.get('working_repo', arch=arch),
                 config=config,
                 name='working',
-                options={"module_hotfixes": "true"},
+                options={
+                    "module_hotfixes": "true"
+                },
             )
             self.working.create()
         self.supplementaries = []
@@ -288,6 +302,7 @@ class ProjectArchRepositories:
                         priority=data.get('priority'),
                         options=data,
                         default_proxy=config.get('proxy'),
+                        variants=data.get('variants'),
                     )
                 )
 
@@ -305,6 +320,18 @@ class ProjectArchRepositories:
                 else []
             ) + self.supplementaries
         )
+
+    def for_variant(self, variant):
+        """
+        The list of additional supplementary repositories to enable for the
+        provided variant.
+        """
+        repos = []
+        for repo in self.supplementaries:
+            if variant in repo.variants:
+                repos.append(repo)
+
+        return repos
 
     def can_publish(self):
         """

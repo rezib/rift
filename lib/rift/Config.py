@@ -86,6 +86,8 @@ _DEFAULT_VIRTIOFSD = '/usr/libexec/virtiofsd'
 _DEFAULT_SYNC_METHOD = 'dnf'
 _DEFAULT_SYNC_INCLUDE = []
 _DEFAULT_SYNC_EXCLUDE = []
+_DEFAULT_VARIANT = 'main'
+_DEFAULT_REPOS_VARIANTS = [_DEFAULT_VARIANT]
 _DEFAULT_DEPENDENCY_TRACKING = False
 _DEFAULT_S3_CREDENTIAL_FILE = '~/.rift/auth.json'
 
@@ -180,7 +182,11 @@ class Config():
                 'module_hotfixes': {
                     'check': 'bool'
                 },
-                'proxy': {}
+                'proxy': {},
+                'variants': {
+                    'check': 'list',
+                    'default': _DEFAULT_REPOS_VARIANTS,
+                }
             }
         },
         'arch': {

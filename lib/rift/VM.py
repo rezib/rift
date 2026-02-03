@@ -59,7 +59,7 @@ from subprocess import Popen, PIPE, STDOUT, check_output, run, CalledProcessErro
 from jinja2 import Template
 
 from rift import RiftError
-from rift.Config import _DEFAULT_VIRTIOFSD
+from rift.Config import _DEFAULT_VIRTIOFSD, _DEFAULT_VARIANT
 from rift.Repository import ProjectArchRepositories
 from rift.TempDir import TempDir
 from rift.utils import download_file, setup_dl_opener, message
@@ -485,6 +485,7 @@ class VM():
                 baseurl={url}
                 gpgcheck=0
                 priority={prio}
+                enabled={1 if _DEFAULT_VARIANT in repo.variants else 0}
                 """))
             if repo.excludepkgs:
                 repos.append(f"excludepkgs={repo.excludepkgs}\n")
@@ -606,7 +607,7 @@ class VM():
         return retcode
 
 
-    def run_test(self, test):
+    def run_test(self, test, variant):
         """
         Run specified test using this VM.
 
@@ -631,15 +632,17 @@ class VM():
             echo -n 'Restarting VM...'
             vm_cmd 'reboot' || true; sleep 5 && vm_wait || return 1""")
 
+        # Set environment variable for package variant to allow conditionals
+        # in test scripts.
+        cmd = f"export RIFT_VARIANT={variant}; "
         if not test.local:
             if test.command.startswith(self._project_dir):
                 testcmd = test.command[len(self._project_dir) + 1:]
             else:
                 testcmd = test.command
-            cmd = f"cd {self._PROJ_MOUNTPOINT}; {testcmd}"
+            cmd += f"cd {self._PROJ_MOUNTPOINT}; {testcmd}"
             return self.cmd(cmd, capture_output=True)
 
-        cmd = ''
         for func, code in funcs.items():
             cmd += f"{func}() {{ {code}; }}; export -f {func}; "
         cmd += shlex.quote(test.command)

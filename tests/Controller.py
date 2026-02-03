@@ -5,7 +5,7 @@
 import os.path
 import shutil
 import atexit
-from unittest.mock import patch, Mock
+from unittest.mock import patch, Mock, call
 import subprocess
 import textwrap
 from io import StringIO
@@ -390,6 +390,55 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         self.clean_mock_environments()
 
     @patch('rift.Controller.VM')
+    def test_action_build_test_variants(self, mock_vm_class):
+
+        # Declare supported archs and check qemu-user-static is available for
+        # these architectures or skip the test.
+        self.config.set('arch', ['x86_64', 'aarch64'])
+        self._check_qemuuserstatic()
+
+        # Create temporary working repo and register its deletion at exit
+        working_repo = make_temp_dir()
+        atexit.register(shutil.rmtree, working_repo)
+
+        self.config.set('working_repo', working_repo)
+        self.config.options['repos'] = VALID_REPOS
+        self.update_project_conf()
+
+        # Create fake package without build requirement but 2 variants
+        self.make_pkg(build_requires=[], variants=['variant1', 'variant2'])
+
+        main(['build', 'pkg', '--publish'])
+        for arch in self.config.get('arch'):
+            self.assertTrue(
+                os.path.exists(f"{working_repo}/{arch}/pkg-variant1-1.0-1.noarch.rpm")
+            )
+            self.assertTrue(
+                os.path.exists(f"{working_repo}/{arch}/pkg-variant2-1.0-1.noarch.rpm")
+            )
+
+        # Fake stopped VM and successful tests
+        mock_vm_objects = mock_vm_class.return_value
+        mock_vm_objects.running.return_value = False
+        mock_vm_objects.run_test.return_value = RunResult(0, None, None)
+
+        # Run test on package
+        main(['test', 'pkg'])
+
+        # Check two VM objects have been initialized for the two architectures.
+        self.assertEqual(mock_vm_class.call_count, 2)
+        # Check vm.run_test() has been called foud times for basic tests on the
+        # two architectures for the two variants.
+        self.assertEqual(mock_vm_objects.run_test.call_count, 4)
+
+        # Remove temporary working repo and unregister its deletion at exit
+        shutil.rmtree(working_repo)
+        atexit.unregister(shutil.rmtree)
+
+        # Remove mock build environments
+        self.clean_mock_environments()
+
+    @patch('rift.Controller.VM')
     def test_action_validate(self, mock_vm_class):
         # Declare supported archs and check qemu-user-static is available for
         # these architectures or skip the test.
@@ -414,6 +463,35 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Check vm.run_test() has been called twice for basic tests on the two
         # architectures.
         self.assertEqual(mock_vm_objects.run_test.call_count, 2)
+
+        # Remove mock build environments
+        self.clean_mock_environments()
+
+    @patch('rift.Controller.VM')
+    def test_action_validate_variants(self, mock_vm_class):
+        # Declare supported archs and check qemu-user-static is available for
+        # these architectures or skip the test.
+        self.config.set('arch', ['x86_64', 'aarch64'])
+        self._check_qemuuserstatic()
+        self.config.options['repos'] = VALID_REPOS
+        self.update_project_conf()
+
+        # Create fake package without build requirement but 2 variants
+        self.make_pkg(build_requires=[], variants=['variant1', 'variant2'])
+
+        # Fake stopped VM and successful tests
+        mock_vm_objects = mock_vm_class.return_value
+        mock_vm_objects.running.return_value = False
+        mock_vm_objects.run_test.return_value = RunResult(0, None, None)
+
+        # Run validate on pkg
+        main(['validate', 'pkg'])
+
+        # Check two VM objects have been initialized for the two architectures.
+        self.assertEqual(mock_vm_class.call_count, 2)
+        # Check vm.run_test() has been called foud times for basic tests on the
+        # two architectures for the two variants.
+        self.assertEqual(mock_vm_objects.run_test.call_count, 4)
 
         # Remove mock build environments
         self.clean_mock_environments()

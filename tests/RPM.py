@@ -34,6 +34,7 @@ class SpecTest(RiftTestCase):
         self.installsteps = ""
         self.files = ""
         self.exclusive_arch = None
+        self.variants = None
         self.update_spec()
 
 
@@ -50,6 +51,7 @@ class SpecTest(RiftTestCase):
                     installsteps=self.installsteps,
                     files=self.files,
                     exclusive_arch=self.exclusive_arch,
+                    variants=self.variants,
                 )
             )
 
@@ -69,7 +71,20 @@ class SpecTest(RiftTestCase):
         self.assertEqual(spec.exclusive_archs, [])
         self.assertEqual(spec.arch, self.arch)
         self.assertIn("{0}-{1}.tar.gz".format(self.name, self.version), spec.sources)
-        self.assertEqual(len(spec.lines), 42)
+        self.assertEqual(len(spec.lines), 50)
+
+    def test_init_variant(self):
+        """ Test Spec instanciation """
+        self.variants = ['variant1', 'variant2']
+        self.update_spec()
+        spec = Spec(self.spec, variant='variant1')
+        self.assertIn(self.name, spec.pkgnames)
+        self.assertEqual(len(spec.pkgnames), 2)
+        self.assertCountEqual(spec.pkgnames, ['pkg', 'pkg-variant1'])
+        spec = Spec(self.spec, variant='variant2')
+        self.assertIn(self.name, spec.pkgnames)
+        self.assertEqual(len(spec.pkgnames), 2)
+        self.assertCountEqual(spec.pkgnames, ['pkg', 'pkg-variant2'])
 
     def test_init_fails(self):
         """ Test Spec instanciation with error """

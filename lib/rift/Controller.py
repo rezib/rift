@@ -47,7 +47,7 @@ from unidiff import parse_unidiff
 
 from rift import RiftError, __version__
 from rift.Annex import Annex, is_binary
-from rift.Config import Config, Staff, Modules
+from rift.Config import Config, Staff, Modules, _DEFAULT_VARIANT
 from rift.Gerrit import Review
 from rift.auth import Auth
 from rift.Mock import Mock
@@ -429,11 +429,11 @@ class BasicTest(Test):
         - config: rift configuration
     """
 
-    def __init__(self, pkg, config=None):
+    def __init__(self, pkg, variant, config=None):
         if pkg.rpmnames:
             rpmnames = pkg.rpmnames
         else:
-            rpmnames = Spec(pkg.specfile, config=config).pkgnames
+            rpmnames = Spec(pkg.specfile, config=config, variant=variant).pkgnames
 
         try:
             for name in pkg.ignore_rpms:
@@ -470,9 +470,9 @@ class BasicTest(Test):
         Test.__init__(self, cmd, "basic_install")
         self.local = False
 
-def build_pkg(config, args, pkg, arch, staging):
+def build_pkg_variants(config, args, pkg, arch, staging):
     """
-    Build a package for a specific architecture
+    Build all variants of package for a specific architecture
       - config: rift configuration
       - args: command line arguments
       - pkg: package to build
@@ -480,6 +480,7 @@ def build_pkg(config, args, pkg, arch, staging):
       - staging: temporary staging rpm repositories to hold dependencies when
         testing builds of reserve dependencies recursively.
     """
+    results = TestResults()
     repos = ProjectArchRepositories(config, arch,
                                     extra=staging.consumables[arch]
                                     if staging is not None else None)
@@ -490,14 +491,33 @@ def build_pkg(config, args, pkg, arch, staging):
     mock = Mock(config, arch, config.get('version'))
     mock.init(repos.all)
 
-    message("Building SRPM...")
-    srpm = pkg.build_srpm(mock, args.sign)
-    logging.info("Built: %s", srpm.filepath)
+    case = TestCase('source build', pkg.name, _DEFAULT_VARIANT, arch)
+    now = time.time()
+    try:
+        message("Building SRPM...")
+        srpm = pkg.build_srpm(mock, args.sign)
+    except RiftError as ex:
+        logging.error("Build failure: %s", str(ex))
+        results.add_failure(case, time.time() - now, err=str(ex))
+    else:
+        logging.info("Built: %s", srpm.filepath)
+        results.add_success(case, time.time() - now)
 
-    message("Building RPMS...")
-    for rpm in pkg.build_rpms(mock, srpm, args.sign):
-        logging.info('Built: %s', rpm.filepath)
-    message("RPMS successfully built")
+    for variant in pkg.variants:
+        case = TestCase('binary build', pkg.name, variant, arch)
+        now = time.time()
+
+        try:
+            message(f"Building RPMS {variant} variant...")
+            for rpm in pkg.build_rpms(mock, srpm, variant, repos, args.sign):
+                logging.info('Built: %s', rpm.filepath)
+            message(f"RPMS {variant} variant successfully built")
+
+        except RiftError as ex:
+            logging.error("Build failure: %s", str(ex))
+            results.add_failure(case, time.time() - now, err=str(ex))
+        else:
+            results.add_success(case, time.time() - now)
 
     # If defined, publish in staging repository
     if staging:
@@ -515,42 +535,56 @@ def build_pkg(config, args, pkg, arch, staging):
         if args.updaterepo:
             message("Updating repository...")
             repos.working.update()
-    else:
-        logging.info("Skipping publication")
+        else:
+            logging.info("Skipping publication")
 
     mock.clean()
+    return results
 
-def test_one_pkg(config, args, pkg, vm, arch, repos):
+def test_pkg_variants(config, args, pkg, vm, arch, repos):
     """
-    Launch tests on a given package on a specific VM and a set of repositories
-    and return results.
+    Launch tests of all variants of a given package on a specific VM and a set
+    of repositories and return results.
     """
     message(f"Preparing {arch} test environment")
     vm.start(False)
-    if repos.working is None:
-        disablestr = '--disablerepo=working'
-    else:
-        disablestr = ''
-    vm.cmd(f"yum -y -d0 {disablestr} update")
-
-    banner(f"Starting tests of package {pkg.name} on architecture {arch}")
 
     results = TestResults()
 
-    tests = list(pkg.tests())
-    if not args.noauto:
-        tests.insert(0, BasicTest(pkg, config=config))
-    for test in tests:
-        case = TestCase(test.name, pkg.name, arch)
-        now = time.time()
-        message(f"Running test '{case.fullname}' on architecture '{arch}'")
-        proc = vm.run_test(test)
-        if proc.returncode == 0:
-            results.add_success(case, time.time() - now, out=proc.out, err=proc.err)
-            message(f"Test '{case.fullname}' on architecture {arch}: OK")
-        else:
-            results.add_failure(case, time.time() - now, out=proc.out, err=proc.err)
-            message(f"Test '{case.fullname}' on architecture {arch}: ERROR")
+    for variant in pkg.variants:
+        # Setup repos in VM considering the variant and presence of working
+        # repository.
+        repos_args = ''
+        if variant != _DEFAULT_VARIANT:
+            for repo in repos.for_variant(variant):
+                repos_args += f"--enablerepo={repo} "
+        if repos.working is None:
+            repos_args = '--disablerepo=working'
+        vm.cmd(f"yum -y -d0 {repos_args} update")
+
+        banner(
+            f"Starting tests of package {pkg.name} variant {variant} on "
+            f"architecture {arch}"
+        )
+
+        tests = list(pkg.tests())
+        if not args.noauto:
+            tests.insert(0, BasicTest(pkg, variant, config=config))
+        for test in tests:
+            case = TestCase(test.name, pkg.name, variant, arch)
+            now = time.time()
+            message(f"Running test '{case.fullname}' on architecture '{arch}'")
+            proc = vm.run_test(test, variant)
+            if proc.returncode == 0:
+                results.add_success(
+                    case, time.time() - now, out=proc.out, err=proc.err
+                )
+                message(f"Test '{case.fullname}' on architecture {arch}: OK")
+            else:
+                results.add_failure(
+                    case, time.time() - now, out=proc.out, err=proc.err
+                )
+                message(f"Test '{case.fullname}' on architecture {arch}: ERROR")
 
     if not getattr(args, 'noquit', False):
         message(f"Cleaning {arch} test environment")
@@ -583,7 +617,7 @@ def test_pkgs(config, args, pkgs, arch, extra_repos=None):
             # Create a dummy parse test case to report specifically the spec
             # parsing error. When parsing succeed, this test case is not
             # reported in test results.
-            case = TestCase("parse", pkg.name, arch)
+            case = TestCase("parse", pkg.name, _DEFAULT_VARIANT, arch)
             logging.error("Unable to load spec file: %s", str(ex))
             results.add_failure(case, time.time() - now, err=str(ex))
             continue
@@ -598,7 +632,7 @@ def test_pkgs(config, args, pkgs, arch, extra_repos=None):
             continue
 
         pkg.load()
-        results.extend(test_one_pkg(config, args, pkg, vm, arch, repos))
+        results.extend(test_pkg_variants(config, args, pkg, vm, arch, repos))
 
     if getattr(args, 'noquit', False):
         message("Not stopping the VM. Use: rift vm connect")
@@ -608,10 +642,10 @@ def test_pkgs(config, args, pkgs, arch, extra_repos=None):
 
 def validate_pkgs(config, args, pkgs, arch):
     """
-    Validate packages on a specific architecture and return results:
+    Validate all variants of packages on a specific architecture and return results:
         - rpmlint on specfile
         - check file patterns
-        - build it
+        - build all variants
         - launch tests
     """
 
@@ -628,12 +662,11 @@ def validate_pkgs(config, args, pkgs, arch):
 
     for pkg in pkgs:
 
-        case = TestCase('build', pkg.name, arch)
         now = time.time()
-
         try:
             spec = Spec(pkg.specfile, config=config)
         except RiftError as ex:
+            case = TestCase('load', pkg.name, _DEFAULT_VARIANT, arch)
             logging.error("Unable to load spec file: %s", str(ex))
             results.add_failure(case, time.time() - now, err=str(ex))
             continue  # skip current package
@@ -662,21 +695,32 @@ def validate_pkgs(config, args, pkgs, arch):
         mock = Mock(config, arch, config.get('version'))
         mock.init(repos.all)
 
+        case = TestCase('source build', pkg.name, _DEFAULT_VARIANT, arch)
+        now = time.time()
         try:
-            now = time.time()
             # Check build SRPM
             message('Validate source RPM build...')
             srpm = pkg.build_srpm(mock, args.sign)
-
-            # Check build RPMS
-            message('Validate RPMS build...')
-            pkg.build_rpms(mock, srpm, args.sign)
         except RiftError as ex:
             logging.error("Build failure: %s", str(ex))
             results.add_failure(case, time.time() - now, err=str(ex))
             continue  # skip current package
         else:
             results.add_success(case, time.time() - now)
+
+        for variant in pkg.variants:
+            case = TestCase('binary build', pkg.name, variant, arch)
+            now = time.time()
+            try:
+                # Check build RPMS
+                message('Validate RPMS variant {variant} build...')
+                pkg.build_rpms(mock, srpm, variant, repos, args.sign)
+            except RiftError as ex:
+                logging.error("Build failure: %s", str(ex))
+                results.add_failure(case, time.time() - now, err=str(ex))
+                continue  # skip current package
+            else:
+                results.add_success(case, time.time() - now)
 
         # Check tests
         mock.publish(staging)
@@ -801,7 +845,7 @@ def build_pkgs(config, args, pkgs, arch, staging):
     results = TestResults()
 
     for pkg in pkgs:
-        case = TestCase('build', pkg.name, arch)
+        case = TestCase('load', pkg.name, _DEFAULT_VARIANT, arch)
         now = time.time()
         try:
             spec = Spec(pkg.specfile, config=config)
@@ -819,16 +863,15 @@ def build_pkgs(config, args, pkgs, arch, staging):
             )
             continue
 
-        banner(f"Building package '{pkg.name}' for architecture {arch}")
-        now = time.time()
         try:
             pkg.load()
-            build_pkg(config, args, pkg, arch, staging)
         except RiftError as ex:
-            logging.error("Build failure: %s", str(ex))
+            logging.error("Load failure: %s", str(ex))
             results.add_failure(case, time.time() - now, err=str(ex))
-        else:
-            results.add_success(case, time.time() - now)
+            continue  # skip current package
+
+        banner(f"Building package '{pkg.name}' for architecture {arch}")
+        results.extend(build_pkg_variants(config, args, pkg, arch, staging))
 
     return results
 
@@ -1258,7 +1301,6 @@ def get_packages_to_build(config, staff, modules, args):
 
     # Build dependency graph with all projects packages.
     graph = PackagesDependencyGraph.from_project(config, staff, modules)
-
     result = []
 
     def result_position(new_build_requirements):

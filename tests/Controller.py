@@ -517,6 +517,40 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         shutil.rmtree(working_repo)
         atexit.unregister(shutil.rmtree)
 
+    def test_action_build_publish_variants_functional(self):
+        """Functional RPM build and publish test with variants"""
+        # Declare supported archs and check qemu-user-static is available for
+        # these architectures or skip the test.
+        self.config.set('arch', ['x86_64', 'aarch64'])
+        self._check_qemuuserstatic()
+
+        # Create temporary working repo and register its deletion at exit
+        working_repo = make_temp_dir()
+        atexit.register(shutil.rmtree, working_repo)
+
+        self.config.set('working_repo', working_repo)
+        self.config.options['repos'] = VALID_REPOS
+        self.update_project_conf()
+
+        # Create fake package without build requirement but 2 variants
+        self.make_pkg(build_requires=[], variants=['variant1', 'variant2'])
+
+        main(['build', 'pkg', '--publish'])
+        for arch in self.config.get('arch'):
+            self.assertTrue(
+                os.path.exists(f"{working_repo}/{arch}/pkg-variant1-1.0-1.noarch.rpm")
+            )
+            self.assertTrue(
+                os.path.exists(f"{working_repo}/{arch}/pkg-variant2-1.0-1.noarch.rpm")
+            )
+
+        # Remove mock build environments
+        self.clean_mock_environments()
+
+        # Remove temporary working repo and unregister its deletion at exit
+        shutil.rmtree(working_repo)
+        atexit.unregister(shutil.rmtree)
+
     @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
     def test_action_test(self, mock_pkg_rpm):
 

@@ -17,14 +17,15 @@ from .TestUtils import (
 from rift.Config import (
     Config,
     _DEFAULT_VM_ADDRESS,
-    _DEFAULT_QEMU_CMD,
     _DEFAULT_VM_MEMORY,
     _DEFAULT_VIRTIOFSD,
     _DEFAULT_VM_PORT_RANGE_MIN,
     _DEFAULT_VM_PORT_RANGE_MAX,
+    _DEFAULT_VARIANT,
 )
 from rift.Repository import ConsumableRepository
 from rift.VM import VM, ARCH_EFI_BIOS, gen_virtiofs_args
+from rift.package import Test
 from rift import RiftError
 
 # For optimization purpose, create a global cache directory that is removed
@@ -619,6 +620,30 @@ class VMTest(RiftTestCase):
         vm.spawn.assert_not_called()
         vm.ready.assert_not_called()
         vm.prepare.assert_not_called()
+
+    @patch('rift.VM.run_command')
+    def test_run_test(self, mock_run_command):
+        vm = VM(self.config, platform.machine())
+        test = Test("test.sh")
+        vm.run_test(test, _DEFAULT_VARIANT)
+        mock_run_command.assert_called_once()
+        # Check command executed by SSH on VM
+        self.assertEqual(
+            mock_run_command.call_args[0][0][-1],
+            f"export RIFT_VARIANT={_DEFAULT_VARIANT}; cd /rift.project; test.sh"
+        )
+
+    @patch('rift.VM.run_command')
+    def test_run_test_variant(self, mock_run_command):
+        vm = VM(self.config, platform.machine())
+        test = Test("test.sh")
+        vm.run_test(test, "variant1")
+        mock_run_command.assert_called_once()
+        # Check command executed by SSH on VM
+        self.assertEqual(
+            mock_run_command.call_args[0][0][-1],
+            "export RIFT_VARIANT=variant1; cd /rift.project; test.sh"
+        )
 
 class VMBuildTest(RiftProjectTestCase):
     """

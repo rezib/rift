@@ -44,7 +44,7 @@ from unidiff import parse_unidiff
 
 from rift import RiftError, __version__
 from rift.Annex import Annex, is_binary
-from rift.Config import Config, Staff, Modules
+from rift.Config import Config, Staff, Modules, _DEFAULT_VARIANT
 from rift.Gerrit import Review
 from rift.auth import Auth
 from rift.package import ProjectPackages
@@ -438,7 +438,7 @@ def validate_pkgs(config, args, pkgs, arch):
 
     for pkg in pkgs:
         # Load package and report possible failure
-        case = TestCase('build', pkg.name, arch)
+        case = TestCase('build', pkg.name, _DEFAULT_VARIANT, arch)
         now = time.time()
         try:
             pkg.load()
@@ -471,7 +471,7 @@ def validate_pkgs(config, args, pkgs, arch):
 
         try:
             now = time.time()
-            case = TestCase('build', pkg.name, arch)
+            case = TestCase('build', pkg.name, _DEFAULT_VARIANT, arch)
             pkg_arch.build(sign=args.sign, staging=staging)
         except RiftError as ex:
             logging.error("Build failure: %s", str(ex))
@@ -596,7 +596,7 @@ def build_pkgs(args, pkgs, arch, staging):
 
     for pkg in pkgs:
         # Load package and report possible failure
-        case = TestCase('build', pkg.name, arch)
+        case = TestCase('build', pkg.name, _DEFAULT_VARIANT, arch)
         now = time.time()
         try:
             pkg.load()
@@ -720,7 +720,7 @@ def action_test(args, config):
                 # Create a dummy parse test case to report this error
                 # specifically. When parsing succeeds, this test case is not
                 # reported in test results.
-                case = TestCase("load", pkg.name, arch)
+                case = TestCase("load", pkg.name, _DEFAULT_VARIANT, arch)
                 logging.error("Unable to load package: %s", str(ex))
                 results.add_failure(case, time.time() - now, err=str(ex))
                 continue  # skip current package

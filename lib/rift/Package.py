@@ -42,7 +42,7 @@ import yaml
 
 from rift import RiftError
 from rift.Annex import Annex
-from rift.Config import OrderedLoader
+from rift.Config import OrderedLoader, _DEFAULT_VARIANT
 
 _META_FILE = 'info.yaml'
 _SOURCES_DIR = 'sources'
@@ -71,6 +71,7 @@ class Package():
         self.rpmnames = None
         self.depends = None
         self.exclude_archs = None
+        self.variants = []
 
         # Static paths
         pkgdir = os.path.join(self._config.get('packages_dir'), self.name)
@@ -171,6 +172,10 @@ class Package():
             self.exclude_archs = [data.get('exclude_archs')]
         else:
             self.exclude_archs = data.get('exclude_archs', [])
+        if isinstance(data.get('variants'), str):
+            self.variants = [data.get('variants')]
+        else:
+            self.variants = data.get('variants', [_DEFAULT_VARIANT])
 
         depends = data.get('depends')
         if depends is not None:
@@ -205,12 +210,12 @@ class Package():
         tmpdir.delete()
         return srpm
 
-    def build_rpms(self, mock, srpm, sign):
+    def build_rpms(self, mock, srpm, variant, repos, sign):
         """
         Build package RPMS using provided `srpm' and repository list for build
         requires.
         """
-        return mock.build_rpms(srpm, sign)
+        return mock.build_rpms(srpm, variant, repos, sign)
 
     def supports_arch(self, arch):
         """

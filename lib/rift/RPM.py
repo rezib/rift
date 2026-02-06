@@ -49,6 +49,7 @@ import rpm
 
 from rift import RiftError
 from rift.Annex import Annex, is_binary
+from rift.Config import _DEFAULT_VARIANT
 import rift.utils
 
 RPMLINT_CONFIG_V1 = 'rpmlint'
@@ -205,7 +206,7 @@ class RPM():
 class Spec():
     """Access information from a Specfile and build SRPMS."""
 
-    def __init__(self, filepath=None, config=None):
+    def __init__(self, filepath=None, config=None, variant=None):
         self.filepath = filepath
         self.srpmname = None
         self.pkgnames = []
@@ -225,6 +226,7 @@ class Spec():
         self.lines = []
         self.variables = {}
         self._config = config or {}
+        self.variant = variant
         if self.filepath is not None:
             self.load()
 
@@ -235,6 +237,8 @@ class Spec():
             rpm.delMacro(macro)
             if value:
                 rpm.addMacro(macro, value)
+        if self.variant is not None and self.variant != _DEFAULT_VARIANT:
+            rpm.addMacro(f"with_{self.variant}", "1")
 
     def _parse_vars(self):
         self.variables = {}

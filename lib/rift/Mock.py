@@ -164,7 +164,7 @@ class Mock():
             f"--configdir={self._tmpdir.path}"
         ] + self._build_macro_args()
 
-    def _exec(self, cmd):
+    def _exec(self, cmd, merge_out_err=True):
         """
         Execute mock command in argument, check its return code and raise
         RiftError with its output in case of error.
@@ -175,11 +175,12 @@ class Mock():
             cmd,
             live_output=logging.getLogger().isEnabledFor(logging.INFO),
             capture_output=True,
-            merge_out_err=True,
+            merge_out_err=merge_out_err,
             cwd='/'
         )
         if proc.returncode != 0:
             raise RiftError(proc.out)
+        return proc
 
     def init(self, repolist):
         """

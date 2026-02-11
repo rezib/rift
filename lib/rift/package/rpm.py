@@ -37,11 +37,12 @@ import random
 import shutil
 import textwrap
 import time
+import re
 
 from rift import RiftError
 from rift.package._base import Package, ActionableArchPackage, Test
 from rift.Annex import Annex
-from rift.Repository import ProjectArchRepositories
+from rift.repository import ProjectArchRepositories
 from rift.Mock import Mock
 from rift.RPM import Spec
 from rift.TestResults import TestCase, TestResults
@@ -82,10 +83,17 @@ class PackageRPM(Package):
             self.ignore_rpms = data.get('ignore_rpms', [])
 
     def load(self, infopath=None):
-        """Load package metadata, check its content and load RPM spec file."""
+        """Load package metadata, check its content and load RPM spec file with
+        its main attributes."""
         # load infos.yaml with parent class
         super().load(infopath)
         self.spec = Spec(self.buildfile, config=self._config)
+        self.version = self.spec.version
+        self.release = self.spec.release
+        self.arch = self.spec.arch
+        self.changelog_name = self.spec.changelog_name
+        self.changelog_time = self.spec.changelog_time
+        self.buildrequires = self.spec.buildrequires
 
     def check(self):
         # Check generic package metadata
@@ -95,6 +103,68 @@ class PackageRPM(Package):
         assert self.spec is not None
         message('Validate specfile...')
         self.spec.check(self)
+
+    def subpackages(self):
+        """Returns list of provides declared in spec file."""
+        # Check spec is already loaded
+        assert self.spec is not None
+
+        return self.spec.provides
+
+    def build_requires(self):
+        """Returns list of build requirements declared in spec file."""
+        # Parse buildrequires string in spec file to discard explicit versions
+        # enforcement.
+        #
+        # Note this is currently done this way for the sake of simplicity,
+        # despite the value that could be provided by these version constraints.
+        # It could notably be interesting to extract lesser version constraints
+        # when a dependency is updated to a greater version.
+        #
+        # Currently, the automatic rebuilds of recursive reverse dependencies
+        # eventually fail at some point because of invalid versioning in this
+        # case but it could be nice to fail faster by detecting mismatching
+        # versions before the actual builds.
+        return [
+            value.group(1)
+            for value
+            in re.finditer(r"(\S+)( (>|>=|=|<=|<) \S+)?", self.spec.buildrequires)
+        ]
+
+    def add_changelog_entry(self, maintainer, comment, bump):
+        """Add entry in RPM spec changelog."""
+        # Check spec is already loaded
+        assert self.spec is not None
+
+        # Check maintainer is present in staff of raise error
+        if maintainer not in self._staff:
+            raise RiftError(
+                f"Unknown maintainer {maintainer}, cannot be found in staff"
+            )
+
+        # Compute author string
+        author = f"{maintainer} <{self._staff.get(maintainer)['email']}>"
+        # Format comment.
+        # Grab bullet, insert one if not found.
+        bullet = "-"
+        match = re.search(r'^([^\s\w])\s', comment, re.UNICODE)
+        if match:
+            bullet = match.group(1)
+        else:
+            comment = bullet + " " + comment
+
+        if comment.find("\n") == -1:
+            wrapopts = {"subsequent_indent": (len(bullet) + 1) * " ",
+                        "break_long_words": False,
+                        "break_on_hyphens": False}
+            comment = textwrap.fill(comment, 80, **wrapopts)
+
+        logging.info("Adding changelog record for '%s'", author)
+        self.spec.add_changelog_entry(author, comment, bump)
+
+    def analyze(self, review, configdir):
+        assert self.spec is not None
+        self.spec.analyze(review, configdir)
 
     def supports_arch(self, arch):
         """
@@ -119,7 +189,7 @@ class ActionableArchPackageRPM(ActionableArchPackage):
     def __init__(self, package, arch):
         super().__init__(package, arch)
         self.mock = Mock(self.config, arch, self.config.get('version'))
-        self.repos = ProjectArchRepositories(self.config, self.arch)
+        self.repos = ProjectArchRepositories(self.config, self.arch).for_format('rpm')
 
     def build(self, **kwargs):
         message(f"Building RPM package '{self.name}' on architecture {self.arch}")
@@ -130,7 +200,9 @@ class ActionableArchPackageRPM(ActionableArchPackage):
         # environment.
         staging = kwargs.get('staging')
         if staging:
-            mock_repos += staging.consumables[self.arch]
+            mock_repos += staging.for_format(
+                self.package.format
+            ).repo.consumables[self.arch]
 
         message('Preparing Mock environment...')
         self.mock.init(mock_repos)
@@ -151,7 +223,9 @@ class ActionableArchPackageRPM(ActionableArchPackage):
         results = TestResults('test')
         staging = kwargs.get('staging')
         if staging:
-            extra_repos=[staging.consumables[self.arch]]
+            extra_repos = [
+                staging.for_format(self.package.format).repo.consumables[self.arch]
+            ]
         else:
             extra_repos=[]
         vm = VM(self.config, self.arch, extra_repos=extra_repos)
@@ -173,10 +247,13 @@ class ActionableArchPackageRPM(ActionableArchPackage):
         if not kwargs.get('noauto', False):
             tests.insert(0, BasicTest(self.package, config=self.config))
         for test in tests:
-            case = TestCase(test.name, self.name, self.arch)
+            case = TestCase(test.name, self.name, self.arch, self.package.format)
             now = time.time()
             message(f"Running test '{case.fullname}' on architecture '{self.arch}'")
-            proc = vm.run_test(test)
+            if test.local:
+                proc = self.run_local_test(test, vm.local_test_funcs())
+            else:
+                proc = vm.run_test(test)
             if proc.returncode == 0:
                 results.add_success(case, time.time() - now, out=proc.out, err=proc.err)
                 message(f"Test '{case.fullname}' on architecture {self.arch}: OK")
@@ -195,7 +272,7 @@ class ActionableArchPackageRPM(ActionableArchPackage):
     def publish(self, **kwargs):
         staging = kwargs.get('staging')
         if staging:
-            repo = staging
+            repo = staging.for_format(self.package.format).repo
         else:
             repo = self.repos.working
 

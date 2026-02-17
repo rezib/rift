@@ -388,7 +388,7 @@ class ActionableArchPackageRPMTest(RiftProjectTestCase):
         self.setup_package(variants=variants)
         results = self.pkg.test()
         self.assertIsInstance(results, TestResults)
-        # These should be one test result per variant, ie. 2 results
+        # There should be one test result per variant, ie. 2 results
         self.assertEqual(len(results), 2)
         self.assertEqual(results.global_result, True)
         # Check VM run_test() called for basic test on all variants

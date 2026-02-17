@@ -83,6 +83,21 @@ class TestResultsTest(RiftTestCase):
     def test_summary(self):
         results = TestResults()
         results.add_success(TestCase('test1', 'pkg', _DEFAULT_VARIANT, 'x86_64'), 1)
+        results.add_failure(TestCase('test2', 'pkg', _DEFAULT_VARIANT, 'x86_64'), 1)
+        self.assertEqual(
+            results.summary(),
+            textwrap.dedent(
+                """\
+                NAME      ARCH   DURATION RESULT
+                ----      ----   -------- ------
+                pkg.test1 x86_64       1s Success
+                pkg.test2 x86_64       1s FAILURE"""
+            )
+        )
+
+    def test_summary_real_variants(self):
+        results = TestResults()
+        results.add_success(TestCase('test1', 'pkg', _DEFAULT_VARIANT, 'x86_64'), 1)
         results.add_failure(TestCase('test2', 'pkg', 'mofed', 'x86_64'), 1)
         self.assertEqual(
             results.summary(),

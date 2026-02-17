@@ -34,6 +34,7 @@ import re
 import collections
 import xml.etree.cElementTree as ET
 
+from rift.Config import _DEFAULT_VARIANT
 from rift.TextTable import TextTable
 
 def str_xml_escape(arg):
@@ -139,6 +140,15 @@ class TestResults():
         """
         self.results.append(result)
 
+    def _has_real_variants(self):
+        """
+        Return True if at least one test case is not associated to default variant.
+        """
+        for result in self.results:
+            if result.case.variant != _DEFAULT_VARIANT:
+                return True
+        return False
+
     def extend(self, other):
         """
         Extend TestResults with all TestResult from the other TestResults.
@@ -186,19 +196,22 @@ class TestResults():
         """
         Get a summary table of all tests
         """
-        tbl = TextTable("%name %variant %arch %>duration %result")
+        if self._has_real_variants():
+            tbl = TextTable("%name %variant %arch %>duration %result")
+        else:
+            tbl = TextTable("%name %arch %>duration %result")
         for result in self.results:
-            tbl.append(
-                {
-                    'name': result.case.fullname,
-                    'variant': result.case.variant,
-                    'arch': result.case.arch,
-                    'duration': f"{result.time:.0f}s",
-                    'result': (
-                        result.value.upper()
-                        if result.value == 'Failure'
-                        else result.value
-                    )
-                }
-            )
+            entry = {
+                'name': result.case.fullname,
+                'arch': result.case.arch,
+                'duration': f"{result.time:.0f}s",
+                'result': (
+                    result.value.upper()
+                    if result.value == 'Failure'
+                    else result.value
+                )
+            }
+            if self._has_real_variants():
+                entry['variant'] = result.case.variant
+            tbl.append(entry)
         return str(tbl)

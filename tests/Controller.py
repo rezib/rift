@@ -456,7 +456,7 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        # Get PackageRPM instances mock
+        # Get PackageRPM mock instances
         mock_pkg_rpm_objs = mock_pkg_rpm.return_value
         # Initialize PackageRPM object attributes
         PackageRPM.__init__(
@@ -524,7 +524,7 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        # Get PackageRPM instances mock
+        # Get PackageRPM mock instances
         mock_pkg_rpm_objs = mock_pkg_rpm.return_value
         # Initialize PackageRPM object attributes
         PackageRPM.__init__(
@@ -559,7 +559,7 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        # Get PackageRPM instances mock
+        # Get PackageRPM mock instances
         mock_pkg_rpm_objs = mock_pkg_rpm.return_value
         # Initialize PackageRPM object attributes
         PackageRPM.__init__(
@@ -603,7 +603,7 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        # Get PackageRPM instances mock
+        # Get PackageRPM mock instances
         mock_pkg_rpm_objs = mock_pkg_rpm.return_value
         # Initialize PackageRPM object attributes
         PackageRPM.__init__(
@@ -649,7 +649,7 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        # Get PackageRPM instances mock
+        # Get PackageRPM mock instances
         mock_pkg_rpm_objs = mock_pkg_rpm.return_value
         # Initialize PackageRPM object attributes
         PackageRPM.__init__(
@@ -683,7 +683,7 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        # Get PackageRPM instances mock
+        # Get PackageRPM mock instances
         mock_pkg_rpm_objs = mock_pkg_rpm.return_value
         # Initialize PackageRPM object attributes
         PackageRPM.__init__(
@@ -712,7 +712,7 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        # Get PackageRPM instances mock
+        # Get PackageRPM mock instances
         mock_pkg_rpm_objs = mock_pkg_rpm.return_value
         # Initialize PackageRPM object attributes
         PackageRPM.__init__(
@@ -749,7 +749,7 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        # Get PackageRPM instances mock
+        # Get PackageRPM mock instances
         mock_pkg_rpm_objs = mock_pkg_rpm.return_value
         # Initialize PackageRPM object attributes
         PackageRPM.__init__(
@@ -791,7 +791,7 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        # Get PackageRPM instances mock
+        # Get PackageRPM mock instances
         mock_pkg_rpm_objs = mock_pkg_rpm.return_value
         # Initialize PackageRPM object attributes
         PackageRPM.__init__(
@@ -1023,7 +1023,7 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        # Get PackageRPM instances mock
+        # Get PackageRPM mock instances
         mock_pkg_rpm_objs = mock_pkg_rpm.return_value
         # Initialize PackageRPM object attributes
         PackageRPM.__init__(
@@ -1061,7 +1061,7 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        # Get PackageRPM instances mock
+        # Get PackageRPM mock instances
         mock_pkg_rpm_objs = mock_pkg_rpm.return_value
         # Initialize PackageRPM object attributes
         PackageRPM.__init__(
@@ -1104,7 +1104,7 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        # Get PackageRPM instances mock
+        # Get PackageRPM mock instances
         mock_pkg_rpm_objs = mock_pkg_rpm.return_value
         # Initialize PackageRPM object attributes
         PackageRPM.__init__(
@@ -1160,7 +1160,7 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        # Get PackageRPM instances mock
+        # Get PackageRPM mock instances
         mock_pkg_rpm_objs = mock_pkg_rpm.return_value
         # Initialize PackageRPM object attributes
         PackageRPM.__init__(
@@ -1217,7 +1217,7 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        # Get PackageRPM instances mock
+        # Get PackageRPM mock instances
         mock_pkg_rpm_objs = mock_pkg_rpm.return_value
         # Initialize PackageRPM object attributes
         PackageRPM.__init__(
@@ -1278,7 +1278,7 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        # Get PackageRPM instances mock
+        # Get PackageRPM mock instances
         mock_pkg_rpm_objs = mock_pkg_rpm.return_value
         # Initialize PackageRPM object attributes
         PackageRPM.__init__(
@@ -1328,7 +1328,7 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Create fake package without build requirement
         self.make_pkg(build_requires=[])
 
-        # Get PackageRPM instances mock
+        # Get PackageRPM mock instances
         mock_pkg_rpm_objs = mock_pkg_rpm.return_value
         # Initialize PackageRPM object attributes
         PackageRPM.__init__(

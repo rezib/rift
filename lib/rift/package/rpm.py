@@ -143,6 +143,11 @@ class PackageRPM(Package):
         logging.info("Adding changelog record for '%s'", author)
         self.spec.add_changelog_entry(author, comment, bump)
 
+    def has_real_variants(self):
+        """Return True if package has more then the default main variant."""
+        assert(len(self.variants))  # Cannot be called with empty variants list.
+        return len(self.variants) > 1 or self.variants[0] != _DEFAULT_VARIANT
+
     def supports_arch(self, arch):
         """
         Returns True if provided architecture is listed in package spec file's
@@ -188,7 +193,11 @@ class ActionableArchPackageRPM(ActionableArchPackage):
         logging.info("Built: %s", srpm.filepath)
 
         for variant in self.package.variants:
-            message(f"Building RPMS variant {variant}...")
+            message(
+                "Building RPMS"
+                + (f" variant {variant}" if self.package.has_real_variants() else '')
+                + "..."
+            )
             for rpm in self._build_rpms(srpm, variant, sign):
                 logging.info('Built: %s', rpm.filepath)
 
@@ -223,8 +232,9 @@ class ActionableArchPackageRPM(ActionableArchPackage):
             vm.cmd(f"yum -y -d0 {repos_args} update")
 
             banner(
-                f"Starting tests of package {self.name} variant {variant} on "
-                f"architecture {self.arch}"
+                f"Starting tests of package {self.name}"
+                + (f" variant {variant}" if self.package.has_real_variants() else '')
+                + f" on architecture {self.arch}"
             )
 
             tests = list(self.package.tests())

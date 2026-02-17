@@ -235,6 +235,20 @@ class PackageRPMTest(RiftProjectTestCase):
         ):
             pkg.add_changelog_entry("Unknown", "Package modification", False)
 
+    def test_has_real_variants(self):
+        """ Test PackageRPM has_real_variants() """
+        pkg = PackageRPM('pkg', self.config, self.staff, self.modules)
+        with self.assertRaises(AssertionError):
+            pkg.has_real_variants()
+        pkg.variants = [_DEFAULT_VARIANT]
+        self.assertFalse(pkg.has_real_variants())
+        pkg.variants = ['variant1']
+        self.assertTrue(pkg.has_real_variants())
+        pkg.variants = [_DEFAULT_VARIANT, 'variant2']
+        self.assertTrue(pkg.has_real_variants())
+        pkg.variants = ['variant1', 'variant2']
+        self.assertTrue(pkg.has_real_variants())
+
     def test_supports_arch_w_exclusive_arch(self):
         """ Test PackageRPM supports_arch() method with ExclusiveArch"""
         pkgname = 'pkg'
@@ -309,10 +323,17 @@ class ActionableArchPackageRPMTest(RiftProjectTestCase):
         _pkg.load()
         self.pkg = ActionableArchPackageRPM(_pkg, 'x86_64')
 
+    @patch('rift.package.rpm.message')
     @patch('rift.package.rpm.Mock.build_rpms')
     @patch('rift.package.rpm.Mock.build_srpm')
     @patch('rift.package.rpm.Mock.init')
-    def test_build(self, mock_mock_init, mock_mock_build_srpm, mock_mock_build_rpms):
+    def test_build(
+        self,
+        mock_mock_init,
+        mock_mock_build_srpm,
+        mock_mock_build_rpms,
+        mock_message
+    ):
         """ Test ActionableArchPackageRPM build """
         self.setup_package()
         self.pkg.build()
@@ -322,6 +343,7 @@ class ActionableArchPackageRPMTest(RiftProjectTestCase):
         mock_mock_build_rpms.assert_any_call(
             mock_mock_build_srpm.return_value, _DEFAULT_VARIANT, self.pkg.repos, False
         )
+        mock_message.assert_any_call("Building RPMS...")
 
     @patch('rift.package.rpm.Mock.build_rpms')
     @patch('rift.package.rpm.Mock.build_srpm')
@@ -337,10 +359,17 @@ class ActionableArchPackageRPMTest(RiftProjectTestCase):
             mock_mock_build_srpm.return_value, _DEFAULT_VARIANT, self.pkg.repos, True
         )
 
+    @patch('rift.package.rpm.message')
     @patch('rift.package.rpm.Mock.build_rpms')
     @patch('rift.package.rpm.Mock.build_srpm')
     @patch('rift.package.rpm.Mock.init')
-    def test_build_multiple_variants(self, mock_mock_init, mock_mock_build_srpm, mock_mock_build_rpms):
+    def test_build_multiple_variants(
+        self,
+        mock_mock_init,
+        mock_mock_build_srpm,
+        mock_mock_build_rpms,
+        mock_message,
+    ):
         """ Test ActionableArchPackageRPM build with multiple variants"""
         variants = ['variant1', 'variant2']
         self.setup_package(variants=variants)
@@ -353,11 +382,13 @@ class ActionableArchPackageRPMTest(RiftProjectTestCase):
             mock_mock_build_rpms.assert_any_call(
                 mock_mock_build_srpm.return_value, variant, self.pkg.repos, False
             )
+            mock_message.assert_any_call(f"Building RPMS variant {variant}...")
 
+    @patch('rift.package.rpm.banner')
     @patch('rift.package.rpm.BasicTest')
     @patch('rift.package.rpm.time.sleep')
     @patch('rift.package.rpm.VM')
-    def test_test(self, mock_vm, mock_time_sleep, mock_basic_test):
+    def test_test(self, mock_vm, mock_time_sleep, mock_basic_test, mock_banner):
         """ Test ActionableArchPackageRPM test """
         # mock time.sleep() to avoid waiting sleep timeout when VM is stopped
         mock_vm_obj = mock_vm.return_value
@@ -374,11 +405,21 @@ class ActionableArchPackageRPMTest(RiftProjectTestCase):
         )
         # Check VM is stopped after the tests
         mock_vm_obj.stop.assert_called_once()
+        mock_banner.assert_called_once_with(
+            'Starting tests of package pkg on architecture x86_64'
+        )
 
+    @patch('rift.package.rpm.banner')
     @patch('rift.package.rpm.BasicTest')
     @patch('rift.package.rpm.time.sleep')
     @patch('rift.package.rpm.VM')
-    def test_test_multiple_variants(self, mock_vm, mock_time_sleep, mock_basic_test):
+    def test_test_multiple_variants(
+        self,
+        mock_vm,
+        mock_time_sleep,
+        mock_basic_test,
+        mock_banner
+    ):
         """ Test ActionableArchPackageRPM test """
         variants = ['variant1', 'variant2']
         # mock time.sleep() to avoid waiting sleep timeout when VM is stopped
@@ -394,6 +435,10 @@ class ActionableArchPackageRPMTest(RiftProjectTestCase):
         # Check VM run_test() called for basic test on all variants
         for variant in variants:
             mock_vm_obj.run_test.assert_any_call(mock_basic_test.return_value, variant)
+            mock_banner.assert_any_call(
+                f"Starting tests of package pkg variant {variant} on architecture "
+                "x86_64"
+            )
         # Check VM is stopped after the tests
         mock_vm_obj.stop.assert_called_once()
 

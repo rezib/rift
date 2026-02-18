@@ -22,6 +22,7 @@ from rift.Controller import (
     remove_packages,
     make_parser,
 )
+from rift.Config import _DEFAULT_VARIANT
 from rift.package.rpm import PackageRPM, ActionableArchPackageRPM
 from rift.TestResults import TestResults, TestCase
 from rift.RPM import RPM, Spec
@@ -755,7 +756,9 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
         # Make ActionableArchPackageRPM.test() return results with one failure.
         test_results = TestResults()
-        test_results.add_failure(TestCase('fake', 'pkg', 'x86_64'), 0, None, None)
+        test_results.add_failure(
+            TestCase('fake', 'pkg', _DEFAULT_VARIANT, 'x86_64'), 0, None, None
+        )
         mock_act_arch_pkg_rpm.test.return_value = test_results
 
         # Run test on package and check main returns non-zero exit code
@@ -1209,7 +1212,9 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
         # Make ActionableArchPackageRPM.test() return results with one failure.
         test_results = TestResults()
-        test_results.add_failure(TestCase('fake', 'pkg', 'x86_64'), 0, None, None)
+        test_results.add_failure(
+            TestCase('fake', 'pkg', _DEFAULT_VARIANT, 'x86_64'), 0, None, None
+        )
         mock_act_arch_pkg_rpm.test.return_value = test_results
 
         # Run validate on package and check main returns non-zero exit code
@@ -1377,7 +1382,9 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         mock_create_staging_repo.return_value = (mock_staging_repo, Mock())
         # Make ActionableArchPackageRPM.test() return results with one failure.
         test_results = TestResults()
-        test_results.add_failure(TestCase('fake', 'pkg', 'x86_64'), 0, None, None)
+        test_results.add_failure(
+            TestCase('fake', 'pkg', _DEFAULT_VARIANT, 'x86_64'), 0, None, None
+        )
         mock_act_arch_pkg_rpm.test.return_value = test_results
 
         # Run validate on package and check main returns non-zero exit code

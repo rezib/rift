@@ -11,7 +11,12 @@ import logging
 import tempfile
 import unittest
 import os
+import tarfile
+import time
+import io
 from collections import OrderedDict
+import random
+import string
 
 import shutil
 import jinja2
@@ -152,7 +157,17 @@ Description for package {{ name }} variant %{variant}
 - Update to {{ version }} release
 """
 
+CONTAINERFILE_TPL = """\
+FROM debian:stable
+{% for line in lines %}
+{{ line }}
+{% endfor %}
+"""
+
+EXPECTED_HADOLINT_EXEC = "hadolint-linux-x86_64"
+
 SubPackage = namedtuple("SubPackage", ["name"])
+PackageTestDef = namedtuple("PackageTestDef", ["name", "local", "formats"])
 
 
 class RiftTestCase(unittest.TestCase):
@@ -218,8 +233,9 @@ class RiftProjectTestCase(RiftTestCase):
         os.chdir(self.projdir)
         # Dict of created packages
         self.pkgdirs = {}
-        self.pkgspecs = {}
+        self.buildfiles = []
         self.pkgsrc = {}
+        self.tests = {}
         # Load project/staff/modules
         self.config = Config()
         self.config.load()
@@ -239,15 +255,24 @@ class RiftProjectTestCase(RiftTestCase):
         os.unlink(self.modulespath)
         os.unlink(self.mocktpl)
         os.rmdir(self.annexdir)
-        for spec in self.pkgspecs.values():
-            os.unlink(spec)
+        for buildfile in self.buildfiles:
+            try:
+                os.unlink(buildfile)
+            except FileNotFoundError:
+                pass  # ignore deletion error if file is not found
         for src in self.pkgsrc.values():
-            os.unlink(src)
+            try:
+                os.unlink(src)
+            except FileNotFoundError:
+                pass  # ignore deletion error if file is not found
         for pkgdir in self.pkgdirs.values():
             info_path = os.path.join(pkgdir, 'info.yaml')
             if os.path.exists(info_path):
                 os.unlink(info_path)
             os.rmdir(os.path.join(pkgdir, 'sources'))
+            for test in os.listdir(os.path.join(pkgdir, 'tests')):
+                os.unlink(os.path.join(pkgdir, 'tests', test))
+            os.rmdir(os.path.join(pkgdir, 'tests'))
             os.rmdir(pkgdir)
         # Remove potentially generated files for VM related tests
         for path in [
@@ -279,6 +304,7 @@ class RiftProjectTestCase(RiftTestCase):
     def make_pkg(
         self,
         name='pkg',
+        formats=None,
         version='1.0',
         release='1',
         metadata=None,
@@ -286,7 +312,18 @@ class RiftProjectTestCase(RiftTestCase):
         requires=['another-package'],
         subpackages=[],
         variants=None,
+        src_top_dir=None,
+        tests=None,
     ):
+        # By default, make package in all supported formats
+        if formats is None:
+            formats = ['rpm', 'oci']
+        # Check provide package formats are supported
+        for _format in formats:
+            assert(_format in ['rpm', 'oci'])
+        # Set default source top dir name
+        if src_top_dir is None:
+            src_top_dir = f"{name}-{version}"
         # ./packages/pkg
         self.pkgdirs[name] = os.path.join(self.packagesdir, name)
         os.mkdir(self.pkgdirs[name])
@@ -321,16 +358,36 @@ class RiftProjectTestCase(RiftTestCase):
                 nfo.write("    variants:\n")
                 for variant in variants:
                     nfo.write(f"    - {variant}\n")
+            if 'oci' in formats:
+                nfo.write("    oci:\n")
+                nfo.write(f"        version: '{version}'\n")
+                nfo.write(f"        release: '{release}'\n")
 
         # ./packages/pkg/pkg.spec
-        self.pkgspecs[name] = os.path.join(self.pkgdirs[name],
-                                           "{0}.spec".format(name))
+        if 'rpm' in formats:
+            buildfile = os.path.join(self.pkgdirs[name], "{0}.spec".format(name))
+            with open(buildfile, "w") as spec:
+                spec.write(
+                    gen_rpm_spec(
+                        name=name,
+                        version=version,
+                        release=release,
+                        build_requires=build_requires,
+                        requires=requires,
+                        arch='noarch',
+                        subpackages=subpackages,
+                        variants=variants
+                    )
+                )
+            self.buildfiles.append(buildfile)
 
-        with open(self.pkgspecs[name], "w") as spec:
-            spec.write(
-                gen_rpm_spec(name=name, version=version, release=release,
-                             build_requires=build_requires, requires=requires,
-                             arch='noarch', subpackages=subpackages, variants=variants))
+        # ./packages/pkg/Containerfile
+        if 'oci' in formats:
+            buildfile = os.path.join(self.pkgdirs[name], 'Containerfile')
+            with open(buildfile, "w") as fh:
+                fh.write(gen_containerfile())
+            self.buildfiles.append(buildfile)
+
         # ./packages/pkg/sources
         srcdir = os.path.join(self.pkgdirs[name], 'sources')
         os.mkdir(srcdir)
@@ -338,8 +395,40 @@ class RiftProjectTestCase(RiftTestCase):
         # ./packages/pkg/sources/pkg-version.tar.gz
         self.pkgsrc[name] = os.path.join(srcdir,
                                          "{0}-{1}.tar.gz".format(name, version))
-        with open(self.pkgsrc[name], "w") as src:
-            src.write("ACACACACACACACAC")
+        with tarfile.open(self.pkgsrc[name], "w:gz") as tar:
+            # Add folder in archive
+            dir_info = tarfile.TarInfo(name=f"{src_top_dir}/")
+            dir_info.type = tarfile.DIRTYPE
+            dir_info.mode = 0o755
+            dir_info.mtime = int(time.time())
+            tar.addfile(dir_info)
+
+            # Add dummy source file in archive folder
+            data = b"# dummy source code\n"
+            file_info = tarfile.TarInfo(name=f"{src_top_dir}/source.sh")
+            file_info.size = len(data)
+            file_info.mode = 0o644
+            file_info.mtime = int(time.time())
+            tar.addfile(file_info, io.BytesIO(data))
+
+        # ./tests
+        testsdir = os.path.join(self.pkgdirs[name], 'tests')
+        os.mkdir(testsdir)
+
+        # Add ./tests/0_test.sh by default
+        if tests is None:
+            tests = [
+                PackageTestDef(name='0_test.sh', local=False, formats=[])
+            ]
+        for test in tests:
+            test_file = os.path.join(testsdir, test.name)
+            with open(test_file, "w") as fh:
+                fh.write('#!/bin/sh\n')
+                if test.local:
+                    fh.write('# *** RIFT LOCAL ***\n')
+                for _format in test.formats:
+                    fh.write(f"# *** RIFT FORMAT {_format} ***\n")
+                fh.write('true')
 
     def clean_mock_environments(self):
         """Remove mock build environments."""
@@ -389,6 +478,12 @@ class RiftProjectTestCase(RiftTestCase):
 def gen_rpm_spec(**kwargs):
     return jinja2.Template(SPEC_TPL).render(**kwargs)
 
+#
+# Containerfile
+#
+def gen_containerfile(**kwargs):
+    return jinja2.Template(CONTAINERFILE_TPL).render(**kwargs)
+
 
 #
 # Temp files
@@ -408,3 +503,89 @@ def make_temp_file(text, delete=True, suffix=None):
     tmp.write(text.encode())
     tmp.flush()
     return tmp
+
+def make_temp_tar():
+    """ Create temporary tarball with one random file"""
+    # Create temporary file
+    with tempfile.NamedTemporaryFile(
+        delete=False, mode="w+", suffix=".txt"
+    ) as tmp_inner:
+        tmp_inner.write(
+            ''.join(
+                random.choices(
+                    string.ascii_letters + string.digits, k=2**10
+                )
+            )
+        )
+        inner_path = tmp_inner.name
+
+    # Create tarball archive
+    with tempfile.NamedTemporaryFile(
+        delete=False, suffix=".tar"
+    ) as tmp_tar:
+        tar_path = tmp_tar.name
+        with tarfile.open(fileobj=tmp_tar, mode="w:") as tar:
+            tar.add(inner_path, arcname=os.path.basename(inner_path))
+
+    # Remove temporary file
+    os.unlink(inner_path)
+
+    return tar_path
+
+#
+# Executable commands utilities
+#
+
+def command_available(command):
+    """
+    Check if a command is available for execution, by verifying:
+    1. If it's a command name, it checks if it exists in the system PATH
+    2. If it's an absolute path, it checks if the file exists and is executable
+    3. If it's a relative path, it checks if the file exists relative to current
+      directory and is executable
+    Return True if the command is available and executable, False otherwise.
+    """
+
+    # Handle empty or None commands
+    if not command or not command.strip():
+        return False
+
+    # Check if it's an absolute path
+    if os.path.isabs(command):
+        return _is_executable_file(command)
+
+    # Check if it's a relative path (contains path separators or starts with ./)
+    if (os.sep in command or (os.altsep and os.altsep in command) or 
+        command.startswith('./') or command.startswith('../')):
+        # Resolve relative path
+        resolved_path = os.path.abspath(command)
+        return _is_executable_file(resolved_path)
+
+    # Check if it's a file in the current directory
+    if os.path.exists(command) and os.path.isfile(command):
+        return os.access(command, os.X_OK)
+
+    # It's a command name, check if it's in PATH
+    return shutil.which(command) is not None
+
+
+def _is_executable_file(file_path):
+    """
+    Check if a file exists and is executable. Return True if the file exists and
+    is executable, False otherwise.
+    """
+    try:
+        # Check if file exists
+        if not os.path.exists(file_path):
+            return False
+
+        # Check if it's a file (not a directory)
+        if not os.path.isfile(file_path):
+            return False
+
+        # Check if it's executable
+        return os.access(file_path, os.X_OK)
+
+    except (OSError, ValueError):
+        # Handle any system errors or invalid paths
+        return False

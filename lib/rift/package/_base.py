@@ -39,11 +39,15 @@ import logging
 import os
 from abc import ABC, abstractmethod
 
+import shlex
+import re
 import yaml
 
 from rift import RiftError
 from rift.Config import OrderedLoader
 from rift.utils import message
+from rift.run import run_command
+from rift.repository import ProjectArchRepositories
 
 _META_FILE = 'info.yaml'
 _SOURCES_DIR = 'sources'
@@ -52,7 +56,7 @@ _DOC_FILES = ['README', 'README.md', 'README.rst', 'README.txt']
 
 
 # Rift supported package formats
-RIFT_SUPPORTED_FORMATS = ('rpm',)
+RIFT_SUPPORTED_FORMATS = ('_virtual', 'rpm', 'oci')
 
 
 class Package(ABC):
@@ -86,7 +90,9 @@ class Package(ABC):
         self.sourcesdir = os.path.join(self.dir, _SOURCES_DIR)
         self.testsdir = os.path.join(self.dir, _TESTS_DIR)
         self.metafile = os.path.join(self.dir, _META_FILE)
-        self.buildfile = os.path.join(self.dir, buildfile)
+        self.buildfile = None
+        if buildfile:
+            self.buildfile = os.path.join(self.dir, buildfile)
         self.docfiles = []
         for doc in _DOC_FILES:
             self.docfiles.append(os.path.join(self.dir, doc))
@@ -100,6 +106,9 @@ class Package(ABC):
         self.changelog_name = None
         self.changelog_time = None
         self.buildrequires = None
+
+    def __eq__(self, other):
+        return self.name == other.name and self.format == other.format
 
     def check(self):
         """Load package and check info."""
@@ -256,7 +265,10 @@ class Package(ABC):
         """An iterator over Test objects for each test files."""
         testspattern = os.path.join(self.testsdir, '*.sh')
         for testpath in glob.glob(testspattern):
-            yield Test(testpath)
+            test = Test(testpath)
+            # Skip the test if restricted to other specific package formats.
+            if not test.formats or self.format in test.formats:
+                yield test
 
     def add_changelog_entry(self, maintainer, comment, bump):
         """Must be implemented in concrete children classes when supported."""
@@ -293,6 +305,7 @@ class ActionableArchPackage(ABC):
         self.config = package._config
         self.package = package
         self.arch = arch
+        self.repos = ProjectArchRepositories(self.config, self.arch).for_format(self.package.format)
 
     @abstractmethod
     def build(self, **kwargs):
@@ -301,6 +314,22 @@ class ActionableArchPackage(ABC):
     @abstractmethod
     def test(self, **kwargs):
         """Test package. Must be overriden in concrete format classes."""
+
+    def run_local_test(self, test, funcs=None):
+        """
+        Run a test command on local host. Dict of shell functions can be
+        provided. Shell will be initialized with these functions before running
+        the test.
+        """
+        cmd = ''
+        if not funcs:
+            funcs = {}
+        for func, code in funcs.items():
+            cmd += f"{func}() {{ {code}; }}; export -f {func}; "
+        cmd += shlex.quote(test.command)
+
+        logging.debug("Running local test command %s", cmd)
+        return run_command(cmd, capture_output=True, shell=True)
 
     @abstractmethod
     def publish(self, **kwargs):
@@ -317,15 +346,17 @@ class Test():
     """
     Wrapper around test scripts or test commands.
 
-    It analyzes if test script is flagged as local one or if it should be run
-    inside the VM.
+    It analyzes if test script is flagged as local one or restricted to
+    specific package formats.
     """
 
     _LOCAL_PATTERN = '*** RIFT LOCAL ***'
+    _FORMAT_PATTERN = r'\*\*\* RIFT FORMAT (\S+) \*\*\*'
 
     def __init__(self, command, name=None):
         self.command = command
         self.local = False
+        self.formats = []
         self.name = name
         if os.path.exists(self.command):
             self.name = name or os.path.splitext(os.path.basename(command))[0]
@@ -333,11 +364,19 @@ class Test():
 
     def _analyze(self, blocksize=4096):
         """
-        Look for special LOCAL PATTERN in file header and flag the file
-        accordingly.
+        Look for special patterns (local or format restrictions) in file header
+        and flag the test accordingly.
         """
         with open(self.command, 'rt', encoding='utf-8') as ftest:
             data = ftest.read(blocksize)
             if self._LOCAL_PATTERN in data:
                 logging.debug("Test '%s' detected as local", self.name)
                 self.local = True
+            self.formats = re.findall(self._FORMAT_PATTERN, data)
+            # Log debug message if the test is restricted to specific package
+            # formats.
+            if self.formats:
+                logging.debug(
+                    "Test '%s' restricted to specific formats: %s",
+                    self.name, ', '.join(self.formats)
+                )

@@ -7,6 +7,7 @@ from io import BytesIO
 
 from .TestUtils import RiftTestCase
 from rift.TestResults import TestResults, TestCase
+from rift.Config import _DEFAULT_VARIANT
 
 class TestResultsTest(RiftTestCase):
     """
@@ -23,40 +24,44 @@ class TestResultsTest(RiftTestCase):
 
     def test_add_success(self):
         results = TestResults()
-        results.add_success(TestCase('test1', 'pkg', 'x86_64'), 1)
-        results.add_success(TestCase('test2', 'pkg', 'x86_64'), 1)
+        results.add_success(TestCase('test1', 'pkg', _DEFAULT_VARIANT, 'x86_64'), 1)
+        results.add_success(TestCase('test2', 'pkg', _DEFAULT_VARIANT, 'x86_64'), 1)
         self.assertTrue(results.global_result)
         self.assertEqual(len(results), 2)
 
     def test_add_failure(self):
         results = TestResults()
-        results.add_failure(TestCase('test1', 'pkg', 'x86_64'), 1)
-        results.add_failure(TestCase('test2', 'pkg', 'x86_64'), 1)
+        results.add_failure(TestCase('test1', 'pkg', _DEFAULT_VARIANT, 'x86_64'), 1)
+        results.add_failure(TestCase('test2', 'pkg', _DEFAULT_VARIANT, 'x86_64'), 1)
         self.assertFalse(results.global_result)
         self.assertEqual(len(results), 2)
 
     def test_add_success_failure(self):
         results = TestResults()
-        results.add_success(TestCase('test1', 'pkg', 'x86_64'), 1)
-        results.add_failure(TestCase('test2', 'pkg', 'x86_64'), 1)
+        results.add_success(TestCase('test1', 'pkg', _DEFAULT_VARIANT, 'x86_64'), 1)
+        results.add_failure(TestCase('test2', 'pkg', _DEFAULT_VARIANT, 'x86_64'), 1)
         self.assertFalse(results.global_result)
         self.assertEqual(len(results), 2)
 
     def test_extend(self):
         results = TestResults()
-        results.add_success(TestCase('test1', 'pkg1', 'x86_64'), 1)
-        results.add_failure(TestCase('test2', 'pkg1', 'x86_64'), 1)
+        results.add_success(TestCase('test1', 'pkg1', _DEFAULT_VARIANT, 'x86_64'), 1)
+        results.add_failure(TestCase('test2', 'pkg1', _DEFAULT_VARIANT, 'x86_64'), 1)
         others = TestResults()
-        others.add_success(TestCase('test1', 'pkg2', 'x86_64'), 1)
-        others.add_failure(TestCase('test2', 'pkg2', 'x86_64'), 1)
+        others.add_success(TestCase('test1', 'pkg2', _DEFAULT_VARIANT, 'x86_64'), 1)
+        others.add_failure(TestCase('test2', 'pkg2', _DEFAULT_VARIANT, 'x86_64'), 1)
         results.extend(others)
         self.assertFalse(results.global_result)
         self.assertEqual(len(results), 4)
 
     def test_junit(self):
         results = TestResults()
-        results.add_success(TestCase('test1', 'pkg', 'x86_64'), 1, out="output test1")
-        results.add_failure(TestCase('test2', 'pkg', 'x86_64'), 1, out="output test2")
+        results.add_success(
+            TestCase('test1', 'pkg', _DEFAULT_VARIANT, 'x86_64'), 1, out="output test1"
+        )
+        results.add_failure(
+            TestCase('test2', 'pkg', _DEFAULT_VARIANT, 'x86_64'), 1, out="output test2"
+        )
         output = BytesIO()
         results.junit(output)
         root = ET.fromstring(output.getvalue().decode())
@@ -77,8 +82,8 @@ class TestResultsTest(RiftTestCase):
 
     def test_summary(self):
         results = TestResults()
-        results.add_success(TestCase('test1', 'pkg', 'x86_64'), 1)
-        results.add_failure(TestCase('test2', 'pkg', 'x86_64'), 1)
+        results.add_success(TestCase('test1', 'pkg', _DEFAULT_VARIANT, 'x86_64'), 1)
+        results.add_failure(TestCase('test2', 'pkg', _DEFAULT_VARIANT, 'x86_64'), 1)
         self.assertEqual(
             results.summary(),
             textwrap.dedent(
@@ -87,5 +92,20 @@ class TestResultsTest(RiftTestCase):
                 ----      ----   -------- ------
                 pkg.test1 x86_64       1s Success
                 pkg.test2 x86_64       1s FAILURE"""
+            )
+        )
+
+    def test_summary_real_variants(self):
+        results = TestResults()
+        results.add_success(TestCase('test1', 'pkg', _DEFAULT_VARIANT, 'x86_64'), 1)
+        results.add_failure(TestCase('test2', 'pkg', 'mofed', 'x86_64'), 1)
+        self.assertEqual(
+            results.summary(),
+            textwrap.dedent(
+                """\
+                NAME      VARIANT ARCH   DURATION RESULT
+                ----      ------- ----   -------- ------
+                pkg.test1 main    x86_64       1s Success
+                pkg.test2 mofed   x86_64       1s FAILURE"""
             )
         )

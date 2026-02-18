@@ -46,6 +46,8 @@ from rift import RiftError
 from rift.TempDir import TempDir
 from rift.RPM import RPM
 from rift.run import run_command
+from rift.Config import _DEFAULT_VARIANT
+
 
 class Mock():
     """
@@ -79,6 +81,7 @@ class Mock():
                 'name': repo.name or f"repo{idx}",
                 'priority': prio,
                 'url': repo.generic_url(self._arch),
+                'variants': repo.variants,
                 }
             if repo.module_hotfixes:
                 repo_ctx['module_hotfixes'] = repo.module_hotfixes
@@ -225,10 +228,15 @@ class Mock():
 
         return package
 
-    def build_rpms(self, srpm, sign):
+    def build_rpms(self, srpm, variant, repos, sign):
         """Build binary RPMS using the provided Source RPM pointed by `srpm'"""
         cmd = ['--no-clean', '--no-cleanup-after']
+
         cmd += [srpm.filepath]
+        if variant != _DEFAULT_VARIANT:
+            cmd += ['--with', variant]
+            for repo in repos.for_variant(variant):
+                cmd += ['--enablerepo', repo.name]
         self._exec(cmd)
 
         packages = list(self.resultrpms('*.rpm', sources=False))

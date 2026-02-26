@@ -60,7 +60,7 @@ from jinja2 import Template
 
 from rift import RiftError
 from rift.Config import _DEFAULT_VIRTIOFSD, _DEFAULT_VARIANT
-from rift.Repository import ProjectArchRepositories
+from rift.repository import ProjectArchRepositories
 from rift.TempDir import TempDir
 from rift.utils import last_modified, download_file, setup_dl_opener, message
 from rift.run import run_command
@@ -136,7 +136,7 @@ class VM():
         if extra_repos is None:
             extra_repos = []
 
-        self._repos = ProjectArchRepositories(config, arch).all + extra_repos
+        self._repos = ProjectArchRepositories(config, arch).for_format('rpm').all + extra_repos
 
         self.address = vm_config.get('address')
         self.port = self.default_port(vm_config.get('port_range'))
@@ -627,49 +627,47 @@ class VM():
         termios.tcsetattr(self_stdin, termios.TCSANOW, old)
         return retcode
 
+    def local_test_funcs(self):
+        """
+        Return dict of shell functions that could be useful for local tests
+        running on hosts for handling this VM.
+        """
+        return {
+            'cm_cmd': (
+                "ssh -oUserKnownHostsFile=/dev/null -oStrictHostKeyChecking=no "
+                f"-oLogLevel=ERROR -T -p {self.port} root@127.0.0.1 \"$@\""
+            ),
+            'vm_wait': textwrap.dedent("""\
+                rc=1
+                for i in {1..7}
+                do
+                sleep 5
+                echo -n .
+                vm_cmd echo -e '\\\\nConnection is OK' && rc=0 && break
+                done
+                return $rc\
+                """
+            ),
+            'vm_reboot': textwrap.dedent("""\
+                echo -n 'Restarting VM...'
+                vm_cmd 'reboot' || true; sleep 5 && vm_wait || return 1\
+                """
+            )
+        }
 
     def run_test(self, test, variant):
         """
-        Run specified test using this VM.
-
-        If test is local, it is run on local host, if not, it is run inside the
-        VM.
+        Run specified test inside the VM.
         """
-        funcs = {}
-        funcs['vm_cmd'] = (
-            "ssh -oUserKnownHostsFile=/dev/null -oStrictHostKeyChecking=no "
-            f"-oLogLevel=ERROR -T -p {self.port} root@127.0.0.1 \"$@\""
-        )
-        funcs['vm_wait'] = textwrap.dedent("""\
-            rc=1
-            for i in {1..7}
-            do
-              sleep 5
-              echo -n .
-              vm_cmd echo -e '\\\\nConnection is OK' && rc=0 && break
-            done
-            return $rc""")
-        funcs['vm_reboot'] = textwrap.dedent("""\
-            echo -n 'Restarting VM...'
-            vm_cmd 'reboot' || true; sleep 5 && vm_wait || return 1""")
-
         # Set environment variable for package variant to allow conditionals
         # in test scripts.
         cmd = f"export RIFT_VARIANT={variant}; "
-        if not test.local:
-            if test.command.startswith(self._project_dir):
-                testcmd = test.command[len(self._project_dir) + 1:]
-            else:
-                testcmd = test.command
-            cmd += f"cd {self._PROJ_MOUNTPOINT}; {testcmd}"
-            return self.cmd(cmd, capture_output=True)
-
-        for func, code in funcs.items():
-            cmd += f"{func}() {{ {code}; }}; export -f {func}; "
-        cmd += shlex.quote(test.command)
-
-        logging.debug("Running command outside VM: %s", cmd)
-        return run_command(cmd, capture_output=True, shell=True)
+        if test.command.startswith(self._project_dir):
+            testcmd = test.command[len(self._project_dir) + 1:]
+        else:
+            testcmd = test.command
+        cmd += f"cd {self._PROJ_MOUNTPOINT}; {testcmd}"
+        return self.cmd(cmd, capture_output=True)
 
     def running(self):
         """Check if VM is already running."""

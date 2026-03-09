@@ -58,6 +58,7 @@ from rift.TextTable import TextTable
 from rift.VM import VM
 from rift.sync import RepoSyncFactory
 from rift.patches import get_packages_from_patch
+from rift.threads import BuildThread
 from rift.utils import message, banner
 
 
@@ -644,6 +645,25 @@ def build_pkgs(args, pkgs, arch, staging):
 
     return results
 
+def build_architecture(args, config, arch, pkgs):
+    # Create temporary staging repository to hold dependencies unless
+    # dependency tracking is disabled in project configuration or user set
+    # --skip-deps argument.
+
+    results = TestResults(f"build-{arch}")
+
+    staging = stagedir = None
+    if config.get('dependency_tracking') and not args.skip_deps:
+        (staging, stagedir) = create_staging_repo(config)
+
+    results.extend(build_pkgs(args, pkgs, arch, staging))
+
+    if stagedir:
+        stagedir.delete()
+    banner(f"All packages processed for architecture {arch}")
+
+    return results
+
 def action_build(args, config):
     """Action for 'build' command."""
 
@@ -665,30 +685,34 @@ def action_build(args, config):
         str([pkg.name for pkg in pkgs])
     )
 
+    threads = []
+
     # Build all packages for all project supported architectures
     for arch in config.get('arch'):
+        # create thread
+        threads.append(BuildThread(build_architecture, args, config, arch, pkgs))
 
-        # Create temporary staging repository to hold dependencies unless
-        # dependency tracking is disabled in project configuration or user set
-        # --skip-deps argument.
-        staging = stagedir = None
-        if config.get('dependency_tracking') and not args.skip_deps:
-            (staging, stagedir) = create_staging_repo(config)
+    # Start building threads
+    for thread in threads:
+        thread.start()
 
-        results.extend(build_pkgs(args, pkgs, arch, staging))
-
-        if getattr(args, 'junit', False):
-            logging.info('Writing test results in %s', args.junit)
-            results.junit(args.junit)
-
-        if stagedir:
-            stagedir.delete()
-        banner(f"All packages processed for architecture {arch}")
+    # Wait for all threads to finish
+    for thread in threads:
+        outcome = thread.join()
+        results.extend(outcome.results)
+        print(f"Build thread {thread.getName()} output:")
+        print("***************************************")
+        print(outcome.output, end='')
+        print("***************************************")
 
     banner('All architectures processed')
 
     if len(results) > 1:
         print(results.summary())
+
+    if getattr(args, 'junit', False):
+        logging.info('Writing test results in %s', args.junit)
+        results.junit(args.junit)
 
     if not results.global_result:
         return 2

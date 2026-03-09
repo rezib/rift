@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2026 CEA
+# Copyright (C) 2025 CEA
 #
 # This file is part of Rift project.
 #
@@ -30,6 +30,43 @@
 # knowledge of the CeCILL license and that you accept its terms.
 #
 
-"""Module to manage package repositories in a project."""
+"""
+Manage OCI archive repository structure.
+"""
 
-from rift.repository._project import ProjectArchRepositories, StagingRepository
+import os
+import glob
+import logging
+
+from rift.repository._base import ArchRepositoriesBase
+
+class ArchRepositoriesOCI(ArchRepositoriesBase):
+    """
+    Manipulate repositories defined in a project for a particular architecture.
+    """
+    def __init__(self, config, working_dir, arch):
+        super().__init__(working_dir, arch)
+        self.config = config
+        self.path = None
+        if working_dir:
+            self.path = os.path.join(working_dir, 'oci')
+
+    def ensure_created(self):
+        """Make sure OCI archives repository directory exists or create it."""
+        if not self.path:
+            return
+        if not os.path.exists(self.working_dir):
+            logging.debug("Creating working directory %s", self.working_dir)
+            os.mkdir(self.working_dir)
+        if not os.path.exists(self.path):
+            logging.debug("Creating oci repository directory %s", self.path)
+            os.mkdir(self.path)
+
+    def delete_matching(self, package):
+        """
+        Delete OCI images of provided package name from OCI archives repository.
+        """
+        found_imgs = glob.glob(f"{self.path}/{package}_*.{self.arch}.tar")
+        for found_img in found_imgs:
+            logging.info("Deleting OCI image %s", found_img)
+            os.unlink(found_img)

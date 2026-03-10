@@ -42,7 +42,6 @@ import re
 from rift import RiftError
 from rift.package._base import Package, ActionableArchPackage, Test
 from rift.annex import Annex
-from rift.repository import ProjectArchRepositories
 from rift.Mock import Mock
 from rift.RPM import Spec
 from rift.TestResults import TestCase, TestResults
@@ -212,7 +211,9 @@ class ActionableArchPackageRPM(ActionableArchPackage):
         # environment.
         staging = kwargs.get('staging')
         if staging:
-            mock_repos.append(staging.consumables[self.arch])
+            mock_repos.append(staging.for_format(
+                self.package.format
+            ).repo.consumables[self.arch])
 
         message('Preparing Mock environment...')
         self.mock.init(mock_repos)
@@ -239,7 +240,9 @@ class ActionableArchPackageRPM(ActionableArchPackage):
         results = TestResults('test')
         staging = kwargs.get('staging')
         if staging:
-            extra_repos=[staging.consumables[self.arch]]
+            extra_repos = [
+                staging.for_format(self.package.format).repo.consumables[self.arch]
+            ]
         else:
             extra_repos=[]
         vm = VM(self.config, self.arch, extra_repos=extra_repos)
@@ -271,10 +274,15 @@ class ActionableArchPackageRPM(ActionableArchPackage):
             if not kwargs.get('noauto', False):
                 tests.insert(0, BasicTest(self.package, variant, config=self.config))
             for test in tests:
-                case = TestCase(test.name, self.name, variant, self.arch)
+                case = TestCase(
+                    test.name, self.name, variant, self.arch, self.package.format
+                )
                 now = time.time()
                 message(f"Running test '{case.fullname}' on architecture '{self.arch}'")
-                proc = vm.run_test(test, variant)
+                if test.local:
+                    proc = self.run_local_test(test, vm.local_test_funcs())
+                else:
+                    proc = vm.run_test(test, variant)
                 if proc.returncode == 0:
                     results.add_success(
                         case, time.time() - now, out=proc.out, err=proc.err
@@ -299,7 +307,7 @@ class ActionableArchPackageRPM(ActionableArchPackage):
     def publish(self, **kwargs):
         staging = kwargs.get('staging')
         if staging:
-            repo = staging
+            repo = staging.for_format(self.package.format).repo
         else:
             repo = self.repos.working
 

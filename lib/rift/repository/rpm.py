@@ -66,6 +66,7 @@ class ConsumableRepository:
         self.priority = priority
         if options is None:
             options = {}
+        self.auth = options.get('auth')
         self.module_hotfixes = options.get('module_hotfixes')
         self.excludepkgs = options.get('excludepkgs')
         self.proxy = options.get('proxy', default_proxy)
@@ -77,6 +78,10 @@ class ConsumableRepository:
     def is_file(self):
         """True if repository URL looks like a file URI."""
         return self.url.startswith(self.FILE_SCHEME) or self.url.startswith('/')
+
+    def needs_proxy(self):
+        """True if repository is remote and requires idp_token auth."""
+        return (not self.is_file()) and self.auth == 'idp_token'
 
     @property
     def path(self):

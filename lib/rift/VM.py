@@ -35,6 +35,7 @@ Class to start, stop and manipulate VM used mostly for testing.
 """
 
 import os
+import copy
 import pwd
 import grp
 import sys
@@ -64,6 +65,7 @@ from rift.repository import ProjectArchRepositories
 from rift.TempDir import TempDir
 from rift.utils import last_modified, download_file, setup_dl_opener, message
 from rift.run import run_command
+from rift.proxy import RepositoryProxyRuntime
 
 __all__ = ['VM']
 
@@ -139,6 +141,7 @@ class VM():
         self._repos = ProjectArchRepositories(
             config, arch
         ).for_format('rpm').all + extra_repos
+        self._repo_proxy = RepositoryProxyRuntime(config, self._repos)
 
         self.address = vm_config.get('address')
         self.port = self.default_port(vm_config.get('port_range'))
@@ -382,6 +385,25 @@ class VM():
 
         return cmd
 
+    def _repo_url_for_guest(self, repo, host):
+        """Return effective URL for a repository consumed inside the VM."""
+        if repo.is_file():
+            return f"file:///rift.{repo.name}/"
+        if repo.needs_proxy():
+            return self._repo_proxy.repo_url(repo, host)
+        return repo.url
+
+    def _repositories_for_guest(self, host):
+        """
+        Build a repositories list with URL values rewritten for a guest host.
+        """
+        repositories = []
+        for repo in self._repos:
+            guest_repo = copy.copy(repo)
+            guest_repo.url = self._repo_url_for_guest(repo, host)
+            repositories.append(guest_repo)
+        return repositories
+
     def _download(self, force: bool):
         """
         Download local copy of VM image if it is remote URL. Download is skipped if
@@ -498,9 +520,7 @@ class VM():
                 mkdirs.append(f"/rift.{repo.name}")
                 fstab.append(f"{repo.name} /rift.{repo.name} {self.shared_fs_type} "
                              f"{options} 0 0")
-                url = f"file:///rift.{repo.name}/"
-            else:
-                url = repo.url
+            url = self._repo_url_for_guest(repo, '10.0.2.2')
             prio = repo.priority or (prio - 1)
             repos.append(textwrap.dedent(f"""\
                 [{repo.name}]
@@ -728,6 +748,7 @@ class VM():
                 logging.debug("Sending TERM signal to helper process (%d)", pid)
                 helper.terminate()
 
+        self._repo_proxy.stop()
 
         # Unlink temp VM image
         if unlink:
@@ -756,9 +777,14 @@ class VM():
         self._download(force)
 
         message('Launching VM ...')
-        self.spawn()
-        self.ready()
-        self.prepare()
+        self._repo_proxy.start()
+        try:
+            self.spawn()
+            self.ready()
+            self.prepare()
+        except Exception:
+            self._repo_proxy.stop()
+            raise
         return True
 
     def restart(self):
@@ -862,7 +888,7 @@ class VM():
                 tpl.render(
                     proxy=self.proxy,
                     no_proxy=self.no_proxy,
-                    repositories=self._repos
+                    repositories=self._repositories_for_guest('10.0.2.2')
                 )
             )
 
@@ -945,8 +971,14 @@ class VM():
         # Download image if necessary
         base_image_path = self._dl_base_image(url, force)
 
+        self._repo_proxy.start()
+
         # Build cloud-init seed iso
-        seed_iso_file = self._build_seed_iso()
+        try:
+            seed_iso_file = self._build_seed_iso()
+        except Exception:
+            self._repo_proxy.stop()
+            raise
 
         # Start VM with base cloud base image with seed iso
         self.spawn(image=base_image_path, seed=seed_iso_file)

@@ -201,6 +201,11 @@ class ControllerProjectActionQueryTest(RiftProjectTestCase):
         self.make_pkg()
         self.assertEqual(main(['query', 'pkg']), 0)
 
+    def test_action_query_formats(self):
+        """ Test query with format filter """
+        self.make_pkg()
+        self.assertEqual(main(['query', '--formats', 'rpm']), 0)
+
     def test_action_query_on_bad_pkg(self):
         """ Test query on multiple packages with one errorneous package """
         self.make_pkg()
@@ -735,6 +740,44 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
              call(noauto=False, noquit=False)])
 
     @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
+    def test_action_test_formats(self, mock_pkg_rpm):
+
+        # Declare supported archs.
+        self.config.set('arch', ['x86_64', 'aarch64'])
+        self.update_project_conf()
+
+        # Create fake package without build requirement
+        self.make_pkg(build_requires=[])
+
+        # Get PackageRPM instances mock
+        mock_pkg_rpm_objs = mock_pkg_rpm.return_value
+        # Initialize PackageRPM object attributes
+        PackageRPM.__init__(
+            mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
+        # Make PackageRPM.supports_arch() return True for all archs
+        mock_pkg_rpm_objs.supports_arch.return_value = True
+        # Mock ActionableArchPackageRPM objects
+        mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
+        # Make ActionableArchPackageRPM.test() return empty but successful test
+        # results.
+        mock_act_arch_pkg_rpm.test.return_value = TestResults()
+
+        # Run test on package
+        self.assertEqual(main(['test', 'pkg', '--formats', 'rpm']), 0)
+
+        # Check RPM package supports_arch() method is called for all supported
+        # archs.
+        for arch in self.config.get('arch'):
+            mock_pkg_rpm_objs.supports_arch.assert_any_call(arch)
+
+        # Check actionable RPM package test() method is called for all
+        # supported arch (ie. twice).
+        mock_act_arch_pkg_rpm.test.assert_has_calls(
+            [call(noauto=False, noquit=False),
+             call(noauto=False, noquit=False)])
+
+    @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
     def test_action_test_load_failure(self, mock_pkg_rpm):
 
         # Create fake package without build requirement
@@ -1075,6 +1118,59 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
             'rpm:libone→rpm:libthree→rpm:libtwo→rpm:libone',
             cm.output
         )
+
+    @patch('rift.Controller.StagingRepository')
+    @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
+    def test_action_validate_formats(self, mock_pkg_rpm, mock_staging_repo_cls):
+
+        # Declare supported archs.
+        self.config.set('arch', ['x86_64', 'aarch64'])
+        self.update_project_conf()
+
+        # Create fake package without build requirement
+        self.make_pkg(build_requires=[])
+
+        # Get PackageRPM instances mock
+        mock_pkg_rpm_objs = mock_pkg_rpm.return_value
+        # Initialize PackageRPM object attributes
+        PackageRPM.__init__(
+            mock_pkg_rpm_objs, 'pkg', self.config, self.staff, self.modules)
+        # Make PackageRPM.supports_arch() return True for all archs
+        mock_pkg_rpm_objs.supports_arch.return_value = True
+        # Mock ActionableArchPackageRPM objects
+        mock_act_arch_pkg_rpm = Mock(spec=ActionableArchPackageRPM)
+        mock_pkg_rpm_objs.for_arch.return_value = mock_act_arch_pkg_rpm
+        # MakeActionableArchPackageRPM.test() return empty but successful test
+        # results.
+        mock_act_arch_pkg_rpm.test.return_value = TestResults()
+        # Mock StagingRepository object.
+        mock_staging_repo = Mock()
+        mock_staging_repo_cls.return_value = mock_staging_repo
+
+        # Run validate on pkg
+        self.assertEqual(main(['validate', 'pkg', '--formats', 'rpm']), 0)
+
+        # Check RPM package supports_arch() method is called for all supported
+        # archs.
+        for arch in self.config.get('arch'):
+            mock_pkg_rpm_objs.supports_arch.assert_any_call(arch)
+
+        # Check RPM package check() method is called for all supported arch
+        # (ie. twice).
+        mock_pkg_rpm_objs.check.assert_has_calls([call(), call()])
+
+        # Check actionable RPM package build(), publish(staging), test() and
+        # clean() methods are called for all supported arch (ie. twice).
+        mock_act_arch_pkg_rpm.build.assert_has_calls(
+            [call(sign=False, staging=mock_staging_repo),
+             call(sign=False, staging=mock_staging_repo)])
+        mock_act_arch_pkg_rpm.publish.assert_has_calls(
+            [call(staging=mock_staging_repo), call(staging=mock_staging_repo)])
+        mock_act_arch_pkg_rpm.test.assert_has_calls(
+            [call(noauto=False, staging=mock_staging_repo, noquit=False),
+             call(noauto=False, staging=mock_staging_repo, noquit=False)])
+        mock_act_arch_pkg_rpm.clean.assert_has_calls(
+            [call(noquit=False), call(noquit=False)])
 
     @patch('rift.package._project.PackageRPM', autospec=PackageRPM)
     def test_action_validate_load_failure(self, mock_pkg_rpm):
@@ -1891,7 +1987,14 @@ class ControllerProjectActionGraphTest(RiftProjectTestCase):
         )
         args = Mock()
         args.module = 'Great module'
+        args.formats = None
         args.packages = []
+        self.assertCountEqual(
+            get_packages_in_graph(args, self.config, self.staff, self.modules),
+            ['libone', 'libtwo']
+        )
+        # Check adding format does not change result in this case.
+        args.formats = ['rpm']
         self.assertCountEqual(
             get_packages_in_graph(args, self.config, self.staff, self.modules),
             ['libone', 'libtwo']
@@ -1991,14 +2094,6 @@ class ControllerProjectActionGerritTest(RiftProjectTestCase):
     Tests class for Controller action gerrit
     """
 
-    def test_gerrit_missing_patch_change_patchset(self):
-        """gerrit without patch, change or patchset fails"""
-        for cmd in (['gerrit', '--change', '1', '--patchset', '2'],
-                    ['gerrit', '--patchset', '2', '/dev/null'],
-                    ['gerrit', '--change', '1', '/dev/null']):
-            with self.assertRaisesRegex(SystemExit, "2"):
-                main(cmd)
-
     @patch('rift.Controller.Review')
     def test_gerrit(self, mock_review):
         """simple gerrit"""
@@ -2019,6 +2114,31 @@ class ControllerProjectActionGerritTest(RiftProjectTestCase):
                  License:        GPL
                 """))
         main(['gerrit', '--change', '1', '--patchset', '2', patch.name])
+        # Check review has not been invalidated and pushed
+        mock_review.return_value.invalidate.assert_not_called()
+        mock_review.return_value.push.assert_called_once()
+
+    @patch('rift.Controller.Review')
+    def test_gerrit_formats(self, mock_review):
+        """simple gerrit"""
+        self.make_pkg()
+        patch = make_temp_file(
+            textwrap.dedent("""
+                diff --git a/packages/pkg/pkg.spec b/packages/pkg/pkg.spec
+                index d1a0d0e7..b3e36379 100644
+                --- a/packages/pkg/pkg.spec
+                +++ b/packages/pkg/pkg.spec
+                @@ -1,6 +1,6 @@
+                 Name:    pkg
+                 Version:        1.0
+                -Release:        1
+                +Release:        2
+                 Summary:        A package
+                 Group:          System Environment/Base
+                 License:        GPL
+                """))
+        main(['gerrit', '--change', '1', '--patchset', '2', patch.name,
+              '--formats', 'rpm'])
         # Check review has not been invalidated and pushed
         mock_review.return_value.invalidate.assert_not_called()
         mock_review.return_value.push.assert_called_once()
@@ -2066,16 +2186,6 @@ class ControllerProjectActionChangelogTest(RiftProjectTestCase):
     Tests class for Controller action changelog
     """
 
-    def test_action_changelog_without_pkg(self):
-        """changelog without package fails """
-        with self.assertRaisesRegex(SystemExit, "2"):
-            main(['changelog'])
-
-    def test_action_changelog_without_comment(self):
-        """changelog without comment fails """
-        with self.assertRaisesRegex(SystemExit, "2"):
-            main(['changelog', 'pkg'])
-
     def test_action_changelog_without_maintainer(self):
         """changelog without maintainer """
         with self.assertRaisesRegex(RiftError, "You must specify a maintainer"):
@@ -2093,6 +2203,20 @@ class ControllerProjectActionChangelogTest(RiftProjectTestCase):
         self.make_pkg()
         self.assertEqual(
             main(['changelog', 'pkg', '-c', 'basic change', '-t', 'Myself']), 0)
+        spec = Spec(filepath=self.buildfiles['pkg:rpm'])
+        spec.load()
+        self.assertEqual(spec.changelog_name, 'Myself <buddy@somewhere.org> - 1.0-1')
+        self.assertEqual(spec.version, '1.0')
+        self.assertEqual(spec.release, '1')
+
+    def test_action_changelog_formats(self):
+        """simple changelog"""
+        self.make_pkg()
+        self.assertEqual(
+            main(
+                ['changelog', 'pkg', '-c', 'basic change', '-t', 'Myself',
+                 '--formats', 'rpm']
+            ), 0)
         spec = Spec(filepath=self.buildfiles['pkg:rpm'])
         spec.load()
         self.assertEqual(spec.changelog_name, 'Myself <buddy@somewhere.org> - 1.0-1')
@@ -2143,6 +2267,125 @@ class ControllerArgumentsTest(RiftTestCase):
         self.assertCountEqual(opts.formats, ['rpm'])
 
         args = ['build', '--formats', 'fail']
+        with self.assertRaises(SystemExit):
+            opts = parser.parse_args(args)
+
+    def test_parse_args_test(self):
+        """ Test test command options parsing """
+        parser = make_parser()
+
+        args = ['test']
+        opts = parser.parse_args(args)
+        self.assertIsNone(opts.formats)
+
+        args = ['test', '--formats', 'rpm']
+        opts = parser.parse_args(args)
+        self.assertCountEqual(opts.formats, ['rpm'])
+
+        args = ['test', '--formats', 'fail']
+        with self.assertRaises(SystemExit):
+            opts = parser.parse_args(args)
+
+    def test_parse_args_validate(self):
+        """ Test validate command options parsing """
+        parser = make_parser()
+
+        args = ['validate']
+        opts = parser.parse_args(args)
+        self.assertIsNone(opts.formats)
+
+        args = ['validate', '--formats', 'rpm']
+        opts = parser.parse_args(args)
+        self.assertCountEqual(opts.formats, ['rpm'])
+
+        args = ['validate', '--formats', 'fail']
+        with self.assertRaises(SystemExit):
+            opts = parser.parse_args(args)
+
+    def test_parse_args_query(self):
+        """ Test query command options parsing """
+        parser = make_parser()
+
+        args = ['query']
+        opts = parser.parse_args(args)
+        self.assertIsNone(opts.formats)
+
+        args = ['query', '--formats', 'rpm']
+        opts = parser.parse_args(args)
+        self.assertCountEqual(opts.formats, ['rpm'])
+
+        args = ['query', '--formats', 'fail']
+        with self.assertRaises(SystemExit):
+            opts = parser.parse_args(args)
+
+    def test_parse_args_changelog(self):
+        """ Test changelog command options parsing """
+        parser = make_parser()
+
+        args = ['changelog']
+        with self.assertRaises(SystemExit):
+            opts = parser.parse_args(args)
+
+        args = ['changelog', 'pkg']
+        with self.assertRaises(SystemExit):
+            opts = parser.parse_args(args)
+
+        args = ['changelog', 'pkg', '-c', 'comment']
+        opts = parser.parse_args(args)
+        self.assertIsNone(opts.formats)
+
+        args = ['changelog', 'pkg', '-c', 'comment', '--formats', 'rpm']
+        opts = parser.parse_args(args)
+        self.assertCountEqual(opts.formats, ['rpm'])
+
+        args = ['changelog', 'pkg', '-c', 'comment', '--formats', 'fail']
+        with self.assertRaises(SystemExit):
+            opts = parser.parse_args(args)
+
+    def test_parse_args_gerrit(self):
+        """ Test gerrit command options parsing """
+        parser = make_parser()
+
+        for args in (['gerrit', '--change', '1', '--patchset', '2'],
+                    ['gerrit', '--patchset', '2', '/dev/null'],
+                    ['gerrit', '--change', '1', '/dev/null']):
+            with self.assertRaisesRegex(SystemExit, "2"):
+                opts = parser.parse_args(args)
+
+        args = ['gerrit', '--change', '1', '--patchset', '2', '/dev/null']
+        opts = parser.parse_args(args)
+        self.assertIsNone(opts.formats)
+
+        args = ['gerrit', '--change', '1', '--patchset', '2', '/dev/null',
+                '--formats', 'rpm']
+        opts = parser.parse_args(args)
+        self.assertCountEqual(opts.formats, ['rpm'])
+
+        args = ['gerrit', '--change', '1', '--patchset', '2', '/dev/null',
+                '--formats', 'fail']
+        with self.assertRaises(SystemExit):
+            opts = parser.parse_args(args)
+
+    def test_parse_args_graph(self):
+        """ Test graph command options parsing """
+        parser = make_parser()
+
+        args = ['graph']
+        opts = parser.parse_args(args)
+        self.assertFalse(opts.with_external)
+        self.assertIsNone(opts.formats)
+        self.assertIsNone(opts.module)
+        self.assertCountEqual(opts.packages, [])
+
+        args = ['graph', '--with-external', '--formats', 'rpm',
+                '--module', 'storage', 'package1', 'package2']
+        opts = parser.parse_args(args)
+        self.assertTrue(opts.with_external)
+        self.assertCountEqual(opts.formats, ['rpm'])
+        self.assertEqual(opts.module, 'storage')
+        self.assertCountEqual(opts.packages, ['package1', 'package2'])
+
+        args = ['graph', '--formats', 'fail']
         with self.assertRaises(SystemExit):
             opts = parser.parse_args(args)
 

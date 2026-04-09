@@ -153,6 +153,9 @@ def make_parser():
                         help='do not run auto tests')
     subprs.add_argument('--junit', metavar='FILENAME',
                         help='write junit result file')
+    subprs.add_argument('-F', '--formats', nargs='+',
+                        choices=RIFT_SUPPORTED_FORMATS,
+                        help='restrict tests to specific package formats')
 
     # Validate options
     subprs = subparsers.add_parser('validate', help='Fully validate package')
@@ -173,6 +176,9 @@ def make_parser():
                         help='publish built package to repository')
     subprs.add_argument('-S', '--skip-deps', action='store_true',
                         help='Skip automatic validation of reverse dependencies')
+    subprs.add_argument('-F', '--formats', nargs='+',
+                        choices=RIFT_SUPPORTED_FORMATS,
+                        help='restrict validation to specific package formats')
 
     # Validate diff
     subprs = subparsers.add_parser('validdiff')
@@ -262,6 +268,9 @@ def make_parser():
                         action='store_false', help="Don't load specfile info")
     subprs.add_argument('-H', '--no-header', dest='headers',
                         action='store_false', help='Hide table headers')
+    subprs.add_argument('-F', '--formats', nargs='+',
+                        choices=RIFT_SUPPORTED_FORMATS,
+                        help='Restrict query to specific package formats')
 
     # Add changelog entry
     subprs = subparsers.add_parser('changelog',
@@ -274,6 +283,9 @@ def make_parser():
                         help='maintainer name from staff.yaml')
     subprs.add_argument('--bump', dest='bump', action='store_true',
                         help='also bump the release number')
+    subprs.add_argument('-F', '--formats', nargs='+',
+                        choices=RIFT_SUPPORTED_FORMATS,
+                        help='restrict command to specific package formats')
 
     # GitLab review
     subprs = subparsers.add_parser('gitlab', add_help=False,
@@ -285,6 +297,9 @@ def make_parser():
                                    help='Make Gerrit automatic review')
     subprs.add_argument('--change', help="Gerrit Change-Id", required=True)
     subprs.add_argument('--patchset', help="Gerrit patchset ID", required=True)
+    subprs.add_argument('-F', '--formats', nargs='+',
+                        choices=RIFT_SUPPORTED_FORMATS,
+                        help='restrict command to specific package formats')
     subprs.add_argument('patch', metavar='PATCH', type=argparse.FileType('r'))
 
     # sync
@@ -300,6 +315,9 @@ def make_parser():
                         help="add project external dependencies in the graph")
     subprs.add_argument('--module',
                         help="represent packages from this module in the graph")
+    subprs.add_argument('-F', '--formats', nargs='+',
+                        choices=RIFT_SUPPORTED_FORMATS,
+                        help='restrict command to specific package formats')
     subprs.add_argument('packages', metavar='PACKAGE', nargs='*',
                         help='packages to represent in the graph')
 
@@ -442,6 +460,15 @@ def validate_pkgs(config, args, pkgs, arch):
     results = TestResults()
 
     for pkg in pkgs:
+        # Skip package if format is not selected by user
+        if args.formats and pkg.format not in args.formats:
+            logging.info(
+                "Skipping validation of %s package %s due to restriction on "
+                "package formats",
+                pkg.format, pkg.name
+            )
+            continue
+
         # Load package and report possible failure
         case = TestCase('build', pkg.name, _DEFAULT_VARIANT, arch, pkg.format)
         now = time.time()
@@ -758,6 +785,15 @@ def action_test(args, config):
     for arch in config.get('arch'):
         for pkg in ProjectPackages.list(config, staff, modules, args.packages):
 
+            # Skip package if format is not selected by user
+            if args.formats and pkg.format not in args.formats:
+                logging.info(
+                    "Skipping tests %s package %s due to restriction on "
+                    "package formats",
+                    pkg.format, pkg.name
+                )
+                continue
+
             # Load package and report possible failure
             now = time.time()
             try:
@@ -940,6 +976,14 @@ def action_gerrit(args, config, staff, modules):
         if names[0] == config.get('packages_dir'):
             pkgs = ProjectPackages.get(names[1], config, staff, modules)
             for pkg in pkgs:
+                # Skip package if format is not selected by user
+                if args.formats and pkg.format not in args.formats:
+                    logging.info(
+                        "Skipping gerrit review on %s package %s due to "
+                        "restriction on package formats",
+                        pkg.format, pkg.name
+                    )
+                    continue
                 if (filepath == os.path.relpath(pkg.buildfile) and
                     not patchedfile.is_deleted_file):
                     pkg.load()
@@ -1026,6 +1070,16 @@ def action_changelog(args, config):
     pkgs = ProjectPackages.get(args.package, config, staff, modules)
     package_found = False
     for pkg in pkgs:
+
+        # Skip package if format is not selected by user
+        if args.formats and pkg.format not in args.formats:
+            logging.info(
+                "Skipping changelog update on %s package %s due to restriction "
+                "on package formats",
+                pkg.format, pkg.name
+            )
+            continue
+
         pkg.load()
         try:
             pkg.add_changelog_entry(args.maintainer, args.comment, args.bump)
@@ -1047,7 +1101,7 @@ def action_graph(args, config, staff, modules):
     """Action for 'graph' command."""
     # Build dependency graph with all selected packages and generate graphviz
     # representation of this graph.
-    PackagesDependencyGraph.from_project(config, staff, modules).draw(
+    PackagesDependencyGraph.from_project(config, staff, modules, args.format).draw(
         args.with_external, get_packages_in_graph(args, config, staff, modules)
     )
     return 0
@@ -1141,6 +1195,16 @@ def action_query(args, config):
                         f"(supported keys are: {', '.join(supported_keys)})")
 
     for pkg in pkglist:
+
+        # Skip package if format is not selected by user
+        if args.formats and pkg.format not in args.formats:
+            logging.info(
+                "Skipping query %s package %s due to restriction on "
+                "package formats",
+                pkg.format, pkg.name
+            )
+            continue
+
         logging.debug('Loading package %s', pkg.name)
         try:
             pkg.load()

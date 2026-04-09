@@ -56,7 +56,7 @@ _DOC_FILES = ['README', 'README.md', 'README.rst', 'README.txt']
 
 
 # Rift supported package formats
-RIFT_SUPPORTED_FORMATS = ('_virtual', 'rpm',)
+RIFT_SUPPORTED_FORMATS = ('rpm',)
 
 
 class Package(ABC):
@@ -71,8 +71,9 @@ class Package(ABC):
         self._staff = staff
         self._modules = modules
         self.name = name
-        # check package format
-        if _format not in RIFT_SUPPORTED_FORMATS:
+        # Check package format. Allow special _virtual format to handle
+        # unexisting package (typically package being removed).
+        if _format not in RIFT_SUPPORTED_FORMATS + ('_virtual',):
             raise RiftError(f"Unsupported package format {_format}")
         self.format = _format
 

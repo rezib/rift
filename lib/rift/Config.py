@@ -88,6 +88,7 @@ _DEFAULT_SYNC_INCLUDE = []
 _DEFAULT_SYNC_EXCLUDE = []
 _DEFAULT_VARIANT = 'main'
 _DEFAULT_REPOS_VARIANTS = [_DEFAULT_VARIANT]
+_DEFAULT_REPOS_AUTH = 'none'
 _DEFAULT_DEPENDENCY_TRACKING = False
 _DEFAULT_S3_CREDENTIAL_FILE = '~/.rift/auth.json'
 
@@ -209,6 +210,10 @@ class Config():
                 'variants': {
                     'check': 'list',
                     'default': _DEFAULT_REPOS_VARIANTS,
+                },
+                'auth': {
+                    'check': 'enum',
+                    'values': [_DEFAULT_REPOS_AUTH, 'idp_token'],
                 }
             }
         },

@@ -15,6 +15,8 @@ import tarfile
 import time
 import io
 from collections import OrderedDict
+import random
+import string
 
 import shutil
 import jinja2
@@ -154,6 +156,15 @@ Description for package {{ name }} variant %{variant}
 * Tue Feb 26 2019 Myself <buddy@somewhere.org> {{ version }}-{{release}}
 - Update to {{ version }} release
 """
+
+CONTAINERFILE_TPL = """\
+FROM debian:stable
+{% for line in lines %}
+{{ line }}
+{% endfor %}
+"""
+
+EXPECTED_HADOLINT_EXEC = "hadolint-linux-x86_64"
 
 SubPackage = namedtuple("SubPackage", ["name"])
 PackageTestDef = namedtuple("PackageTestDef", ["name", "local", "formats"])
@@ -301,12 +312,12 @@ class RiftProjectTestCase(RiftTestCase):
         src_top_dir=None,
         tests=None,
     ):
-        # By default, make package in RPM format
+        # By default, make package in all supported formats
         if formats is None:
-            formats = ['rpm']
+            formats = ['rpm', 'oci']
         # Check provide package formats are supported
         for _format in formats:
-            assert(_format in ['rpm'])
+            assert(_format in ['rpm', 'oci'])
         # Set default source top dir name
         if src_top_dir is None:
             src_top_dir = f"{name}-{version}"
@@ -344,6 +355,10 @@ class RiftProjectTestCase(RiftTestCase):
                 nfo.write("    variants:\n")
                 for variant in variants:
                     nfo.write(f"    - {variant}\n")
+            if 'oci' in formats:
+                nfo.write("    oci:\n")
+                nfo.write(f"        version: '{version}'\n")
+                nfo.write(f"        release: '{release}'\n")
 
         # ./packages/pkg/pkg.spec
         if 'rpm' in formats:
@@ -362,6 +377,13 @@ class RiftProjectTestCase(RiftTestCase):
                     )
                 )
             self.buildfiles[f"{name}:rpm"] = buildfile
+
+        # ./packages/pkg/Containerfile
+        if 'oci' in formats:
+            buildfile = os.path.join(self.pkgdirs[name], 'Containerfile')
+            with open(buildfile, "w") as fh:
+                fh.write(gen_containerfile())
+            self.buildfiles.append(buildfile)
 
         # ./packages/pkg/sources
         srcdir = os.path.join(self.pkgdirs[name], 'sources')
@@ -461,6 +483,11 @@ def gen_rpm_spec(**kwargs):
 def read_file(filepath):
     """Read a text file and return its content."""
     return open(filepath).read()
+#
+# Containerfile
+#
+def gen_containerfile(**kwargs):
+    return jinja2.Template(CONTAINERFILE_TPL).render(**kwargs)
 
 
 #
@@ -481,3 +508,89 @@ def make_temp_file(text, delete=True, suffix=None):
     tmp.write(text.encode())
     tmp.flush()
     return tmp
+
+def make_temp_tar():
+    """ Create temporary tarball with one random file"""
+    # Create temporary file
+    with tempfile.NamedTemporaryFile(
+        delete=False, mode="w+", suffix=".txt"
+    ) as tmp_inner:
+        tmp_inner.write(
+            ''.join(
+                random.choices(
+                    string.ascii_letters + string.digits, k=2**10
+                )
+            )
+        )
+        inner_path = tmp_inner.name
+
+    # Create tarball archive
+    with tempfile.NamedTemporaryFile(
+        delete=False, suffix=".tar"
+    ) as tmp_tar:
+        tar_path = tmp_tar.name
+        with tarfile.open(fileobj=tmp_tar, mode="w:") as tar:
+            tar.add(inner_path, arcname=os.path.basename(inner_path))
+
+    # Remove temporary file
+    os.unlink(inner_path)
+
+    return tar_path
+
+#
+# Executable commands utilities
+#
+
+def command_available(command):
+    """
+    Check if a command is available for execution, by verifying:
+    1. If it's a command name, it checks if it exists in the system PATH
+    2. If it's an absolute path, it checks if the file exists and is executable
+    3. If it's a relative path, it checks if the file exists relative to current
+      directory and is executable
+    Return True if the command is available and executable, False otherwise.
+    """
+
+    # Handle empty or None commands
+    if not command or not command.strip():
+        return False
+
+    # Check if it's an absolute path
+    if os.path.isabs(command):
+        return _is_executable_file(command)
+
+    # Check if it's a relative path (contains path separators or starts with ./)
+    if (os.sep in command or (os.altsep and os.altsep in command) or 
+        command.startswith('./') or command.startswith('../')):
+        # Resolve relative path
+        resolved_path = os.path.abspath(command)
+        return _is_executable_file(resolved_path)
+
+    # Check if it's a file in the current directory
+    if os.path.exists(command) and os.path.isfile(command):
+        return os.access(command, os.X_OK)
+
+    # It's a command name, check if it's in PATH
+    return shutil.which(command) is not None
+
+
+def _is_executable_file(file_path):
+    """
+    Check if a file exists and is executable. Return True if the file exists and
+    is executable, False otherwise.
+    """
+    try:
+        # Check if file exists
+        if not os.path.exists(file_path):
+            return False
+
+        # Check if it's a file (not a directory)
+        if not os.path.isfile(file_path):
+            return False
+
+        # Check if it's executable
+        return os.access(file_path, os.X_OK)
+
+    except (OSError, ValueError):
+        # Handle any system errors or invalid paths
+        return False

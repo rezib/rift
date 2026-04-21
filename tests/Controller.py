@@ -213,6 +213,11 @@ class ControllerProjectActionQueryTest(RiftProjectTestCase):
         mock_mock.return_value.read_spec = read_file
         self.assertEqual(main(['query', 'pkg']), 0)
 
+    def test_action_query_formats(self):
+        """ Test query with format filter """
+        self.make_pkg()
+        self.assertEqual(main(['query', '--formats', 'rpm']), 0)
+
     @patch('rift.package.rpm.Mock')
     def test_action_query_on_bad_pkg(self, mock_mock):
         """ Test query on multiple packages with one errorneous package """
@@ -2323,6 +2328,20 @@ class ControllerArgumentsTest(RiftTestCase):
         self.assertCountEqual(opts.formats, ['rpm'])
 
         args = ['validate', '--formats', 'fail']
+
+    def test_parse_args_query(self):
+        """ Test query command options parsing """
+        parser = make_parser()
+
+        args = ['query']
+        opts = parser.parse_args(args)
+        self.assertIsNone(opts.formats)
+
+        args = ['query', '--formats', 'rpm']
+        opts = parser.parse_args(args)
+        self.assertCountEqual(opts.formats, ['rpm'])
+
+        args = ['query', '--formats', 'fail']
         with self.assertRaises(SystemExit):
             opts = parser.parse_args(args)
 

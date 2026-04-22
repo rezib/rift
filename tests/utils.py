@@ -4,9 +4,10 @@
 
 from io import StringIO
 from unittest.mock import patch, Mock
+import os
 
 from rift import RiftError
-from rift.utils import message, banner, last_modified
+from rift.utils import message, banner, download_file, last_modified
 from .TestUtils import RiftTestCase
 
 
@@ -21,6 +22,34 @@ class UtilsTest(RiftTestCase):
     def test_banner(self, mock_stdout):
         banner("bar")
         self.assertEqual(mock_stdout.getvalue(), "** bar **\n")
+
+    def test_download_file(self):
+        download_file("file:///etc/hosts", "/tmp/blob", 40000)
+        self.assert_file_exists("/tmp/blob")
+        os.remove("/tmp/blob")
+
+    @patch('urllib.request.urlopen')
+    def test_download_file_too_large(self, mock_urlopen):
+        mock_url = Mock()
+        mock_url.info.return_value = {
+            "Content-Length": "50"
+        }
+        mock_urlopen.return_value.__enter__.return_value = mock_url
+        with self.assertRaisesRegex(
+                RiftError,
+                "'https://test' has a size of '50' bytes, larger than "
+                "max size '20', skipping download"
+        ):
+            download_file("https://test", "/tmp/blob", 20)
+
+    def test_download_file_url_error(self):
+        with self.assertRaisesRegex(
+                RiftError,
+                "URL error while downloading blob:localhost: "
+                "<urlopen error unknown url type: blob>"
+        ):
+            download_file("blob:localhost", "/tmp/blob")
+
 
     @patch('urllib.request.urlopen')
     def test_last_modified(self, mock_urlopen):

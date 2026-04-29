@@ -2018,9 +2018,16 @@ class ControllerProjectActionGraphTest(RiftProjectTestCase):
         )
         args = Mock()
         args.module = 'Great module'
+        args.formats = None
         args.packages = []
         # mock Mock.read_spec to return spec file content directly read on host
         mock_mock.return_value.read_spec = read_file
+        self.assertCountEqual(
+            get_packages_in_graph(args, self.config, self.staff, self.modules),
+            ['libone', 'libtwo']
+        )
+        # Check adding format does not change result in this case.
+        args.formats = ['rpm']
         self.assertCountEqual(
             get_packages_in_graph(args, self.config, self.staff, self.modules),
             ['libone', 'libtwo']
@@ -2128,14 +2135,6 @@ class ControllerProjectActionGerritTest(RiftProjectTestCase):
     Tests class for Controller action gerrit
     """
 
-    def test_gerrit_missing_patch_change_patchset(self):
-        """gerrit without patch, change or patchset fails"""
-        for cmd in (['gerrit', '--change', '1', '--patchset', '2'],
-                    ['gerrit', '--patchset', '2', '/dev/null'],
-                    ['gerrit', '--change', '1', '/dev/null']):
-            with self.assertRaisesRegex(SystemExit, "2"):
-                main(cmd)
-
     @patch('rift.package.rpm.Mock')
     @patch('rift.Controller.Review')
     def test_gerrit(self, mock_review, mock_mock):
@@ -2160,6 +2159,30 @@ class ControllerProjectActionGerritTest(RiftProjectTestCase):
         mock_mock.return_value.read_spec = read_file
         with patch.object(mock_mock.return_value, 'rpmlint', host_rpmlint):
             main(['gerrit', '--change', '1', '--patchset', '2', patch_file.name])
+        # Check review has not been invalidated and pushed
+        mock_review.return_value.invalidate.assert_not_called()
+        mock_review.return_value.push.assert_called_once()
+
+    def test_gerrit_formats(self, mock_review):
+        """simple gerrit"""
+        self.make_pkg()
+        patch = make_temp_file(
+            textwrap.dedent("""
+                diff --git a/packages/pkg/pkg.spec b/packages/pkg/pkg.spec
+                index d1a0d0e7..b3e36379 100644
+                --- a/packages/pkg/pkg.spec
+                +++ b/packages/pkg/pkg.spec
+                @@ -1,6 +1,6 @@
+                 Name:    pkg
+                 Version:        1.0
+                -Release:        1
+                +Release:        2
+                 Summary:        A package
+                 Group:          System Environment/Base
+                 License:        GPL
+                """))
+        main(['gerrit', '--change', '1', '--patchset', '2', patch.name,
+              '--formats', 'rpm'])
         # Check review has not been invalidated and pushed
         mock_review.return_value.invalidate.assert_not_called()
         mock_review.return_value.push.assert_called_once()
@@ -2371,6 +2394,53 @@ class ControllerArgumentsTest(RiftTestCase):
         self.assertCountEqual(opts.formats, ['rpm'])
 
         args = ['changelog', 'pkg', '-c', 'comment', '--formats', 'fail']
+        with self.assertRaises(SystemExit):
+            opts = parser.parse_args(args)
+
+    def test_parse_args_gerrit(self):
+        """ Test gerrit command options parsing """
+        parser = make_parser()
+
+        for args in (['gerrit', '--change', '1', '--patchset', '2'],
+                    ['gerrit', '--patchset', '2', '/dev/null'],
+                    ['gerrit', '--change', '1', '/dev/null']):
+            with self.assertRaisesRegex(SystemExit, "2"):
+                opts = parser.parse_args(args)
+
+        args = ['gerrit', '--change', '1', '--patchset', '2', '/dev/null']
+        opts = parser.parse_args(args)
+        self.assertIsNone(opts.formats)
+
+        args = ['gerrit', '--change', '1', '--patchset', '2', '/dev/null',
+                '--formats', 'rpm']
+        opts = parser.parse_args(args)
+        self.assertCountEqual(opts.formats, ['rpm'])
+
+        args = ['gerrit', '--change', '1', '--patchset', '2', '/dev/null',
+                '--formats', 'fail']
+        with self.assertRaises(SystemExit):
+            opts = parser.parse_args(args)
+
+    def test_parse_args_graph(self):
+        """ Test graph command options parsing """
+        parser = make_parser()
+
+        args = ['graph']
+        opts = parser.parse_args(args)
+        self.assertFalse(opts.with_external)
+        self.assertIsNone(opts.formats)
+        self.assertIsNone(opts.module)
+        self.assertCountEqual(opts.packages, [])
+
+        args = ['graph', '--with-external', '--formats', 'rpm',
+                '--module', 'storage', 'package1', 'package2']
+        opts = parser.parse_args(args)
+        self.assertTrue(opts.with_external)
+        self.assertCountEqual(opts.formats, ['rpm'])
+        self.assertEqual(opts.module, 'storage')
+        self.assertCountEqual(opts.packages, ['package1', 'package2'])
+
+        args = ['graph', '--formats', 'fail']
         with self.assertRaises(SystemExit):
             opts = parser.parse_args(args)
 

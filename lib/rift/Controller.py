@@ -299,6 +299,9 @@ def make_parser():
                                    help='Make Gerrit automatic review')
     subprs.add_argument('--change', help="Gerrit Change-Id", required=True)
     subprs.add_argument('--patchset', help="Gerrit patchset ID", required=True)
+    subprs.add_argument('-F', '--formats', nargs='+',
+                        choices=RIFT_SUPPORTED_FORMATS,
+                        help='restrict command to specific package formats')
     subprs.add_argument('patch', metavar='PATCH', type=argparse.FileType('r'))
 
     # sync
@@ -316,6 +319,9 @@ def make_parser():
                         help="add project external dependencies in the graph")
     subprs.add_argument('--module',
                         help="represent packages from this module in the graph")
+    subprs.add_argument('-F', '--formats', nargs='+',
+                        choices=RIFT_SUPPORTED_FORMATS,
+                        help='restrict command to specific package formats')
     subprs.add_argument('packages', metavar='PACKAGE', nargs='*',
                         help='packages to represent in the graph')
 
@@ -976,6 +982,14 @@ def action_gerrit(args, config, staff, modules):
         if names[0] == config.get('packages_dir'):
             pkgs = ProjectPackages.get(names[1], config, staff, modules)
             for pkg in pkgs:
+                # Skip package if format is not selected by user
+                if args.formats and pkg.format not in args.formats:
+                    logging.info(
+                        "Skipping gerrit review on %s package %s due to "
+                        "restriction on package formats",
+                        pkg.format, pkg.name
+                    )
+                    continue
                 if (filepath == os.path.relpath(pkg.buildfile) and
                     not patchedfile.is_deleted_file):
                     pkg.load()
@@ -1096,7 +1110,7 @@ def action_graph(args, config, staff, modules):
     """Action for 'graph' command."""
     # Build dependency graph with all selected packages and generate graphviz
     # representation of this graph.
-    PackagesDependencyGraph.from_project(config, staff, modules).draw(
+    PackagesDependencyGraph.from_project(config, staff, modules, args.format).draw(
         args.with_external, get_packages_in_graph(args, config, staff, modules)
     )
     return 0

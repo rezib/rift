@@ -9,7 +9,7 @@ from textwrap import dedent
 from unittest.mock import patch, MagicMock, ANY
 
 from .TestUtils import RiftProjectTestCase
-from rift.Mock import Mock, rpmlint_chroot_script, rpmlint_env
+from rift.Mock import Mock, HOST_RPM_LIB_DIR, rpmlint_chroot_script, rpmlint_env
 from rift.repository import ProjectArchRepositories
 from rift.repository.rpm import ConsumableRepository
 from rift.RPM import RPM
@@ -211,7 +211,8 @@ class MockTest(RiftProjectTestCase):
                 'mock', '--config-opts', 'print_main_output=yes',
                 f"--configdir={mock._tmpdir.path}",
                 "--plugin-option=bind_mount:dirs="
-                "[('/dev/package.spec', '/dev/package.spec')]",
+                f"[('{HOST_RPM_LIB_DIR}', '{HOST_RPM_LIB_DIR}'),"
+                "('/dev/package.spec', '/dev/package.spec')]",
                 'chroot',
                 'rpmspec',
                 '--parse',
@@ -351,7 +352,9 @@ class MockTest(RiftProjectTestCase):
         )
         mock_run_command.assert_any_call(
             base + [
-                "--plugin-option=bind_mount:dirs=[('/dev', '/dev')]",
+                "--plugin-option=bind_mount:dirs=["
+                f"('{HOST_RPM_LIB_DIR}', '{HOST_RPM_LIB_DIR}'),"
+                "('/dev', '/dev')]",
                 '--quiet', 'chroot', '--', 'bash', '-c', expected_script,
             ],
             capture_output=True,

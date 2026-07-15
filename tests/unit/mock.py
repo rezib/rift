@@ -17,9 +17,7 @@ from rift.rpm import RPM
 from rift.run import RunResult
 from rift.temp_dir import TempDir
 
-from .test_utils import RiftProjectTestCase
-
-TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
+from .test_utils import RPMS_DIR, RiftProjectTestCase
 
 
 class MockTest(RiftProjectTestCase):
@@ -141,7 +139,7 @@ class MockTest(RiftProjectTestCase):
         mock._tmpdir = TempDir("test_mock")
         mock._tmpdir.create()
 
-        src_rpm_path = os.path.join(TESTS_DIR, "materials", "pkg-1.0-1.src.rpm")
+        src_rpm_path = os.path.join(RPMS_DIR, "pkg-1.0-1.src.rpm")
         repos = ProjectArchRepositories(self.config, "x86_64").for_format("rpm")
         srpm = RPM(src_rpm_path)
         mock.build_rpms(srpm, _DEFAULT_VARIANT, repos, False)
@@ -170,7 +168,7 @@ class MockTest(RiftProjectTestCase):
         # Init tmp directory
         mock._tmpdir = TempDir("test_mock")
         mock._tmpdir.create()
-        src_rpm_path = os.path.join(TESTS_DIR, "materials", "pkg-1.0-1.src.rpm")
+        src_rpm_path = os.path.join(RPMS_DIR, "pkg-1.0-1.src.rpm")
         repos = ProjectArchRepositories(self.config, "x86_64").for_format("rpm")
         repos.for_variant = MagicMock(
             return_value=[

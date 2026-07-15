@@ -8,7 +8,7 @@ import tempfile
 from textwrap import dedent
 from unittest.mock import patch, MagicMock, ANY
 
-from .TestUtils import RiftProjectTestCase
+from .TestUtils import RPMS_DIR, RiftProjectTestCase
 from rift.Mock import Mock, rpmlint_chroot_script, rpmlint_env
 from rift.repository import ProjectArchRepositories
 from rift.repository.rpm import ConsumableRepository
@@ -17,8 +17,6 @@ from rift.TempDir import TempDir
 from rift.run import RunResult
 from rift.Config import _DEFAULT_VARIANT
 from rift import RiftError
-
-TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 class MockTest(RiftProjectTestCase):
@@ -134,7 +132,7 @@ class MockTest(RiftProjectTestCase):
         mock._tmpdir.create()
 
         src_rpm_path = os.path.join(
-            TESTS_DIR, 'materials', 'pkg-1.0-1.src.rpm'
+            os.path.join(RPMS_DIR, 'pkg-1.0-1.src.rpm')
         )
         repos = ProjectArchRepositories(self.config, 'x86_64').for_format('rpm')
         srpm = RPM(src_rpm_path)
@@ -165,7 +163,7 @@ class MockTest(RiftProjectTestCase):
         mock._tmpdir = TempDir('test_mock')
         mock._tmpdir.create()
         src_rpm_path = os.path.join(
-            TESTS_DIR, 'materials', 'pkg-1.0-1.src.rpm'
+            os.path.join(RPMS_DIR, 'pkg-1.0-1.src.rpm')
         )
         repos = ProjectArchRepositories(self.config, 'x86_64').for_format('rpm')
         repos.for_variant = MagicMock(

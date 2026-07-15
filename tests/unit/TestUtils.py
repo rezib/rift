@@ -26,6 +26,14 @@ from rift.Config import Config, Staff, Modules
 from rift.Mock import Mock, rpmlint_env, rpmlint_chroot_script
 from rift.run import run_command
 
+UNIT_DIR = os.path.dirname(os.path.abspath(__file__))
+TESTS_DIR = os.path.dirname(UNIT_DIR)
+REPO_ROOT = os.path.dirname(TESTS_DIR)
+MATERIALS_DIR = os.path.join(TESTS_DIR, 'materials')
+RPMS_DIR = os.path.join(MATERIALS_DIR, 'rpms')
+FIXTURE_PROJECT_DIR = os.path.join(MATERIALS_DIR, 'project')
+REPOS_DIR = os.path.join(MATERIALS_DIR, 'repos')
+
 MOCK_CONF = '''\
 config_opts.setdefault('plugin_conf', {})
 config_opts['plugin_conf']['ccache_enable'] = False
@@ -437,8 +445,7 @@ class RiftProjectTestCase(RiftTestCase):
         """Copy cloud-init template in project tree."""
         shutil.copy(
             os.path.join(
-                os.path.dirname(os.path.realpath(__file__)),
-                '..',
+                REPO_ROOT,
                 'template',
                 'cloud-init.tpl',
             ),
@@ -451,8 +458,7 @@ class RiftProjectTestCase(RiftTestCase):
         """Copy example build post script in project tree."""
         shutil.copy(
             os.path.join(
-                os.path.dirname(os.path.realpath(__file__)),
-                '..',
+                REPO_ROOT,
                 'template',
                 'build-post.sh',
             ),

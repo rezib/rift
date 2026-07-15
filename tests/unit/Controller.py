@@ -19,6 +19,7 @@ from .TestUtils import (
     RiftTestCase,
     RiftProjectTestCase,
     SubPackage,
+    RPMS_DIR,
 )
 
 from .VM import GLOBAL_CACHE, VALID_IMAGE_URL, PROXY
@@ -102,15 +103,11 @@ class ControllerProjectActionImportTest(RiftProjectTestCase):
     """
     @property
     def src_rpm(self):
-        return os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), 'materials', 'pkg-1.0-1.src.rpm'
-        )
+        return os.path.join(RPMS_DIR, 'pkg-1.0-1.src.rpm')
 
     @property
     def bin_rpm(self):
-        return os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), 'materials', 'pkg-1.0-1.noarch.rpm'
-        )
+        return os.path.join(RPMS_DIR, 'pkg-1.0-1.noarch.rpm')
 
     def test_import_missing_pkg_module_reason(self):
         """import without package, module or reason fails"""
@@ -165,15 +162,11 @@ class ControllerProjectActionReimportTest(RiftProjectTestCase):
     """
     @property
     def src_rpm(self):
-        return os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), 'materials', 'pkg-1.0-1.src.rpm'
-        )
+        return os.path.join(RPMS_DIR, 'pkg-1.0-1.src.rpm')
 
     @property
     def bin_rpm(self):
-        return os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), 'materials', 'pkg-1.0-1.noarch.rpm'
-        )
+        return os.path.join(RPMS_DIR, 'pkg-1.0-1.noarch.rpm')
 
     def test_reimport_missing_maintainer(self):
         """reimport without maintainer"""
@@ -2497,13 +2490,8 @@ class ControllerProjectActionSignTest(RiftProjectTestCase):
         self.update_project_conf()
 
         # Path of RPM packages assets
-        tests_dir = os.path.dirname(os.path.abspath(__file__))
-        original_bin_rpm = os.path.join(
-            tests_dir, 'materials', 'pkg-1.0-1.noarch.rpm'
-        )
-        original_src_rpm = os.path.join(
-            tests_dir, 'materials', 'pkg-1.0-1.src.rpm'
-        )
+        original_bin_rpm = os.path.join(RPMS_DIR, 'pkg-1.0-1.noarch.rpm')
+        original_src_rpm = os.path.join(RPMS_DIR, 'pkg-1.0-1.src.rpm')
 
         # Copy RPM packages assets in temporary project directory
         copy_bin_rpm = os.path.join(self.projdir, os.path.basename(original_bin_rpm))

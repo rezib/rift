@@ -7,7 +7,7 @@ import shutil
 import urllib
 from unittest.mock import patch
 
-from .TestUtils import RiftTestCase, make_temp_dir
+from .TestUtils import RiftTestCase, make_temp_dir, RPMS_DIR
 from rift.Config import Config
 from rift.repository.rpm import LocalRepository
 from rift.RPM import RPM
@@ -412,14 +412,10 @@ class RepoSyncDnfTest(RiftTestCase):
         # Create repository
         repo = LocalRepository(self.fake_dnf_repo, self.config)
         repo.create()
-        tests_dir = os.path.dirname(os.path.abspath(__file__))
-        # Add source and binary packages from tests materials
-        self.src_rpm = RPM(
-            os.path.join(tests_dir, 'materials', 'pkg-1.0-1.src.rpm')
-        )
-        self.bin_rpm = RPM(
-            os.path.join(tests_dir, 'materials', 'pkg-1.0-1.noarch.rpm')
-        )
+        original_src_rpm = os.path.join(RPMS_DIR, 'pkg-1.0-1.src.rpm')
+        original_bin_rpm = os.path.join(RPMS_DIR, 'pkg-1.0-1.noarch.rpm')
+        self.src_rpm = RPM(original_src_rpm)
+        self.bin_rpm = RPM(original_bin_rpm)
         repo.add(self.bin_rpm)
         repo.add(self.src_rpm)
         # Update repository

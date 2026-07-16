@@ -1,0 +1,55 @@
+---
+name: Unit Tests
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch: {}
+
+# Boostrap of the testing environment of this Python application cannot be
+# performed the traditional way with actions/setup-python as some of the Python
+# dependencies (rpm, dnf) are not available in PyPI, they are only distributed
+# as system packages in major Linux distributions repositories. For this reason,
+# containers are used with distribution package manager to install all
+# dependencies.
+
+jobs:
+  tests:
+    strategy:
+      # Disable automatic cancellation of other running jobs as soon as one
+      # failure occurs in the matrix.
+      fail-fast: false
+      matrix:
+        envs:
+        - container: "almalinux/8-base"
+          epel: 8
+          ocean-repos: 3.8-1
+        - container: "fedora"
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.envs.container }}
+      # Option --privileged is required for mount and mock+podman on fedora
+      options: --device=/dev/kvm --privileged
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup test environment
+        uses: ./.github/actions/setup-test-env
+        with:
+          container: ${{ matrix.envs.container }}
+          epel: ${{ matrix.envs.epel }}
+          ocean-repos: ${{ matrix.envs.ocean-repos }}
+          extra-packages: python3-pytest python3-pytest-cov
+
+      # Move coverage data file in ~ci because ci unprivileged user does not
+      # have permissions in working directory after checkout by root.
+      - name: Run unit tests
+        run: |
+          cat <<EOF > .coveragerc
+          [run]
+          data_file = ~ci/.coverage
+          EOF
+          su ci -c 'export PATH="/home/ci/bin:$PATH"; pytest-3'

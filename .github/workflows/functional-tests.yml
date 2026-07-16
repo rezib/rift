@@ -1,0 +1,40 @@
+---
+name: Functional Tests
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch: {}
+
+jobs:
+  functional-tests:
+    name: functional (${{ matrix.envs.container }})
+    strategy:
+      fail-fast: false
+      matrix:
+        envs:
+        - container: "almalinux/8-base"
+          epel: 8
+          ocean-repos: 3.8-1
+        - container: "fedora"
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.envs.container }}
+      options: --device=/dev/kvm --privileged
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup test environment
+        uses: ./.github/actions/setup-test-env
+        with:
+          container: ${{ matrix.envs.container }}
+          epel: ${{ matrix.envs.epel }}
+          ocean-repos: ${{ matrix.envs.ocean-repos }}
+          extra-packages: bats
+
+      - name: Run functional tests
+        run: |
+          su ci -c 'export PATH="/home/ci/bin:$PATH"; bats tests/functional/smoke.bats tests/functional/build_publish.bats'

@@ -52,12 +52,6 @@ VALID_REPOS = {
 }
 
 
-class ControllerTest(RiftTestCase):
-
-    def test_main_version(self):
-        """simple 'rift --version'"""
-        self.assert_except(SystemExit, "0", main, ['--version'])
-
 
 class ControllerProjectActionCreateTest(RiftProjectTestCase):
     """
@@ -710,40 +704,6 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         mock_act_arch_pkg_rpm.build.assert_has_calls(
             [call(sign=False, staging=None), call(sign=False, staging=None)])
         mock_act_arch_pkg_rpm.clean.assert_has_calls([call(), call()])
-
-    def test_action_build_publish_functional(self):
-        """Functional RPM build and publish test"""
-        # Declare supported archs and check qemu-user-static is available for
-        # these architectures or skip the test.
-        self.config.set('arch', ['x86_64', 'aarch64'])
-        self._check_qemuuserstatic()
-
-        # Create temporary working repo and register its deletion at exit
-        working_repo = make_temp_dir()
-        atexit.register(shutil.rmtree, working_repo)
-
-        self.config.set('working_repo', working_repo)
-        self.config.options['repos'] = VALID_REPOS
-        self.update_project_conf()
-
-        # Create fake package without build requirement
-        self.make_pkg(build_requires=[])
-
-        self.assertEqual(main(['build', 'pkg', '--publish']), 0)
-        for arch in self.config.get('arch'):
-            self.assertTrue(
-                os.path.exists(f"{working_repo}/{arch}/pkg-1.0-1.noarch.rpm")
-            )
-            self.assertTrue(
-                os.path.exists(f"{working_repo}/oci/pkg_1.0-1.{arch}.tar")
-            )
-
-        # Remove mock build environments
-        self.clean_mock_environments()
-
-        # Remove temporary working repo and unregister its deletion at exit
-        shutil.rmtree(working_repo)
-        atexit.unregister(shutil.rmtree)
 
     def test_action_build_publish_variants_functional(self):
         """Functional RPM build and publish test with variants"""

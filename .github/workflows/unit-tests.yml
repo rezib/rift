@@ -1,13 +1,14 @@
 ---
 name: Unit Tests
 on:
-  push:
-    branches:
-      - master
-  pull_request:
-    branches:
-      - master
+  # Temporarily disabled — restore push/pull_request triggers when re-enabling.
   workflow_dispatch: {}
+  # push:
+  #   branches:
+  #     - master
+  # pull_request:
+  #   branches:
+  #     - master
 
 # Boostrap of the testing environment of this Python application cannot be
 # performed the traditional way with actions/setup-python as some of the Python

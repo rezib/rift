@@ -1,0 +1,5 @@
+modules:
+  Great module:
+    manager: Myself
+  Other module:
+    manager: Another

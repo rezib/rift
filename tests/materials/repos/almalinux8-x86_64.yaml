@@ -1,0 +1,7 @@
+repos:
+  os:
+    url: https://repo.almalinux.org/almalinux/8/BaseOS/$arch/os/
+  appstream:
+    url: https://repo.almalinux.org/almalinux/8/AppStream/$arch/os/
+  powertools:
+    url: https://repo.almalinux.org/almalinux/8/PowerTools/$arch/os/

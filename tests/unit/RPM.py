@@ -15,6 +15,7 @@ from .TestUtils import (
     host_rpmlint,
     RiftTestCase,
     RiftProjectTestCase,
+    RPMS_DIR,
 )
 from rift import RiftError
 from rift.RPM import Spec, Variable, RPM
@@ -269,13 +270,8 @@ class RPMTest(RiftProjectTestCase):
     """ Test RPM class """
     def setUp(self):
         super().setUp()
-        tests_dir = os.path.dirname(os.path.abspath(__file__))
-        self.bin_rpm = os.path.join(
-            tests_dir, 'materials', 'pkg-1.0-1.noarch.rpm'
-        )
-        self.src_rpm = os.path.join(
-            tests_dir, 'materials', 'pkg-1.0-1.src.rpm'
-        )
+        self.bin_rpm = os.path.join(RPMS_DIR, 'pkg-1.0-1.noarch.rpm')
+        self.src_rpm = os.path.join(RPMS_DIR, 'pkg-1.0-1.src.rpm')
 
     def test_load(self):
         """RPM initializer works with bin/src RPM with/without conf."""

@@ -1,0 +1,9 @@
+package:
+    maintainers:
+        - Myself
+    module: Great module
+    origin: Vendor
+    reason: Missing feature
+    oci:
+        version: '1.0'
+        release: '1'

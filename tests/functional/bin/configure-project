@@ -1,0 +1,38 @@
+#!/usr/bin/env python3
+"""Merge arch, working_repo, and repos overlay into a project.conf."""
+
+import argparse
+import os
+
+import yaml
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='Configure a functional test project.conf overlay'
+    )
+    parser.add_argument('project_dir', help='Path to project directory')
+    parser.add_argument('--arch', action='append', required=True)
+    parser.add_argument('--working-repo', required=True)
+    parser.add_argument(
+        '--repos', required=True, help='YAML file containing repos: key'
+    )
+    args = parser.parse_args()
+
+    conf_path = os.path.join(args.project_dir, 'project.conf')
+    with open(conf_path, encoding='utf-8') as fh:
+        conf = yaml.safe_load(fh)
+
+    with open(args.repos, encoding='utf-8') as fh:
+        overlay = yaml.safe_load(fh)
+
+    conf['arch'] = args.arch
+    conf['working_repo'] = args.working_repo
+    conf['repos'] = overlay['repos']
+
+    with open(conf_path, 'w', encoding='utf-8') as fh:
+        yaml.dump(conf, fh, default_flow_style=False)
+
+
+if __name__ == '__main__':
+    main()

@@ -1,10 +1,11 @@
 [tool.pytest.ini_options]
 pythonpath = "lib"
-testpaths = "tests"
+testpaths = "tests/unit"
 python_files = "*.py"
 # required to catch exception in main()
 log_level = "DEBUG"
 addopts = "-v --cov=rift --cov-report=term-missing"
+norecursedirs = ["functional"]
 
 [tool.pylint.main]
 # Specify a score threshold under which the program will exit with error.

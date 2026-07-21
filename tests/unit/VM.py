@@ -12,7 +12,8 @@ from .TestUtils import (
     RiftTestCase,
     RiftProjectTestCase,
     make_temp_dir,
-    make_temp_file
+    make_temp_file,
+    REPO_ROOT,
 )
 from rift.Config import (
     Config,
@@ -860,8 +861,7 @@ class VMBuildTest(RiftProjectTestCase):
         self.config.set('arch', ['aarch64'])
         vm = VM(self.config, 'aarch64')
         vm.arch_efi_bios = os.path.join(
-            os.path.dirname(os.path.realpath(__file__)),
-            '..', 'vendor', 'QEMU_EFI.silent.fd'
+            REPO_ROOT, 'vendor', 'QEMU_EFI.silent.fd'
         )
         self.valid_url = VALID_IMAGE_URL[vm.arch]
         vm.build(self.valid_url, False, False, vm.image_local)

@@ -1,0 +1,134 @@
+name: Setup test environment
+description: Bootstrap a privileged container for Rift unit and functional tests
+inputs:
+  container:
+    description: Container image (used for AlmaLinux-specific setup)
+    required: true
+  epel:
+    description: EPEL release version for AlmaLinux
+    required: false
+    default: ''
+  ocean-repos:
+    description: Ocean repos package version for AlmaLinux
+    required: false
+    default: ''
+  extra-packages:
+    description: Additional dnf packages (space-separated)
+    required: false
+    default: ''
+runs:
+  using: composite
+  steps:
+    # Generate missing locales in the container. Programs are executed with
+    # en_US.UTF-8 locale, this locale must be defined in the container in
+    # order to be restored by Rift without errors when manipulating dates.
+    - name: Install locales
+      shell: bash
+      run: |
+        dnf install -y glibc-locale-source glibc-langpack-en
+        localedef -i en_US -f UTF-8 en_US.UTF-8
+
+    # Setup utilities and system configuration so podman can run in docker
+    # container.
+    - name: System setup for containers
+      shell: bash
+      run: |
+        # Add missing setuid on new{uid,gid}map binaries
+        chmod u+s /usr/bin/new{uid,gid}map
+        # Setup user namespace sub{uid,gid} for ci user
+        echo ci:100000:65536 > /etc/subuid
+        echo ci:100000:65536 > /etc/subgid
+        # Fix podman warning '"/" is not a shared mount, this could cause
+        # issues or missing mounts with rootless containers'
+        mount --make-rshared /
+        # Fix sudo error 'PAM account management error: Authentication service
+        # cannot retrieve authentication info' on AlmaLinux 8 due to mode 000
+        # on /etc/shadow.
+        chmod 0440 /etc/shadow
+
+    # Mount binfmt_misc virtual FS to register support of additional binary
+    # formats for multi-arch builds.
+    - name: Mount binfmt_misc virtual filesystem
+      shell: bash
+      run: |
+        mount binfmt_misc -t binfmt_misc /proc/sys/fs/binfmt_misc
+
+    # On Almalinux, enable EPEL repository to install mock and all its
+    # dependencies.
+    - name: Enable EPEL repository (Almalinux 8)
+      if: startsWith(inputs.container, 'almalinux')
+      shell: bash
+      run: |
+        dnf -y install 'dnf-command(config-manager)'
+        dnf config-manager --set-enabled powertools
+        dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-${{ inputs.epel }}.noarch.rpm
+
+    # On almalinux, enable Ocean repositories in order to install qemu version
+    # required by Rift.
+    - name: Enable Ocean repository (Almalinux 8)
+      if: startsWith(inputs.container, 'almalinux')
+      shell: bash
+      run: |
+        dnf -y install https://ocean.eupex.eu/install/ocean-repos-${{ inputs.ocean-repos }}.x86_64.rpm
+
+    - name: Install tests dependencies
+      shell: bash
+      run: |
+        dnf -y install python3-pip python3-jinja2 python3-PyYAML python3-rpm python3-dnf sudo rpm-sign rpmlint openssh-clients genisoimage qemu qemu-user qemu-img qemu-virtiofsd mock createrepo_c podman ${{ inputs.extra-packages }}
+
+    # On Almalinux, install vendored qemu-user static binaries and setup
+    # binfmt. The value in /etc/binfmt.d/qemu-static.conf is essentially a raw
+    # copy of Qemu uptream script:
+    # https://github.com/qemu/qemu/blob/master/scripts/qemu-binfmt-conf.sh
+    - name: Install and setup binfmt for multi-arch (Almalinux 8)
+      if: startsWith(inputs.container, 'almalinux')
+      shell: bash
+      run: |
+        echo ":qemu-aarch64:M::\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\xb7\x00:\xff\xff\xff\xff\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff\xfe\xff\xff\xff:/usr/bin/qemu-aarch64-static:F" > /etc/binfmt.d/qemu-static.conf
+        cp vendor/qemu-aarch64-static /usr/bin/qemu-aarch64-static
+
+    - name: Register binary formats supported by qemu-user-static
+      shell: bash
+      run: |
+        /usr/lib/systemd/systemd-binfmt
+
+    - name: Install application
+      shell: bash
+      run: pip3 install -e .
+
+    # Some tests expect to run as non-root with kvm, mock and sudo permissions
+    # sudo required for sudo virtiosfd --version
+    - name: Create unprivileged user
+      shell: bash
+      run: |
+        useradd ci
+        usermod -aG $(stat -c %G /dev/kvm) ci
+        usermod -aG mock ci
+        echo -e 'Defaults:ci !requiretty\nci ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/00-ci
+
+    # On AlmaLinux 8, podman fails to create user namespace creation with this
+    # unexplained error: 'running `/usr/bin/newuidmap 904 0 1000 1 1 100000
+    # 65536`: newuidmap: open of uid_map failed: Permission denied'
+    #
+    # This error might be due to some incompatibly between GitHub Actions
+    # runner host kernel and the userspace stack in almalinux/8-base
+    # container.
+    #
+    # The workaround is to add a wrapper which runs podman in 'rootful' mode
+    # by default in order to skip user namespace creation.
+    - name: Podman rootful wrapper (AlmaLinux 8)
+      if: startsWith(inputs.container, 'almalinux/8')
+      shell: bash
+      run: |
+        install -d -o ci -g ci -m 755 ~ci/bin
+        cat << EOF > ~ci/bin/podman
+        #!/usr/bin/env bash
+        exec sudo -n /usr/bin/podman --storage-driver=vfs "\$@"
+        EOF
+        chown ci:ci ~ci/bin/podman
+        chmod 755 ~ci/bin/podman
+
+    - name: Run podman info
+      shell: bash
+      run: |
+        su ci -c 'export PATH="/home/ci/bin:$PATH"; podman --root /tmp info'

@@ -6,7 +6,7 @@ import os
 import shutil
 from unittest.mock import Mock, call, patch
 
-from ..TestUtils import make_temp_dir, read_file, RiftTestCase
+from ..TestUtils import make_temp_dir, read_file, RiftTestCase, RPMS_DIR
 from rift.repository.rpm import (
     ConsumableRepository,
     LocalRepository,
@@ -160,14 +160,8 @@ class LocalRepositoryTest(RiftTestCase):
         """
         Add packages from tests materials to repository and return RPM objects.
         """
-        tests_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
-        # Add source and binary packages from tests materials
-        src_rpm = RPM(
-            os.path.join(tests_dir, 'materials', 'pkg-1.0-1.src.rpm')
-        )
-        bin_rpm = RPM(
-            os.path.join(tests_dir, 'materials', 'pkg-1.0-1.noarch.rpm')
-        )
+        src_rpm = RPM(os.path.join(RPMS_DIR, 'pkg-1.0-1.src.rpm'))
+        bin_rpm = RPM(os.path.join(RPMS_DIR, 'pkg-1.0-1.noarch.rpm'))
         repo.add(bin_rpm)
         repo.add(src_rpm)
 

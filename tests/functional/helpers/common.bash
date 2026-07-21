@@ -38,6 +38,13 @@ assert_file_exists() {
   fi
 }
 
+assert_file_not_exists() {
+  if [[ -f "$1" ]]; then
+    echo "Expected file '${1}' not to exist" >&2
+    false
+  fi
+}
+
 setup_project() {
   TEMP_PROJECT="$(mktemp -d)"
   cp -a "${PROJECT}/." "${TEMP_PROJECT}/"

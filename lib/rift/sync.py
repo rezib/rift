@@ -380,10 +380,22 @@ class RepoSyncDnf(RepoSyncIndexed):
     Include and exclude patterns are forwarded as DNF includepkgs and excludepkgs
     via --setopt. Patterns are package names or DNF globs, not path regular
     expressions.
+
+    When include or exclude filters are used, remote metadata still lists every
+    package while reposync only downloads a subset. After reposync, createrepo_c
+    --update is run to rebuild primary metadata from the RPMs on disk.
+    Additional metadata (groups, modules, updateinfo) is kept with
+    --keep-all-metadata but may still describe packages that were not mirrored.
     """
 
     DNF_BIN = "dnf"
     REPO_ID = "rift-sync"
+
+    def _log_cmd_output(self, result):
+        """Write captured command stdout/stderr to the sync log."""
+        for stream in (result.stdout, result.stderr):
+            if stream:
+                self.log_write(stream.rstrip("\n"))
 
     def _run_dnf(self, cmd):
         """Run a dnf command, log output, and convert failures to RiftError."""
@@ -405,9 +417,7 @@ class RepoSyncDnf(RepoSyncIndexed):
                 f"{self.source.geturl()}: "
                 f"{detail or f'exit code: {err.returncode}'}"
             ) from err
-        for stream in (result.stdout, result.stderr):
-            if stream:
-                self.log_write(stream.rstrip("\n"))
+        self._log_cmd_output(result)
         return result
 
     def _write_repo_file(self, reposdir):
@@ -469,6 +479,28 @@ class RepoSyncDnf(RepoSyncIndexed):
         )
         self._run_dnf(cmd)
 
+    def _update_metadata(self):
+        """Rebuild package metadata from mirrored RPMs after a filtered sync."""
+        createrepo = self.config.get("createrepo")
+        cmd = [createrepo, "-q", "--update", "--keep-all-metadata", self.output]
+        logging.debug("Running metadata update command: %s", self._cmd_str(cmd))
+        try:
+            result = subprocess.run(
+                cmd,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+            )
+        except subprocess.CalledProcessError as err:
+            detail = (err.stderr or err.stdout or "").strip()
+            raise RiftError(
+                "Unable to update repository metadata for "
+                f"{self.source.geturl()}: "
+                f"{detail or f'exit code: {err.returncode}'}"
+            ) from err
+        self._log_cmd_output(result)
+
     def _run(self):
         """Run DNF repository synchronization with dnf reposync."""
         dnf_root = TempDir("dnf-reposync")
@@ -480,6 +512,10 @@ class RepoSyncDnf(RepoSyncIndexed):
             os.makedirs(cachedir)
             self._write_repo_file(reposdir)
             self._reposync(dnf_root.path, reposdir, cachedir)
+            # Rebuild metadata if include or exclude patterns are used in order to
+            # remove packages that were not mirrored.
+            if self.patterns.include or self.patterns.exclude:
+                self._update_metadata()
         finally:
             dnf_root.delete()
 

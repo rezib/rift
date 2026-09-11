@@ -10,7 +10,7 @@ import urllib
 from unittest.mock import patch
 
 from rift import RiftError
-from rift.config import Config
+from rift.config import _DEFAULT_REPO_CMD, Config
 from rift.repository.rpm import LocalRepository
 from rift.rpm import RPM
 from rift.sync import (
@@ -436,12 +436,12 @@ class RepoSyncDnfTest(RiftTestCase):
         _dnf_reposync_available(), "dnf reposync plugin is not installed"
     )
     def test_run(self):
-        """Test RepoSyncDnfTest synchronization run."""
+        """Test RepoSyncDnf sync with include filter and metadata update."""
         sync = {
             "method": "dnf",
             "source": f"file://{self.fake_dnf_repo}",
             "subdir": self.arch,
-            "include": [],
+            "include": ["pkg"],
             "exclude": [],
         }
         repo_name = "repo"
@@ -494,7 +494,8 @@ class RepoSyncDnfTest(RiftTestCase):
         }
         synchronizer = RepoSyncDnf(self.config, "repo", self.output, sync)
         synchronizer.run()
-        mock_subprocess_run.assert_called()
+        # Check only dnf reposync is run, not createrepo.
+        self.assertEqual(mock_subprocess_run.call_count, 1)
         cmd = mock_subprocess_run.call_args[0][0]
         self.assertEqual(cmd[0], "dnf")
         self.assertIn("reposync", cmd)
@@ -518,11 +519,20 @@ class RepoSyncDnfTest(RiftTestCase):
         synchronizer = RepoSyncDnf(self.config, "repo", self.output, sync)
         synchronizer.run()
         commands = [call[0][0] for call in mock_subprocess_run.call_args_list]
-        self.assertFalse(any("repoquery" in cmd for cmd in commands))
-        reposync_cmds = [cmd for cmd in commands if "reposync" in cmd]
-        self.assertEqual(len(reposync_cmds), 1)
-        self.assertIn(
-            f"--setopt={RepoSyncDnf.REPO_ID}.includepkgs=pkg", reposync_cmds[0]
+        self.assertEqual(len(commands), 2)
+        reposync_cmd = commands[0]
+        self.assertIn("reposync", reposync_cmd)
+        self.assertIn(f"--setopt={RepoSyncDnf.REPO_ID}.includepkgs=pkg", reposync_cmd)
+        createrepo_cmd = commands[1]
+        self.assertEqual(
+            createrepo_cmd,
+            [
+                _DEFAULT_REPO_CMD,
+                "-q",
+                "--update",
+                "--keep-all-metadata",
+                synchronizer.output,
+            ],
         )
 
     @patch("rift.sync.subprocess.run")
@@ -539,12 +549,25 @@ class RepoSyncDnfTest(RiftTestCase):
         }
         synchronizer = RepoSyncDnf(self.config, "repo", self.output, sync)
         synchronizer.run()
-        cmd = mock_subprocess_run.call_args[0][0]
-        self.assertIn("reposync", cmd)
-        self.assertIn(f"--setopt={RepoSyncDnf.REPO_ID}.excludepkgs=pkg", cmd)
+        commands = [call[0][0] for call in mock_subprocess_run.call_args_list]
+        self.assertEqual(len(commands), 2)
+        reposync_cmd = commands[0]
+        self.assertIn("reposync", reposync_cmd)
+        self.assertIn(f"--setopt={RepoSyncDnf.REPO_ID}.excludepkgs=pkg", reposync_cmd)
+        createrepo_cmd = commands[1]
+        self.assertEqual(
+            createrepo_cmd,
+            [
+                _DEFAULT_REPO_CMD,
+                "-q",
+                "--update",
+                "--keep-all-metadata",
+                synchronizer.output,
+            ],
+        )
 
     @patch("rift.sync.subprocess.run")
-    def test_run_command_failure(self, mock_subprocess_run):
+    def test_run_command_reposync_failure(self, mock_subprocess_run):
         """Test RepoSyncDnf raises RiftError when dnf reposync fails."""
         mock_subprocess_run.side_effect = subprocess.CalledProcessError(
             1, ["dnf"], stderr="Unable to download metadata"
@@ -560,5 +583,28 @@ class RepoSyncDnfTest(RiftTestCase):
             RiftError,
             r"^Unable to synchronize repository from URL "
             r"https://127.0.0.1/fail/: Unable to download metadata$",
+        ):
+            synchronizer.run()
+
+    @patch("rift.sync.subprocess.run")
+    def test_run_command_createrepo_failure(self, mock_subprocess_run):
+        """Test RepoSyncDnf raises when createrepo fails after filtered sync."""
+        mock_subprocess_run.side_effect = [
+            subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
+            subprocess.CalledProcessError(
+                1, [_DEFAULT_REPO_CMD], stderr="createrepo failed"
+            ),
+        ]
+        sync = {
+            "method": "dnf",
+            "source": "http://repo/directory",
+            "include": ["pkg"],
+            "exclude": [],
+        }
+        synchronizer = RepoSyncDnf(self.config, "repo", self.output, sync)
+        with self.assertRaisesRegex(
+            RiftError,
+            r"^Unable to update repository metadata for "
+            r"http://repo/directory/: createrepo failed$",
         ):
             synchronizer.run()

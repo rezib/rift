@@ -6,7 +6,6 @@ import os
 import shutil
 import subprocess
 import unittest
-import urllib
 from unittest.mock import patch
 
 from rift import RiftError
@@ -16,7 +15,6 @@ from rift.rpm import RPM
 from rift.sync import (
     RepoSyncBase,
     RepoSyncDnf,
-    RepoSyncEpel,
     RepoSyncFactory,
     RepoSyncLftp,
 )
@@ -46,7 +44,6 @@ class RepoSyncFactoryTest(RiftTestCase):
     def test_check_valid_method_valid(self):
         """Test RepoSyncFactory check_valid_method() does not fail with valid value."""
         RepoSyncFactory.check_valid_method("lftp")
-        RepoSyncFactory.check_valid_method("epel")
         RepoSyncFactory.check_valid_method("dnf")
 
     def test_check_valid_method_invalid_value(self):
@@ -66,10 +63,6 @@ class RepoSyncFactoryTest(RiftTestCase):
         }
         self.assertIsInstance(
             RepoSyncFactory.get(Config(), "repo", "/output", sync), RepoSyncLftp
-        )
-        sync["method"] = "epel"
-        self.assertIsInstance(
-            RepoSyncFactory.get(Config(), "repo", "/output", sync), RepoSyncEpel
         )
         sync["method"] = "dnf"
         self.assertIsInstance(
@@ -157,249 +150,6 @@ class RepoSyncLftpTest(RiftTestCase):
         self.assertTrue("--include=include2" in args[0][4])
         self.assertTrue("--exclude=exclude1" in args[0][4])
         self.assertTrue("--exclude=exclude2" in args[0][4])
-
-
-class RepoSyncEpelTest(RiftTestCase):
-    """
-    Tests class for RepoSyncEpel
-    """
-
-    def setUp(self):
-        self.config = Config()
-        # Create temporary directory to store fake EPEL repository, set it as
-        # PUB_ROOT class attribute and keep reference to previous value.
-        self.fake_epel_dir = make_temp_dir()
-        self.pub_root_backup = RepoSyncEpel.PUB_ROOT
-        RepoSyncEpel.PUB_ROOT = self.fake_epel_dir
-        # Create temporary directory to store local mirror of remote repository
-        self.output = make_temp_dir()
-
-    def tearDown(self):
-        # Restore previous value of PUB_ROOT class attribute and remove
-        # temporary directory.
-        RepoSyncEpel.PUB_ROOT = self.pub_root_backup
-        shutil.rmtree(self.fake_epel_dir)
-        # Remove temporary directory with local mirror
-        shutil.rmtree(self.output)
-
-    def _init_fake_epel_repo(self, content):
-        with open(
-            os.path.join(self.fake_epel_dir, "fullfiletimelist-epel"), "w+"
-        ) as fh:
-            fh.write("[Files]\n")
-            for repo, dirs in content.items():
-                fh.write(f"1\td\t0\t{repo}\n")
-                for _dir, items in dirs.items():
-                    fh.write(f"1\td\t0\t{repo}/{_dir}\n")
-                    for item in items:
-                        fh.write(f"{item[0]}\t{item[1]}\t0\t{repo}/{_dir}/{item[2]}\n")
-
-        for repo, dirs in content.items():
-            os.mkdir(os.path.join(self.fake_epel_dir, repo))
-            for _dir, items in dirs.items():
-                os.mkdir(os.path.join(self.fake_epel_dir, repo, _dir))
-                for item in items:
-                    open(
-                        os.path.join(self.fake_epel_dir, repo, _dir, item[2]), "w+"
-                    ).close()
-
-    def test_run(self):
-        """Test RepoSyncEpelTest synchronization run."""
-        self._init_fake_epel_repo(
-            {
-                "repo1": {
-                    "p": [
-                        (1, "f", "package1.rpm"),
-                        (1, "l", "package2.rpm"),
-                    ],
-                },
-                "repo2": {
-                    "p": [
-                        (1, "f", "package3.rpm"),
-                    ],
-                },
-            }
-        )
-        sync = {
-            "method": "epel",
-            "source": f"file://{self.fake_epel_dir}/repo1",
-            "include": [],
-            "exclude": [],
-        }
-        synchronizer = RepoSyncEpel(self.config, "repo", self.output, sync)
-        synchronizer.run()
-        self.assertTrue(os.path.isdir(os.path.join(self.output, "repo", "p")))
-        # File package1.rpm in repo1 must be present
-        self.assertTrue(
-            os.path.isfile(os.path.join(self.output, "repo", "p", "package1.rpm"))
-        )
-        # File declared as symlink in repo1 must not be present
-        self.assertFalse(
-            os.path.exists(os.path.join(self.output, "repo", "p", "package2.rpm"))
-        )
-        # File in repo2 must not be present
-        self.assertFalse(
-            os.path.exists(os.path.join(self.output, "repo", "p", "package3.rpm"))
-        )
-
-    def test_include_exclude(self):
-        """Test RepoSyncEpelTest synchronization run with include/exclude."""
-        self._init_fake_epel_repo(
-            {
-                "repo1": {
-                    "e": [
-                        (1, "f", "exclude1.rpm"),
-                        (1, "f", "exclude2.rpm"),
-                    ],
-                    "o": [
-                        (1, "f", "other1.rpm"),
-                        (1, "f", "other2.rpm"),
-                    ],
-                    "p": [
-                        (1, "f", "package1.rpm"),
-                        (1, "f", "package2.rpm"),
-                    ],
-                },
-            }
-        )
-        sync = {
-            "method": "epel",
-            "source": f"file://{self.fake_epel_dir}/repo1",
-            "include": ["^o/", "^p/"],
-            "exclude": [
-                "/other2.rpm$",
-            ],
-        }
-        synchronizer = RepoSyncEpel(self.config, "repo", self.output, sync)
-        synchronizer.run()
-        self.assertTrue(os.path.isdir(os.path.join(self.output, "repo", "o")))
-        self.assertTrue(os.path.isdir(os.path.join(self.output, "repo", "p")))
-        # All files in e/* are not included
-        self.assertFalse(os.path.exists(os.path.join(self.output, "repo", "e")))
-        self.assertTrue(
-            os.path.isfile(os.path.join(self.output, "repo", "p", "package1.rpm"))
-        )
-        self.assertTrue(
-            os.path.isfile(os.path.join(self.output, "repo", "p", "package2.rpm"))
-        )
-        self.assertTrue(
-            os.path.isfile(os.path.join(self.output, "repo", "o", "other1.rpm"))
-        )
-        # Package other2.rpm is excluded
-        self.assertFalse(
-            os.path.exists(os.path.join(self.output, "repo", "o", "other2.rpm"))
-        )
-
-    def test_update(self):
-        """Test RepoSyncEpelTest synchronization update packages based on timestamp."""
-        self._init_fake_epel_repo(
-            {
-                "repo1": {
-                    "p": [
-                        (1, "f", "package1.rpm"),
-                        (2**32, "f", "package2.rpm"),
-                    ],
-                },
-            }
-        )
-        sync = {
-            "method": "epel",
-            "source": f"file://{self.fake_epel_dir}/repo1",
-            "include": [],
-            "exclude": [],
-        }
-        os.mkdir(os.path.join(self.output, "repo"))
-        os.mkdir(os.path.join(self.output, "repo", "p"))
-        with open(os.path.join(self.output, "repo", "p", "package1.rpm"), "w+") as fh:
-            fh.write("content1")
-        with open(os.path.join(self.output, "repo", "p", "package2.rpm"), "w+") as fh:
-            fh.write("content2")
-        synchronizer = RepoSyncEpel(self.config, "repo", self.output, sync)
-        synchronizer.run()
-        self.assertFalse(os.path.isdir(os.path.join(self.output, "repo", "outside")))
-        # package1 must not be updated (with content unchanged) as mtime on FS
-        # is younger than timestamp in files index.
-        self.assertEqual(
-            open(os.path.join(self.output, "repo", "p", "package1.rpm")).read(),
-            "content1",
-        )
-        # package2 must be updated (with content removed) as mtime on FS is
-        # older than timestamp in files index
-        self.assertEqual(
-            open(os.path.join(self.output, "repo", "p", "package2.rpm")).read(), ""
-        )
-
-    def test_clean(self):
-        """Test RepoSyncEpel clean removes unindexed files and dirs."""
-        self._init_fake_epel_repo(
-            {
-                "repo1": {
-                    "p": [
-                        (1, "f", "package1.rpm"),
-                        (1, "f", "package2.rpm"),
-                    ],
-                },
-            }
-        )
-        sync = {
-            "method": "epel",
-            "source": f"file://{self.fake_epel_dir}/repo1",
-            "include": [],
-            "exclude": [],
-        }
-        os.mkdir(os.path.join(self.output, "repo"))
-        os.mkdir(os.path.join(self.output, "repo", "outside"))
-        os.mkdir(os.path.join(self.output, "repo", "p"))
-        open(os.path.join(self.output, "repo", "p", "package3.rpm"), "w+").close()
-        synchronizer = RepoSyncEpel(self.config, "repo", self.output, sync)
-        synchronizer.run()
-        self.assertFalse(os.path.isdir(os.path.join(self.output, "repo", "outside")))
-        # File package1.rpm in repo1 must be present
-        self.assertTrue(
-            os.path.isfile(os.path.join(self.output, "repo", "p", "package1.rpm"))
-        )
-        # File declared as symlink in repo1 must not be present
-        self.assertTrue(
-            os.path.exists(os.path.join(self.output, "repo", "p", "package2.rpm"))
-        )
-        # File in repo2 must not be present
-        self.assertFalse(
-            os.path.exists(os.path.join(self.output, "repo", "p", "package3.rpm"))
-        )
-
-    def test_wrong_url(self):
-        """Test RepoSyncEpelTest synchronization raises RiftError with wrong URLs."""
-        sync = {
-            "method": "epel",
-            "source": "http://test",
-            "include": [],
-            "exclude": [],
-        }
-        synchronizer = RepoSyncEpel(self.config, "repo", self.output, sync)
-        with patch(
-            "rift.utils.urllib.request.urlopen",
-            side_effect=urllib.error.URLError("fake URL error"),
-        ):
-            with self.assertLogs(level="WARNING") as log:
-                synchronizer.run()
-                self.assertRegex(
-                    log.output[0],
-                    r"WARNING:root:Download failed, skipping entry: "
-                    r"Error while downloading http://test/.*: .*$",
-                )
-        synchronizer = RepoSyncEpel(self.config, "repo", self.output, sync)
-        with patch(
-            "rift.utils.urllib.request.urlopen",
-            side_effect=urllib.error.HTTPError(404, "404", "Not Found", None, None),
-        ):
-            with self.assertLogs(level="WARNING") as log:
-                synchronizer.run()
-                self.assertRegex(
-                    log.output[0],
-                    r"WARNING:root:Download failed, skipping entry: "
-                    r"Error while downloading http://test/.*: "
-                    r"HTTP Error 404: Not Found",
-                )
 
 
 class RepoSyncDnfTest(RiftTestCase):

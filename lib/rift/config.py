@@ -194,7 +194,7 @@ class Config:
                         "method": {
                             "check": "enum",
                             "default": _DEFAULT_SYNC_METHOD,
-                            "values": ["lftp", "epel", "dnf"],
+                            "values": ["lftp", "dnf"],
                         },
                         "source": {
                             "required": False,

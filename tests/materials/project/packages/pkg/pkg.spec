@@ -11,8 +11,6 @@ URL:            http://nowhere.com/projects/%{name}/
 Source0:        https://nowhere.com/sources/%{name}-%{version}.tar.gz
 BuildArch:      noarch
 
-Requires:       another-package
-
 Provides:       pkg-provide
 
 %description

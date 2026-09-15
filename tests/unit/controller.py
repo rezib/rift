@@ -41,7 +41,6 @@ from .test_utils import (
     read_file,
     remove_gpg_home,
 )
-from .vm import GLOBAL_CACHE, PROXY, VALID_IMAGE_URL
 
 VALID_REPOS = {
     "os": {
@@ -2508,52 +2507,6 @@ class ControllerProjectActionVMTest(RiftProjectTestCase):
             "--output option must be used$",
         ):
             main(["vm", "build", "--url", "http://image", "--deploy"])
-
-    def test_vm_build_and_validate(self):
-        """Test VM build and validate package"""
-        self.skipTest("Too much instability")
-        if not os.path.exists("/usr/bin/qemu-img"):
-            self.skipTest("qemu-img is not available")
-        self.config.options["vm"]["images_cache"] = GLOBAL_CACHE
-        # Reduce memory size from default 8GB to 2GB because it is sufficient to
-        # run this VM and it largely reduces storage required by virtiofs memory
-        # backend file which is the same size as the VM memory, thus reducing
-        # the risk to fill up small partitions when running the tests.
-        self.config.options["vm"]["memory"] = 2048
-        self.config.options["proxy"] = PROXY
-        self.config.options["repos"] = {
-            "os": {
-                "url": ("https://repo.almalinux.org/almalinux/8/BaseOS/x86_64/os/"),
-                "priority": 90,
-            },
-            "updates": {
-                "url": ("https://repo.almalinux.org/almalinux/8/AppStream/x86_64/os/"),
-                "priority": 90,
-            },
-            "extras": {
-                "url": ("https://repo.almalinux.org/almalinux/8/PowerTools/x86_64/os/"),
-                "priority": 90,
-            },
-        }
-        # Enable virtiofs that is natively supported by Alma without requirement
-        # of additional RPM.
-        self.config.options["shared_fs_type"] = "virtiofs"
-        # Update project YAML configuration with new options defined above
-        self.update_project_conf()
-        # Copy example cloud-init template
-        self.copy_cloud_init_tpl()
-        # Copy example build post script
-        self.copy_build_post_script()
-        # Ensure cache directory exists
-        self.ensure_vm_images_cache_dir()
-        # Build virtual machine image
-        main(["vm", "build", VALID_IMAGE_URL["x86_64"], "--deploy"])
-        # Create source package and launch validation on fresh VM image
-        pkg = "pkg"
-        self.make_pkg(name=pkg, build_requires=[], requires=[])
-        main(["validate", pkg])
-        # Remove mock build environments
-        self.clean_mock_environments()
 
 
 class ControllerProjectActionSignTest(RiftProjectTestCase):

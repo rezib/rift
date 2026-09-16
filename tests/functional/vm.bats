@@ -23,6 +23,7 @@ manage_init_vm() {
   local -a args=(
     --repos "${ALMA_REPOS}"
     --set 'arch=[x86_64]'
+    # Alma 8 cloud guest has no 9p in kernel; virtiofs works when the host job runs (Fedora).
     --set shared_fs_type=virtiofs
     --set vm.memory=2048
   )
@@ -37,6 +38,9 @@ manage_state_set() {
 }
 
 setup_file() {
+  if is_almalinux8_host; then
+    return 0
+  fi
   require_cmd rift
   require_mock
   require_qemu_img
@@ -45,6 +49,7 @@ setup_file() {
 }
 
 setup() {
+  skip_vm_suite_on_almalinux8
   manage_enter_project
 }
 

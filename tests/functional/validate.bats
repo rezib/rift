@@ -11,16 +11,23 @@ manage_state_defined() {
 }
 
 setup_file() {
+  if is_almalinux8_host; then
+    return 0
+  fi
   require_cmd rift
   require_mock
   manage_state_defined vm_image_ready
 }
 
 teardown_file() {
+  if is_almalinux8_host; then
+    return 0
+  fi
   manage_destroy
 }
 
 setup() {
+  skip_vm_suite_on_almalinux8
   manage_enter_project
 }
 

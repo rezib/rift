@@ -39,13 +39,6 @@ if [ -n "${RIFT_ADDITIONAL_RPMS}" ]; then
   test $? || exit 1
 fi
 
-if [ ${RIFT_SHARED_FS_TYPE} = "9p" ] ; then
-    echo '> Checking 9p modules...'
-    modinfo 9pnet_virtio
-    echo '> Loading 9p kernel module...'
-    modprobe 9pnet_virtio
-fi
-
 echo '> Yum update...'
 yum -y update || true
 

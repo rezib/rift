@@ -21,7 +21,7 @@ from rift.sync import (
     RepoSyncLftp,
 )
 
-from .test_utils import RiftTestCase, make_temp_dir
+from .test_utils import RPMS_DIR, RiftTestCase, make_temp_dir
 
 
 def _dnf_reposync_available():
@@ -415,10 +415,9 @@ class RepoSyncDnfTest(RiftTestCase):
         # Create repository
         repo = LocalRepository(self.fake_dnf_repo, self.config)
         repo.create()
-        tests_dir = os.path.dirname(os.path.abspath(__file__))
         # Add source and binary packages from tests materials
-        self.src_rpm = RPM(os.path.join(tests_dir, "materials", "pkg-1.0-1.src.rpm"))
-        self.bin_rpm = RPM(os.path.join(tests_dir, "materials", "pkg-1.0-1.noarch.rpm"))
+        self.src_rpm = RPM(os.path.join(RPMS_DIR, "pkg-1.0-1.src.rpm"))
+        self.bin_rpm = RPM(os.path.join(RPMS_DIR, "pkg-1.0-1.noarch.rpm"))
         repo.add(self.bin_rpm)
         repo.add(self.src_rpm)
         # Update repository

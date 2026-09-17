@@ -11,3 +11,6 @@ build
 
 nosetests.xml
 .coverage
+
+# Functional test suite state (manage-project).
+tests/functional/.state/

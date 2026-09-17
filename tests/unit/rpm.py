@@ -14,6 +14,7 @@ from rift.mock import RPMLINT_CONFIG_V1, RPMLINT_CONFIG_V2, Mock
 from rift.rpm import RPM, Spec, Variable
 
 from .test_utils import (
+    RPMS_DIR,
     RiftProjectTestCase,
     RiftTestCase,
     gen_rpm_spec,
@@ -274,9 +275,8 @@ class RPMTest(RiftProjectTestCase):
 
     def setUp(self):
         super().setUp()
-        tests_dir = os.path.dirname(os.path.abspath(__file__))
-        self.bin_rpm = os.path.join(tests_dir, "materials", "pkg-1.0-1.noarch.rpm")
-        self.src_rpm = os.path.join(tests_dir, "materials", "pkg-1.0-1.src.rpm")
+        self.bin_rpm = os.path.join(RPMS_DIR, "pkg-1.0-1.noarch.rpm")
+        self.src_rpm = os.path.join(RPMS_DIR, "pkg-1.0-1.src.rpm")
 
     def test_load(self):
         """RPM initializer works with bin/src RPM with/without conf."""

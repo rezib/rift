@@ -29,6 +29,7 @@ from rift.rpm import RPM
 from rift.test_results import TestCase, TestResults
 
 from .test_utils import (
+    RPMS_DIR,
     RiftProjectTestCase,
     RiftTestCase,
     SubPackage,
@@ -40,7 +41,6 @@ from .test_utils import (
     read_file,
     remove_gpg_home,
 )
-from .vm import GLOBAL_CACHE, PROXY, VALID_IMAGE_URL
 
 VALID_REPOS = {
     "os": {
@@ -53,12 +53,6 @@ VALID_REPOS = {
         "url": "https://repo.almalinux.org/almalinux/8/PowerTools/$arch/os/",
     },
 }
-
-
-class ControllerTest(RiftTestCase):
-    def test_main_version(self):
-        """simple 'rift --version'"""
-        self.assert_except(SystemExit, "0", main, ["--version"])
 
 
 class ControllerProjectActionCreateTest(RiftProjectTestCase):
@@ -127,17 +121,11 @@ class ControllerProjectActionImportTest(RiftProjectTestCase):
 
     @property
     def src_rpm(self):
-        return os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "materials", "pkg-1.0-1.src.rpm"
-        )
+        return os.path.join(RPMS_DIR, "pkg-1.0-1.src.rpm")
 
     @property
     def bin_rpm(self):
-        return os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            "materials",
-            "pkg-1.0-1.noarch.rpm",
-        )
+        return os.path.join(RPMS_DIR, "pkg-1.0-1.noarch.rpm")
 
     def test_import_missing_pkg_module_reason(self):
         """import without package, module or reason fails"""
@@ -226,17 +214,11 @@ class ControllerProjectActionReimportTest(RiftProjectTestCase):
 
     @property
     def src_rpm(self):
-        return os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "materials", "pkg-1.0-1.src.rpm"
-        )
+        return os.path.join(RPMS_DIR, "pkg-1.0-1.src.rpm")
 
     @property
     def bin_rpm(self):
-        return os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            "materials",
-            "pkg-1.0-1.noarch.rpm",
-        )
+        return os.path.join(RPMS_DIR, "pkg-1.0-1.noarch.rpm")
 
     def test_reimport_missing_maintainer(self):
         """reimport without maintainer"""
@@ -815,38 +797,6 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
             [call(sign=False, staging=None), call(sign=False, staging=None)]
         )
         mock_act_arch_pkg_rpm.clean.assert_has_calls([call(), call()])
-
-    def test_action_build_publish_functional(self):
-        """Functional RPM build and publish test"""
-        # Declare supported archs and check qemu-user-static is available for
-        # these architectures or skip the test.
-        self.config.set("arch", ["x86_64", "aarch64"])
-        self._check_qemuuserstatic()
-
-        # Create temporary working repo and register its deletion at exit
-        working_repo = make_temp_dir()
-        atexit.register(shutil.rmtree, working_repo)
-
-        self.config.set("working_repo", working_repo)
-        self.config.options["repos"] = VALID_REPOS
-        self.update_project_conf()
-
-        # Create fake package without build requirement
-        self.make_pkg(build_requires=[])
-
-        self.assertEqual(main(["build", "pkg", "--publish"]), 0)
-        for arch in self.config.get("arch"):
-            self.assertTrue(
-                os.path.exists(f"{working_repo}/{arch}/pkg-1.0-1.noarch.rpm")
-            )
-            self.assertTrue(os.path.exists(f"{working_repo}/oci/pkg_1.0-1.{arch}.tar"))
-
-        # Remove mock build environments
-        self.clean_mock_environments()
-
-        # Remove temporary working repo and unregister its deletion at exit
-        shutil.rmtree(working_repo)
-        atexit.unregister(shutil.rmtree)
 
     def test_action_build_publish_variants_functional(self):
         """Functional RPM build and publish test with variants"""
@@ -2558,52 +2508,6 @@ class ControllerProjectActionVMTest(RiftProjectTestCase):
         ):
             main(["vm", "build", "--url", "http://image", "--deploy"])
 
-    def test_vm_build_and_validate(self):
-        """Test VM build and validate package"""
-        self.skipTest("Too much instability")
-        if not os.path.exists("/usr/bin/qemu-img"):
-            self.skipTest("qemu-img is not available")
-        self.config.options["vm"]["images_cache"] = GLOBAL_CACHE
-        # Reduce memory size from default 8GB to 2GB because it is sufficient to
-        # run this VM and it largely reduces storage required by virtiofs memory
-        # backend file which is the same size as the VM memory, thus reducing
-        # the risk to fill up small partitions when running the tests.
-        self.config.options["vm"]["memory"] = 2048
-        self.config.options["proxy"] = PROXY
-        self.config.options["repos"] = {
-            "os": {
-                "url": ("https://repo.almalinux.org/almalinux/8/BaseOS/x86_64/os/"),
-                "priority": 90,
-            },
-            "updates": {
-                "url": ("https://repo.almalinux.org/almalinux/8/AppStream/x86_64/os/"),
-                "priority": 90,
-            },
-            "extras": {
-                "url": ("https://repo.almalinux.org/almalinux/8/PowerTools/x86_64/os/"),
-                "priority": 90,
-            },
-        }
-        # Enable virtiofs that is natively supported by Alma without requirement
-        # of additional RPM.
-        self.config.options["shared_fs_type"] = "virtiofs"
-        # Update project YAML configuration with new options defined above
-        self.update_project_conf()
-        # Copy example cloud-init template
-        self.copy_cloud_init_tpl()
-        # Copy example build post script
-        self.copy_build_post_script()
-        # Ensure cache directory exists
-        self.ensure_vm_images_cache_dir()
-        # Build virtual machine image
-        main(["vm", "build", VALID_IMAGE_URL["x86_64"], "--deploy"])
-        # Create source package and launch validation on fresh VM image
-        pkg = "pkg"
-        self.make_pkg(name=pkg, build_requires=[], requires=[])
-        main(["validate", pkg])
-        # Remove mock build environments
-        self.clean_mock_environments()
-
 
 class ControllerProjectActionSignTest(RiftProjectTestCase):
     """
@@ -2656,9 +2560,8 @@ class ControllerProjectActionSignTest(RiftProjectTestCase):
         """Test sign RPM package"""
 
         # Path of RPM packages assets
-        tests_dir = os.path.dirname(os.path.abspath(__file__))
-        original_bin_rpm = os.path.join(tests_dir, "materials", "pkg-1.0-1.noarch.rpm")
-        original_src_rpm = os.path.join(tests_dir, "materials", "pkg-1.0-1.src.rpm")
+        original_bin_rpm = os.path.join(RPMS_DIR, "pkg-1.0-1.noarch.rpm")
+        original_src_rpm = os.path.join(RPMS_DIR, "pkg-1.0-1.src.rpm")
 
         # Copy RPM packages assets in temporary project directory
         copy_bin_rpm = os.path.join(self.projdir, os.path.basename(original_bin_rpm))

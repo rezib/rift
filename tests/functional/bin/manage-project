@@ -1,0 +1,388 @@
+#!/usr/bin/env python3
+"""Manage functional test project suites (init, destroy, show, state)."""
+
+import argparse
+import os
+import shutil
+import sys
+import tempfile
+
+import yaml
+
+_FUNCTIONAL_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MATERIALS_PROJECT = os.path.join(_FUNCTIONAL_DIR, "..", "materials", "project")
+DEFAULT_STATE_FILE = os.path.join(_FUNCTIONAL_DIR, ".state", "suite.yaml")
+
+
+def default_state_file():
+    return os.environ.get("RIFT_FUNCTIONAL_STATE", DEFAULT_STATE_FILE)
+
+
+def parse_yaml_value(raw_value):
+    try:
+        return yaml.safe_load(raw_value)
+    except yaml.YAMLError as err:
+        raise ValueError(f"invalid YAML value: {err}") from err
+
+
+def scrub_mock(project_dir):
+    try:
+        os.chdir(project_dir)
+        from rift.config import Config
+        from rift.mock import Mock
+
+        config = Config()
+        config.load()
+        for arch in config.get("arch", ["x86_64"]):
+            Mock(config, arch).scrub()
+    except (ImportError, OSError):
+        pass
+
+
+class ProjectConf:
+    """Apply functional-test settings to a Rift project.conf on disk.
+
+    The suite init command copies a materials tree that already contains a
+    base project.conf. This class merges AlmaLinux (or other) repo YAML,
+    CLI --set overrides, and layout-derived paths, then overlays template
+    files required by mock/VM tests.
+    """
+
+    LAYOUT_KEYS = ("working_repo", "vm.images_cache")
+    MATERIALS_FILES = (
+        "mock.tpl",
+        "cloud-init.tpl",
+        "build-post.sh",
+    )
+
+    def __init__(self, project_dir):
+        """Bind to an on-disk project directory (must contain project.conf)."""
+        self.project_dir = project_dir
+        self.conf_path = os.path.join(project_dir, "project.conf")
+
+    def configure(self, repos_path, working_repo, images_cache, set_pairs):
+        """Load project.conf, apply repos and --set pairs, write layout paths.
+
+        repos_path must be YAML with a top-level repos key. Each set_pairs entry
+        is (dotted_key, raw_yaml_string); nested keys create intermediate dicts.
+        LAYOUT_KEYS are rejected here because the suite temp layout owns
+        working_repo and vm.images_cache. Finally copies MATERIALS_FILES from
+        the functional materials tree.
+        """
+        with open(self.conf_path, encoding="utf-8") as fh:
+            conf = yaml.safe_load(fh) or {}
+
+        with open(repos_path, encoding="utf-8") as fh:
+            repos_yaml = yaml.safe_load(fh)
+
+        conf["repos"] = repos_yaml["repos"]
+
+        for key, raw_value in set_pairs:
+            if key in self.LAYOUT_KEYS:
+                raise ValueError(
+                    f"init --set must not set {key!r}; manage-project assigns it from "
+                    "the suite layout"
+                )
+            self._set(conf, key, raw_value)
+
+        conf["working_repo"] = working_repo
+        vm = conf.setdefault("vm", {})
+        vm["images_cache"] = images_cache
+
+        with open(self.conf_path, "w", encoding="utf-8") as fh:
+            yaml.dump(conf, fh, default_flow_style=False)
+
+        self._install_materials()
+
+    def _set(self, conf, dotted_key, raw_value):
+        value = parse_yaml_value(raw_value)
+        parts = dotted_key.split(".")
+        if not parts or not parts[0]:
+            raise ValueError(f"invalid key: {dotted_key}")
+        node = conf
+        for part in parts[:-1]:
+            child = node.get(part)
+            if child is None or not isinstance(child, dict):
+                child = {}
+                node[part] = child
+            node = child
+        node[parts[-1]] = value
+
+    def _install_materials(self):
+        for name in self.MATERIALS_FILES:
+            src = os.path.join(MATERIALS_PROJECT, name)
+            if not os.path.isfile(src):
+                raise FileNotFoundError(f"missing {src}")
+            shutil.copy2(src, os.path.join(self.project_dir, name))
+
+
+class Suite:
+    """Functional-test suite: temp dirs, suite.yaml state, and harness meta.
+
+    Persists reserved path fields under state_path (default
+    tests/functional/.state/suite.yaml). Bats helpers read paths via show and
+    coordinate multi-file suites via meta (e.g. vm_image_ready). init creates
+    project/, working_repo/, and images_cache/ under a new suite_dir; destroy
+    scrubs mock, removes the tree, and deletes the state file.
+    """
+
+    PATH_FIELDS = ("suite_dir", "project_dir", "working_repo", "images_cache")
+    RESERVED_META_KEYS = frozenset({*PATH_FIELDS, "meta"})
+
+    def __init__(self, state_path):
+        """Prepare an unloaded suite; call load or init before use."""
+        self.state_path = state_path
+        self.suite_dir = None
+        self.project_dir = None
+        self.working_repo = None
+        self.images_cache = None
+        self.meta = {}
+        self._loaded = False
+
+    def load(self):
+        """Read suite.yaml into attributes. Return False if the file is missing."""
+        if not os.path.isfile(self.state_path):
+            self._clear()
+            return False
+        with open(self.state_path, encoding="utf-8") as fh:
+            data = yaml.safe_load(fh)
+        if not isinstance(data, dict):
+            raise ValueError(f"invalid suite state file: {self.state_path}")
+        self.suite_dir = data["suite_dir"]
+        self.project_dir = data["project_dir"]
+        self.working_repo = data["working_repo"]
+        self.images_cache = data["images_cache"]
+        self.meta = data.get("meta") or {}
+        self._loaded = True
+        return True
+
+    def require(self):
+        """Ensure suite state is loaded; raise RuntimeError if never initialized."""
+        if not self._loaded and not self.load():
+            raise RuntimeError("suite state not initialized; run manage-project init")
+
+    def save(self):
+        """Write current path fields and meta to suite.yaml."""
+        os.makedirs(os.path.dirname(self.state_path), exist_ok=True)
+        data = {
+            "suite_dir": self.suite_dir,
+            "project_dir": self.project_dir,
+            "working_repo": self.working_repo,
+            "images_cache": self.images_cache,
+            "meta": self.meta,
+        }
+        with open(self.state_path, "w", encoding="utf-8") as fh:
+            yaml.dump(data, fh, default_flow_style=False)
+        self._loaded = True
+
+    def init(self, repos_path, set_pairs):
+        """Create a fresh suite layout and project, replacing any existing state.
+
+        If suite.yaml already exists, destroy runs first. Copies materials into
+        project/, configures project.conf via ProjectConf, and saves the new
+        paths. set_pairs are project.conf overrides only.
+        """
+        if self.load():
+            self.destroy()
+
+        self.suite_dir = tempfile.mkdtemp(prefix="rift-functional-")
+        self.project_dir = os.path.join(self.suite_dir, "project")
+        self.working_repo = os.path.join(self.suite_dir, "working_repo")
+        self.images_cache = os.path.join(self.suite_dir, "images_cache")
+        self.meta = {}
+
+        shutil.copytree(MATERIALS_PROJECT, self.project_dir)
+        os.makedirs(os.path.join(self.project_dir, "annex"), exist_ok=True)
+        os.makedirs(self.working_repo, exist_ok=True)
+        os.makedirs(self.images_cache, exist_ok=True)
+
+        ProjectConf(self.project_dir).configure(
+            repos_path, self.working_repo, self.images_cache, set_pairs
+        )
+        self.save()
+
+    def destroy(self):
+        """Tear down the suite: mock scrub, remove suite_dir, delete state file.
+
+        No-op when state is missing. Loads from disk when not already in memory.
+        """
+        if not self._loaded:
+            self.load()
+        if not self._loaded:
+            return
+
+        if self.project_dir and os.path.isdir(self.project_dir):
+            try:
+                scrub_mock(self.project_dir)
+            except OSError:
+                pass
+
+        if self.suite_dir and os.path.isdir(self.suite_dir):
+            shutil.rmtree(self.suite_dir, ignore_errors=True)
+
+        if os.path.isfile(self.state_path):
+            os.unlink(self.state_path)
+
+        self._clear()
+
+    def show(self, field=None, shell=False):
+        """Print one PATH_FIELDS value, or --shell export lines for all."""
+        self.require()
+        if shell:
+            for key in sorted(self.PATH_FIELDS):
+                print(f"export RIFT_FUNCTIONAL_{key.upper()}={getattr(self, key)!r}")
+            return
+        if field not in self.PATH_FIELDS:
+            raise ValueError(f"unknown field: {field}")
+        print(getattr(self, field))
+
+    def state(self, set_pairs, get_keys, defined_keys):
+        """Read or update harness meta (not project.conf).
+
+        --get prints YAML values and cannot mix with --set or --defined.
+        --set parses values as YAML and rejects reserved suite keys.
+        --defined exits 2 unless the key exists and is truthy (bats gate).
+        Mutations are persisted with save.
+        """
+        if get_keys and (set_pairs or defined_keys):
+            raise ValueError("state --get cannot be combined with --set or --defined")
+
+        if get_keys:
+            self.require()
+            for key in get_keys:
+                if key not in self.meta:
+                    print(f"manage-project: meta key not found: {key}", file=sys.stderr)
+                    sys.exit(2)
+                print(yaml.dump(self.meta[key], default_flow_style=True).strip())
+            return
+
+        if not set_pairs and not defined_keys:
+            print(
+                "manage-project: state requires --set, --get, or --defined",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+
+        self.require()
+        for key, raw_value in set_pairs:
+            if key in self.RESERVED_META_KEYS:
+                raise ValueError(f"cannot state --set reserved key: {key}")
+            self.meta[key] = parse_yaml_value(raw_value)
+
+        for key in defined_keys:
+            if key not in self.meta or not self.meta[key]:
+                print(
+                    f"manage-project: meta key not defined or not truthy: {key}",
+                    file=sys.stderr,
+                )
+                sys.exit(2)
+
+        self.save()
+
+    def _clear(self):
+        self.suite_dir = None
+        self.project_dir = None
+        self.working_repo = None
+        self.images_cache = None
+        self.meta = {}
+        self._loaded = False
+
+
+def _parse_set_pair(pair):
+    if "=" not in pair:
+        raise argparse.ArgumentTypeError(f"--set expects KEY=VALUE, got: {pair!r}")
+    key, raw_value = pair.split("=", 1)
+    key = key.strip()
+    if not key:
+        raise argparse.ArgumentTypeError(f"--set expects a non-empty key: {pair!r}")
+    return key, raw_value
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Manage functional test project suites"
+    )
+    parser.add_argument(
+        "--state-file",
+        default=None,
+        help=f"suite state YAML (default: {DEFAULT_STATE_FILE})",
+    )
+    subparsers = parser.add_subparsers(dest="command")
+
+    init_parser = subparsers.add_parser(
+        "init", help="create suite and configure project"
+    )
+    init_parser.add_argument(
+        "--repos", required=True, help="YAML file containing repos: key"
+    )
+    init_parser.add_argument(
+        "--set",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        type=_parse_set_pair,
+        help=(
+            "project.conf overrides (YAML values); not working_repo or vm.images_cache"
+        ),
+    )
+    subparsers.add_parser("destroy", help="tear down suite and state")
+
+    show_parser = subparsers.add_parser("show", help="print suite paths")
+    show_parser.add_argument(
+        "--field",
+        choices=sorted(Suite.PATH_FIELDS),
+        help="print one path field",
+    )
+    show_parser.add_argument(
+        "--shell",
+        action="store_true",
+        help="print export statements for all path fields",
+    )
+    state_parser = subparsers.add_parser("state", help="read or update suite meta")
+    state_parser.add_argument(
+        "--set",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        type=_parse_set_pair,
+        help="set meta key (YAML value)",
+    )
+    state_parser.add_argument(
+        "--get",
+        action="append",
+        default=[],
+        metavar="KEY",
+        dest="get_keys",
+        help="print meta key",
+    )
+    state_parser.add_argument(
+        "--defined",
+        action="append",
+        default=[],
+        metavar="KEY",
+        help="require meta key to be truthy",
+    )
+    args = parser.parse_args()
+    if args.command is None:
+        parser.error("the following arguments are required: command")
+    if args.command == "show" and not args.shell and not args.field:
+        print("manage-project: show requires --field or --shell", file=sys.stderr)
+        sys.exit(2)
+
+    suite = Suite(args.state_file or default_state_file())
+    try:
+        if args.command == "init":
+            suite.init(args.repos, args.set)
+        elif args.command == "destroy":
+            suite.destroy()
+        elif args.command == "show":
+            suite.show(field=args.field, shell=args.shell)
+        elif args.command == "state":
+            suite.state(args.set, args.get_keys, args.defined)
+    except (ValueError, FileNotFoundError, RuntimeError) as err:
+        print(f"manage-project: {err}", file=sys.stderr)
+        sys.exit(2)
+
+
+if __name__ == "__main__":
+    main()

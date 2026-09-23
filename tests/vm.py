@@ -358,7 +358,7 @@ class VMTest(RiftTestCase):
             "-machine",
             "memory-backend=mem,accel=kvm",
             "-chardev",
-            "socket,id=project,path=/tmp/.virtio_fs_project",
+            f"socket,id=project,path=/tmp/.virtio_fs_project-{vm.vmid}",
             "-device",
             "vhost-user-fs-pci,queue-size=1024,chardev=project,tag=project",
         ]
@@ -372,7 +372,7 @@ class VMTest(RiftTestCase):
             "-machine",
             "memory-backend=mem",
             "-chardev",
-            "socket,id=project,path=/tmp/.virtio_fs_project",
+            f"socket,id=project,path=/tmp/.virtio_fs_project-{vm.vmid}",
             "-device",
             "vhost-user-fs-pci,queue-size=1024,chardev=project,tag=project",
         ]
@@ -387,7 +387,7 @@ class VMTest(RiftTestCase):
 
         repo_args = [
             "-chardev",
-            f"socket,id={reponame},path=/tmp/.virtio_fs_{reponame}",
+            f"socket,id={reponame},path=/tmp/.virtio_fs_{reponame}-{vm.vmid}",
             "-device",
             f"vhost-user-fs-pci,queue-size=1024,chardev={reponame},tag={reponame}",
         ]

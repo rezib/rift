@@ -2,7 +2,6 @@
 # Copyright (C) 2025 CEA
 #
 
-import getpass
 import os
 import textwrap
 from unittest.mock import ANY, Mock, patch

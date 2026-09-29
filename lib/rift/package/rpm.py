@@ -202,7 +202,17 @@ class ActionableArchPackageRPM(ActionableArchPackage):
     def __init__(self, package, arch, variant):
         super().__init__(package, arch)
         self.variant = variant
-        self.mock = Mock(self.config, arch, self.config.get("version"))
+        self.mock = Mock(
+            self.config, arch, self.config.get("version"), slot=self._variant_slot()
+        )
+
+    def _variant_slot(self):
+        try:
+            return self.package.variants.index(self.variant)
+        except ValueError:
+            raise RiftError(
+                f"Unknown variant {self.variant!r} for package {self.package.name}"
+            ) from None
 
     def build(self, **kwargs):
         message(

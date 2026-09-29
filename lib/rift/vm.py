@@ -138,9 +138,10 @@ class VM:
     QEMU_USERNET_HOST = "10.0.2.2"
     SUPPORTED_FS = ("9p", "virtiofs")
 
-    def __init__(self, config, arch, tmpmode=True, extra_repos=None):
+    def __init__(self, config, arch, tmpmode=True, extra_repos=None, slot=0):
         self.version = config.get("version", "0")
         self.arch = arch
+        self.slot = slot
 
         vm_config = config.get("vm", arch=arch)
         image = vm_config.get("image")
@@ -208,11 +209,11 @@ class VM:
     @property
     def vmid(self):
         """
-        Generate a checksum for the triplet current user, architecture and version
+        Generate a checksum for user, architecture, version, and variant slot
         that can be used to uniquely identify a VM for this combination.
         """
         return hashlib.sha1(
-            f"{os.getuid()}-{self.arch}-{self.version}".encode()
+            f"{os.getuid()}-{self.arch}-{self.version}-{self.slot}".encode()
         ).hexdigest()
 
     @property

@@ -138,6 +138,12 @@ class VMTest(RiftTestCase):
         self.config.set("version", "2.0")
         vm3 = VM(self.config, "x86_64")
         self.assertNotEqual(vm1.vmid, vm3.vmid)
+        # Variant slot distinguishes VMs with the same arch and version.
+        vm_slot0 = VM(self.config, "x86_64", slot=0)
+        vm_slot1 = VM(self.config, "x86_64", slot=1)
+        self.assertNotEqual(vm_slot0.vmid, vm_slot1.vmid)
+        vm_slot0_again = VM(self.config, "x86_64")
+        self.assertEqual(vm_slot0.vmid, vm_slot0_again.vmid)
 
     def test_image_local(self):
         vm = VM(self.config, platform.machine())

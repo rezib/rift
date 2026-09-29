@@ -266,7 +266,12 @@ class ActionableArchPackageRPM(ActionableArchPackage):
             ]
         else:
             extra_repos = []
-        vm = VM(self.config, self.arch, extra_repos=extra_repos)
+        vm = VM(
+            self.config,
+            self.arch,
+            extra_repos=extra_repos,
+            slot=self._variant_slot(),
+        )
 
         if vm.running():
             raise RiftError("VM is already running")

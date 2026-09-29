@@ -13,7 +13,6 @@ from rift.package.rpm import ActionableArchPackageRPM, PackageRPM
 from rift.repository import StagingRepository
 from rift.run import RunResult
 from rift.test_results import TestResults
-from rift.vm import VM
 
 from ..test_utils import (
     PackageTestDef,
@@ -606,7 +605,7 @@ class ActionableArchPackageRPMTest(RiftProjectTestCase):
         # Check run_local_test() has not been called.
         self.pkg.run_local_test.assert_not_called()
         # Check VM initialized (w/o extra repository)
-        mock_vm.assert_called_once_with(self.config, "x86_64", extra_repos=[])
+        mock_vm.assert_called_once_with(self.config, "x86_64", extra_repos=[], slot=0)
         # Check VM run_test() called once for basic test
         mock_vm_obj.run_test.assert_called_once_with(ANY, _DEFAULT_VARIANT)
         # Check VM is stopped after the tests
@@ -614,24 +613,6 @@ class ActionableArchPackageRPMTest(RiftProjectTestCase):
         mock_banner.assert_called_once_with(
             "Starting tests of package pkg on architecture x86_64"
         )
-
-    @patch("rift.package.rpm.Mock.clean")
-    @patch("rift.package.rpm.Mock.init")
-    @patch("rift.package.rpm.time.sleep")
-    @patch("rift.package.rpm.VM")
-    def test_test_passes_slot_to_vm(
-        self, mock_vm, mock_time_sleep, mock_mock_init, mock_mock_clean
-    ):
-        """test() constructs VM with the actionable package variant slot."""
-        mock_vm_obj = mock_vm.return_value
-        mock_vm_obj.running.return_value = False
-        mock_vm_obj.run_test.return_value = RunResult(0, None, None)
-        self.setup_package(variants=[_DEFAULT_VARIANT, "alt"])
-        pkg_slot1 = self.pkg.package.for_arch("x86_64", variant="alt")
-        pkg_slot1.mock.read_spec = read_file
-        results = pkg_slot1.test()
-        self.assertTrue(results.global_result)
-        mock_vm.assert_called_once_with(self.config, "x86_64", extra_repos=[])
 
     @patch("rift.package.rpm.Mock.clean")
     @patch("rift.package.rpm.Mock.init")
@@ -658,6 +639,7 @@ class ActionableArchPackageRPMTest(RiftProjectTestCase):
             self.config,
             "x86_64",
             extra_repos=[staging.for_format("rpm").repo.consumables["x86_64"]],
+            slot=0,
         )
         # Check VM is stopped after the tests
         mock_vm_obj.stop.assert_called_once()

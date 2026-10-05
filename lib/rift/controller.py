@@ -196,7 +196,10 @@ def make_parser():
     subprs.add_argument(
         "--seq",
         action="store_true",
-        help="run one architecture at a time with live output (no parallel threads)",
+        help=(
+            "run one architecture and one variant at a time with live output "
+            "(no parallel threads)"
+        ),
     )
 
     # Sign options
@@ -274,7 +277,10 @@ def make_parser():
     subprs.add_argument(
         "--seq",
         action="store_true",
-        help="run one architecture at a time with live output (no parallel threads)",
+        help=(
+            "run one architecture and one variant at a time with live output "
+            "(no parallel threads)"
+        ),
     )
 
     # Validate diff
@@ -320,7 +326,10 @@ def make_parser():
     subprs.add_argument(
         "--seq",
         action="store_true",
-        help="run one architecture at a time with live output (no parallel threads)",
+        help=(
+            "run one architecture and one variant at a time with live output "
+            "(no parallel threads)"
+        ),
     )
 
     # Annex options
@@ -668,7 +677,7 @@ def _validate_pkg_variant(args, pkg, arch, staging, variant):
 
     try:
         now = time.time()
-        pkg_arch.build(sign=args.sign, staging=staging, variant=variant)
+        pkg_arch.build(sign=args.sign, staging=staging)
     except RiftError as ex:
         logging.error("%s build failure: %s", pkg.format, str(ex))
         results.add_failure(case, time.time() - now, err=str(ex))
@@ -686,7 +695,6 @@ def _validate_pkg_variant(args, pkg, arch, staging, variant):
             noauto=args.noauto,
             staging=staging,
             noquit=args.noquit,
-            variant=variant,
         )
         results.extend(pkg_results)
 
@@ -700,116 +708,59 @@ def _validate_pkg_variant(args, pkg, arch, staging, variant):
     return results
 
 
-def _build_pkg_variant(args, pkg, arch, staging, variant):
+def _run_pkg_matrix(args, pkg, archs, stagings, worker, action):
     """
-    Build one package variant on an architecture and return results.
+    Run worker for each supported (arch, variant) on a loaded package.
+
+    When not --seq, start one RiftThread per pair named
+    ``{action}-{arch}-{variant}`` (e.g. build-x86_64-main).
     """
     results = TestResults()
-    pkg_arch = pkg.for_arch(arch, variant=variant)
-    case = TestCase("build", pkg.name, variant, arch, pkg.format)
 
-    build_success = True
-    now = time.time()
-    try:
-        pkg_arch.build(sign=args.sign, staging=staging, variant=variant)
-    except RiftError as ex:
-        logging.error("%s build failure: %s", pkg.format, str(ex))
-        results.add_failure(case, time.time() - now, err=str(ex))
-        build_success = False
-    else:
-        results.add_success(case, time.time() - now)
-
-    if not build_success:
-        pkg_arch.clean()
-        return results
-
-    # If defined, publish in staging repository
-    if staging:
-        message("Publishing packages in staging repository...")
-        pkg_arch.publish(staging=staging)
-
-    # Publish
-    if args.publish:
-        pkg_arch.publish(updaterepo=args.updaterepo, sign=args.sign)
-    else:
-        logging.info("Skipping publication")
-
-    # Clean build environment
-    pkg_arch.clean()
-    return results
-
-
-def validate_pkgs(config, args, pkgs, arch):
-    """
-    Validate packages on a specific architecture and return results:
-        - static analysis (eg. rpmlint of RPM packages)
-        - check file patterns
-        - build it
-        - launch tests
-    """
-
-    # Create staging repository for all packages and add it to the project
-    # supplementary repositories.
-    repos = ProjectArchRepositories(config, arch)
-    staging = StagingRepository(config)
-
-    if args.publish and not repos.can_publish():
-        raise RiftError("Cannot publish if 'working_repo' is undefined")
-
-    results = TestResults()
-
-    for pkg in pkgs:
-        # Skip package if format is not selected by user
-        if args.formats and pkg.format not in args.formats:
-            logging.info(
-                "Skipping validation of %s package %s due to restriction on "
-                "package formats",
-                pkg.format,
-                pkg.name,
-            )
-            continue
-
-        # Load package and report possible failure
-        case = TestCase("build", pkg.name, _DEFAULT_VARIANT, arch, pkg.format)
-        now = time.time()
-        try:
-            pkg.load()
-        except RiftError as ex:
-            logging.error("Unable to load %s package: %s", pkg.format, str(ex))
-            results.add_failure(case, time.time() - now, err=str(ex))
-            continue  # skip current package
-
+    # Compute list of (arch, variant) jobs to run.
+    jobs = []
+    for arch in archs:
         if not pkg.supports_arch(arch):
             logging.info(
-                "Skipping validation on architecture %s not supported by %s package %s",
+                "Skipping %s on architecture %s not supported by %s package %s",
+                "validation" if action == "validate" else "build",
                 arch,
                 pkg.format,
                 pkg.name,
             )
             continue
-
-        banner(f"Checking {pkg.format} package '{pkg.name}' on architecture {arch}")
-
-        now = time.time()
-        try:
-            pkg.check()
-        except RiftError as ex:
-            logging.error(
-                "Static analysis of %s package failed: %s", pkg.format, str(ex)
-            )
-            results.add_failure(case, time.time() - now, err=str(ex))
-            continue  # skip current package
-
+        staging = stagings.get(arch)
         for variant in pkg.variants:
-            results.extend(
-                _validate_pkg_variant(args, pkg, arch, staging, variant)
+            jobs.append((arch, variant, staging))
+
+    if not jobs:
+        return results
+
+    # Run jobs sequentially if --seq option is used
+    if getattr(args, "seq", False):
+        for arch, variant, staging in jobs:
+            results.extend(worker(args, pkg, arch, staging, variant))
+        return results
+
+    # Run jobs in parallel threads otherwise
+    threads = []
+    for arch, variant, staging in jobs:
+        threads.append(
+            RiftThread(
+                worker,
+                f"{action}-{arch}-{variant}",
+                args=(args, pkg, arch, staging, variant),
             )
-
-    # Remove staging repository
-    staging.delete()
-
-    banner(f"All packages checked on architecture {arch}")
-
+        )
+    for thread in threads:
+        message(f"Starting {action} thread {thread.name}")
+        thread.start()
+    for thread in threads:
+        thread.join()
+        results.extend(thread.results)
+        if not getattr(args, "quiet", False) or not thread.results.global_result:
+            banner(f"{action.capitalize()} thread {thread.name} output:")
+            print(thread.output.getvalue(), end="")
     return results
 
 
@@ -912,69 +863,42 @@ def action_vm(args, config):
     return ret
 
 
-def build_pkgs(args, pkgs, arch, staging):
+def _build_pkg_variant(args, pkg, arch, staging, variant):
     """
-    Build a list of packages on a given architecture and return results.
+    Build one package variant on an architecture and return results.
     """
     results = TestResults()
+    pkg_arch = pkg.for_arch(arch, variant=variant)
+    case = TestCase("build", pkg.name, variant, arch, pkg.format)
 
-    for pkg in pkgs:
-        # Skip package if format is not selected by user
-        if args.formats and pkg.format not in args.formats:
-            logging.info(
-                "Skipping build of %s package %s due to restriction on package formats",
-                pkg.format,
-                pkg.name,
-            )
-            continue
+    build_success = True
+    now = time.time()
+    try:
+        pkg_arch.build(sign=args.sign, staging=staging)
+    except RiftError as ex:
+        logging.error("%s build failure: %s", pkg.format, str(ex))
+        results.add_failure(case, time.time() - now, err=str(ex))
+        build_success = False
+    else:
+        results.add_success(case, time.time() - now)
 
-        # Load package and report possible failure
-        case = TestCase("build", pkg.name, _DEFAULT_VARIANT, arch, pkg.format)
-        now = time.time()
-        try:
-            pkg.load()
-        except RiftError as ex:
-            logging.error("Unable to load %s package: %s", pkg.format, str(ex))
-            results.add_failure(case, time.time() - now, err=str(ex))
-            continue  # skip current package
+    if not build_success:
+        pkg_arch.clean()
+        return results
 
-        # Check architecture is supported or skip package
-        if not pkg.supports_arch(arch):
-            logging.info(
-                "Skipping build on architecture %s not supported by %s package %s",
-                arch,
-                pkg.format,
-                pkg.name,
-            )
-            continue
-
-        for variant in pkg.variants:
-            results.extend(
-                _build_pkg_variant(args, pkg, arch, staging, variant)
-            )
-
-    return results
-
-
-def build_architecture(config, args, pkgs, arch):
-    """Build pkgs for a specific architecture and return results."""
-
-    results = TestResults(f"build-{arch}")
-
-    # Create temporary staging repository to hold dependencies unless
-    # dependency tracking is disabled in project configuration or user set
-    # --skip-deps argument.
-    staging = None
-    if config.get("dependency_tracking") and not args.skip_deps:
-        staging = StagingRepository(config)
-
-    results.extend(build_pkgs(args, pkgs, arch, staging))
-
+    # If defined, publish in staging repository
     if staging:
-        staging.delete()
+        message("Publishing packages in staging repository...")
+        pkg_arch.publish(staging=staging)
 
-    banner(f"All packages processed for architecture {arch}")
+    # Publish
+    if args.publish:
+        pkg_arch.publish(updaterepo=args.updaterepo, sign=args.sign)
+    else:
+        logging.info("Skipping publication")
 
+    # Clean build environment
+    pkg_arch.clean()
     return results
 
 
@@ -998,37 +922,49 @@ def action_build(args, config):
         "Ordered list of packages to build: %s", str([pkg.name for pkg in pkgs])
     )
 
-    if args.seq:
-        for arch in config.get("arch"):
-            message(f"Starting build on architecture {arch}")
-            results.extend(build_architecture(config, args, pkgs, arch))
-    else:
-        # List of build threads
-        threads = []
+    archs = config.get("arch")
 
-        # Create parallel threads to build all packages for all project supported
-        # architectures.
-        for arch in config.get("arch"):
-            threads.append(
-                RiftThread(
-                    build_architecture, f"build-{arch}", args=(config, args, pkgs, arch)
+    # Initialize staging repositories for all architectures if necessary.
+    stagings = {}
+    if config.get("dependency_tracking") and not args.skip_deps:
+        stagings = {arch: StagingRepository(config) for arch in archs}
+
+    try:
+        for pkg in pkgs:
+            if args.formats and pkg.format not in args.formats:
+                logging.info(
+                    "Skipping build of %s package %s due to restriction on "
+                    "package formats",
+                    pkg.format,
+                    pkg.name,
+                )
+                continue
+
+            case = TestCase("build", pkg.name, _DEFAULT_VARIANT, archs[0], pkg.format)
+            now = time.time()
+            try:
+                pkg.load()
+            except RiftError as ex:
+                logging.error("Unable to load %s package: %s", pkg.format, str(ex))
+                results.add_failure(case, time.time() - now, err=str(ex))
+                continue
+
+            results.extend(
+                _run_pkg_matrix(
+                    args,
+                    pkg,
+                    archs,
+                    stagings,
+                    _build_pkg_variant,
+                    "build",
                 )
             )
+    finally:
+        # Delete all staging repositories.
+        for staging in stagings.values():
+            staging.delete()
 
-        # Start all threads
-        for thread in threads:
-            message(f"Starting build thread {thread.name}")
-            thread.start()
-
-        # Wait for all threads to finish
-        for thread in threads:
-            thread.join()
-            results.extend(thread.results)
-            if not args.quiet or not thread.results.global_result:
-                banner(f"Build thread {thread.name} output:")
-                print(thread.output.getvalue(), end="")
-
-    banner("All architectures processed")
+    banner("All packages processed on all architectures")
 
     if len(results) > 1:
         print(results.summary())
@@ -1098,9 +1034,7 @@ def action_test(args, config):
 
             for variant in pkg.variants:
                 pkg_arch = pkg.for_arch(arch, variant=variant)
-                pkg_results = pkg_arch.test(
-                    noauto=args.noauto, noquit=args.noquit, variant=variant
-                )
+                pkg_results = pkg_arch.test(noauto=args.noauto, noquit=args.noquit)
                 results.extend(pkg_results)
 
     if getattr(args, "junit", False):
@@ -1117,43 +1051,70 @@ def action_test(args, config):
     return 2
 
 
-def _validate_packages_on_arch(config, args, pkgs):
+def _validate_pkgs(config, args, pkgs):
     """
-    Run package validation on all configured architectures, either sequentially
-    or in parallel threads.
+    Validate packages in dependency order; for each package run every
+    architecture and variant before moving to the next package.
     """
     results = TestResults("validate")
+    archs = config.get("arch")
 
-    if args.seq:
-        for arch in config.get("arch"):
-            message(f"Starting validate on architecture {arch}")
-            results.extend(validate_pkgs(config, args, pkgs, arch))
-        return results
+    # Check if working repository is defined for all architectures supported by the
+    # project.
+    for arch in archs:
+        repos = ProjectArchRepositories(config, arch)
+        if args.publish and not repos.can_publish():
+            raise RiftError("Cannot publish if 'working_repo' is undefined")
 
-    # List of validate threads
-    threads = []
+    # Initialize staging repositories for all architectures.
+    stagings = {arch: StagingRepository(config) for arch in archs}
+    try:
+        for pkg in pkgs:
+            if args.formats and pkg.format not in args.formats:
+                logging.info(
+                    "Skipping validation of %s package %s due to restriction on "
+                    "package formats",
+                    pkg.format,
+                    pkg.name,
+                )
+                continue
 
-    # Create parallel threads to validate packages on all project supported
-    # architectures.
-    for arch in config.get("arch"):
-        threads.append(
-            RiftThread(
-                validate_pkgs, f"validate-{arch}", args=(config, args, pkgs, arch)
+            case = TestCase("build", pkg.name, _DEFAULT_VARIANT, archs[0], pkg.format)
+            now = time.time()
+            try:
+                pkg.load()
+            except RiftError as ex:
+                logging.error("Unable to load %s package: %s", pkg.format, str(ex))
+                results.add_failure(case, time.time() - now, err=str(ex))
+                continue
+
+            banner(f"Checking {pkg.format} package '{pkg.name}'")
+
+            now = time.time()
+            try:
+                pkg.check()
+            except RiftError as ex:
+                logging.error(
+                    "Static analysis of %s package failed: %s", pkg.format, str(ex)
+                )
+                results.add_failure(case, time.time() - now, err=str(ex))
+                continue
+
+            results.extend(
+                _run_pkg_matrix(
+                    args,
+                    pkg,
+                    archs,
+                    stagings,
+                    _validate_pkg_variant,
+                    "validate",
+                )
             )
-        )
+    finally:
+        # Delete all staging repositories.
+        for staging in stagings.values():
+            staging.delete()
 
-    # Start all threads
-    for thread in threads:
-        message(f"Starting validate thread {thread.name}")
-        thread.start()
-
-    # Wait for all threads to finish
-    for thread in threads:
-        thread.join()
-        results.extend(thread.results)
-        if not args.quiet or not thread.results.global_result:
-            banner(f"Validate thread {thread.name} output:")
-            print(thread.output.getvalue(), end="")
     return results
 
 
@@ -1170,7 +1131,7 @@ def action_validate(args, config):
         "Ordered list of packages to validate: %s", str([pkg.name for pkg in pkgs])
     )
 
-    results = _validate_packages_on_arch(config, args, pkgs)
+    results = _validate_pkgs(config, args, pkgs)
 
     banner("All packages checked on all architectures")
 
@@ -1201,7 +1162,7 @@ def action_validdiff(args, config):
         args.patch, config=config, modules=modules, staff=staff
     )
 
-    results = _validate_packages_on_arch(config, args, updated)
+    results = _validate_pkgs(config, args, updated)
 
     if getattr(args, "junit", False):
         logging.info("Writing test results in %s", args.junit)

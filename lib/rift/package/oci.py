@@ -179,7 +179,9 @@ class ActionableArchPackageOCI(ActionableArchPackage):
         if not self.package.sources:
             raise RiftError(f"Unable to find sources for package {self.name}")
         if len(self.package.sources) == 1:
-            _main_source = os.path.join(tmp_sourcesdir.path, self.package.sources.pop())
+            _main_source = os.path.join(
+                tmp_sourcesdir.path, next(iter(self.package.sources))
+            )
             self._extract_archive(_main_source)
             extracted_archive = _main_source
         else:

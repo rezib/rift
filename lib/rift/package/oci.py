@@ -135,7 +135,7 @@ class PackageOCI(Package):
         """
         return arch in ContainerRuntime.ARCHS_MAP
 
-    def for_arch(self, arch):
+    def for_arch(self, arch, variant):
         """
         Return OCI package specialized for a given architecture.
         """

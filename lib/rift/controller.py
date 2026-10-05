@@ -658,6 +658,87 @@ def action_auth(config):
         message("error: authentication failed")
 
 
+def _validate_pkg_variant(args, pkg, arch, staging, variant):
+    """
+    Build, test, and optionally publish one package variant; return results.
+    """
+    results = TestResults()
+    pkg_arch = pkg.for_arch(arch, variant=variant)
+    case = TestCase("build", pkg.name, variant, arch, pkg.format)
+
+    try:
+        now = time.time()
+        pkg_arch.build(sign=args.sign, staging=staging, variant=variant)
+    except RiftError as ex:
+        logging.error("%s build failure: %s", pkg.format, str(ex))
+        results.add_failure(case, time.time() - now, err=str(ex))
+        return results
+
+    results.add_success(case, time.time() - now)
+
+    # Publish package in staging environment for testing
+    pkg_arch.publish(staging=staging)
+
+    pkg_results = None
+    # Check tests
+    if args.test:
+        pkg_results = pkg_arch.test(
+            noauto=args.noauto,
+            staging=staging,
+            noquit=args.noquit,
+            variant=variant,
+        )
+        results.extend(pkg_results)
+
+    # Also publish on working repo if requested
+    # XXX: All packages should be published when all of them have been validated
+    if (pkg_results is None or pkg_results.global_result) and args.publish:
+        pkg_arch.publish(sign=args.sign)
+
+    # Clean build environment
+    pkg_arch.clean(noquit=args.noquit)
+    return results
+
+
+def _build_pkg_variant(args, pkg, arch, staging, variant):
+    """
+    Build one package variant on an architecture and return results.
+    """
+    results = TestResults()
+    pkg_arch = pkg.for_arch(arch, variant=variant)
+    case = TestCase("build", pkg.name, variant, arch, pkg.format)
+
+    build_success = True
+    now = time.time()
+    try:
+        pkg_arch.build(sign=args.sign, staging=staging, variant=variant)
+    except RiftError as ex:
+        logging.error("%s build failure: %s", pkg.format, str(ex))
+        results.add_failure(case, time.time() - now, err=str(ex))
+        build_success = False
+    else:
+        results.add_success(case, time.time() - now)
+
+    if not build_success:
+        pkg_arch.clean()
+        return results
+
+    # If defined, publish in staging repository
+    if staging:
+        message("Publishing packages in staging repository...")
+        pkg_arch.publish(staging=staging)
+
+    # Publish
+    if args.publish:
+        pkg_arch.publish(updaterepo=args.updaterepo, sign=args.sign)
+    else:
+        logging.info("Skipping publication")
+
+    # Clean build environment
+    pkg_arch.clean()
+    return results
+
+
 def validate_pkgs(config, args, pkgs, arch):
     """
     Validate packages on a specific architecture and return results:
@@ -719,38 +800,10 @@ def validate_pkgs(config, args, pkgs, arch):
             results.add_failure(case, time.time() - now, err=str(ex))
             continue  # skip current package
 
-        # Get actionable package for the current architecture
-        pkg_arch = pkg.for_arch(arch)
-
-        try:
-            now = time.time()
-            case = TestCase("build", pkg.name, _DEFAULT_VARIANT, arch, pkg.format)
-            pkg_arch.build(sign=args.sign, staging=staging)
-        except RiftError as ex:
-            logging.error("%s build failure: %s", pkg.format, str(ex))
-            results.add_failure(case, time.time() - now, err=str(ex))
-            continue  # skip current package
-        else:
-            results.add_success(case, time.time() - now)
-
-        # Publish package in staging environment for testing
-        pkg_arch.publish(staging=staging)
-
-        pkg_results = None
-        # Check tests
-        if args.test:
-            pkg_results = pkg_arch.test(
-                noauto=args.noauto, staging=staging, noquit=args.noquit
+        for variant in pkg.variants:
+            results.extend(
+                _validate_pkg_variant(args, pkg, arch, staging, variant)
             )
-            results.extend(pkg_results)
-
-        # Also publish on working repo if requested
-        # XXX: All packages should be published when all of them have been validated
-        if (pkg_results is None or pkg_results.global_result) and args.publish:
-            pkg_arch.publish(sign=args.sign)
-
-        # Clean build environment
-        pkg_arch.clean(noquit=args.noquit)
 
     # Remove staging repository
     staging.delete()
@@ -895,33 +948,10 @@ def build_pkgs(args, pkgs, arch, staging):
             )
             continue
 
-        # Get actionable package for current architecture
-        pkg_arch = pkg.for_arch(arch)
-
-        build_success = True
-        now = time.time()
-        try:
-            pkg_arch.build(sign=args.sign, staging=staging)
-        except RiftError as ex:
-            logging.error("%s build failure: %s", pkg.format, str(ex))
-            results.add_failure(case, time.time() - now, err=str(ex))
-            build_success = False
-        else:
-            results.add_success(case, time.time() - now)
-
-        # If defined, publish in staging repository
-        if staging:
-            message("Publishing packages in staging repository...")
-            pkg_arch.publish(staging=staging)
-
-        # Publish
-        if build_success and args.publish:
-            pkg_arch.publish(updaterepo=args.updaterepo, sign=args.sign)
-        else:
-            logging.info("Skipping publication")
-
-        # Clean build environment
-        pkg_arch.clean()
+        for variant in pkg.variants:
+            results.extend(
+                _build_pkg_variant(args, pkg, arch, staging, variant)
+            )
 
     return results
 
@@ -1066,11 +1096,12 @@ def action_test(args, config):
                 )
                 continue
 
-            # Get actionable package for current architecture
-            pkg_arch = pkg.for_arch(arch)
-
-            pkg_results = pkg_arch.test(noauto=args.noauto, noquit=args.noquit)
-            results.extend(pkg_results)
+            for variant in pkg.variants:
+                pkg_arch = pkg.for_arch(arch, variant=variant)
+                pkg_results = pkg_arch.test(
+                    noauto=args.noauto, noquit=args.noquit, variant=variant
+                )
+                results.extend(pkg_results)
 
     if getattr(args, "junit", False):
         logging.info("Writing test results in %s", args.junit)

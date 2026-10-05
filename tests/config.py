@@ -667,7 +667,7 @@ class ConfigTest(RiftTestCase):
                   repo1:
                     sync:
                       source: https://server1/repo1
-                      method: epel
+                      method: lftp
                       include:
                       - include1
                       - include2
@@ -690,7 +690,7 @@ class ConfigTest(RiftTestCase):
         self.assertEqual(
             config.get("repos")["repo1"]["sync"]["source"], "https://server1/repo1"
         )
-        self.assertEqual(config.get("repos")["repo1"]["sync"]["method"], "epel")
+        self.assertEqual(config.get("repos")["repo1"]["sync"]["method"], "lftp")
         self.assertEqual(
             config.get("repos")["repo1"]["sync"]["include"], ["include1", "include2"]
         )
@@ -756,8 +756,7 @@ class ConfigTest(RiftTestCase):
         config = Config()
         with self.assertRaisesRegex(
             DeclError,
-            r"Bad value fail \(str\) for 'method' \(correct values: lftp, "
-            r"epel, dnf\)",
+            r"Bad value fail \(str\) for 'method' \(correct values: lftp, dnf\)",
         ):
             config.load(cfgfile.name)
 

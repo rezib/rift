@@ -36,17 +36,15 @@ Synchronize remote repositories.
 import collections
 import logging
 import os
-import re
 import shlex
 import subprocess
-import tempfile
 import time
 import urllib
 from datetime import datetime
 
 from rift import RiftError
 from rift.temp_dir import TempDir
-from rift.utils import download_file, setup_dl_opener
+from rift.utils import setup_dl_opener
 
 SyncPatterns = collections.namedtuple("SyncPatterns", ["include", "exclude"])
 
@@ -180,195 +178,7 @@ class RepoSyncLftp(RepoSyncBase):
             ) from err
 
 
-class RepoSyncIndexed(RepoSyncBase):
-    """
-    Base class for RepoSync* synchronizers that needs to track files files
-    declared in index.
-    """
-
-    def __init__(
-        self,
-        config,
-        name,
-        output,
-        sync,
-        max_size=None,
-        retries=0,
-        enable_log_file=False,
-        arch=None,
-    ):
-        super().__init__(
-            config, name, output, sync, max_size, retries, enable_log_file, arch
-        )
-        self.indexed_files = []
-
-    def _relpath_matches(self, relpath):
-        # Check file matches at least one include pattern, if defined.
-        if self.patterns.include:
-            match_include = False
-            for pattern in self.patterns.include:
-                if re.match(pattern, relpath) is not None:
-                    match_include = True
-                    break
-            if not match_include:
-                logging.debug(
-                    "Skipping file %s which does not match any include pattern", relpath
-                )
-                return False
-
-        # Check file does not match any exclude pattern.
-        for pattern in self.patterns.exclude:
-            if re.search(pattern, relpath) is not None:
-                logging.debug(
-                    "Skipping file %s which matches exclude pattern %s",
-                    relpath,
-                    pattern,
-                )
-                return False
-        return True
-
-    def _clean_output(self, skip_repodata=False):
-        """
-        Remove unindexed files and empty directories from local mirror. Skip
-        repodata directory and its content in output root directory when
-        skip_repodata boolean parameter is True.
-        """
-        for root, dirs, files in os.walk(self.output, topdown=False):
-            for filename in files:
-                if skip_repodata and filename.startswith("repodata"):
-                    continue
-                path = os.path.join(root, filename)
-                if path not in self.indexed_files:
-                    self.log_write(f"rm {path}")
-                    logging.info("Removing unindexed file %s", path)
-                    os.remove(path)
-            for dirname in dirs:
-                if skip_repodata and dirname.startswith("repodata"):
-                    continue
-                path = os.path.join(root, dirname)
-                if not os.listdir(path):
-                    self.log_write(f"rmdir {path}")
-                    logging.info("Removing empty directory %s", path)
-                    os.rmdir(path)
-
-    def _run(self):
-        """Synchronization is not actually implemented on base class."""
-        raise NotImplementedError
-
-
-class RepoSyncEpel(RepoSyncIndexed):
-    """Synchronize EPEL remote repositories."""
-
-    PUB_ROOT = "/pub/epel"
-
-    def __init__(
-        self,
-        config,
-        name,
-        output,
-        sync,
-        max_size=None,
-        retries=0,
-        enable_log_file=False,
-        arch=None,
-    ):
-        super().__init__(
-            config, name, output, sync, max_size, retries, enable_log_file, arch
-        )
-        self.pub_url = f"{self.base_url}{self.PUB_ROOT}"
-
-    def _process_line(self, line):
-        """Process one EPEL files index line."""
-        try:
-            (timestamp_s, ftype, _, relpath) = line.split("\t")
-        except ValueError:
-            # Ignore all lines outside [Files] section with less than 4
-            # values separated with tabs
-            logging.debug("Skipping non-file line '%s'", line)
-            return
-        if ftype != "f":
-            logging.debug("Skipping filetype '%s' for path %s", ftype, relpath)
-            return
-        # Prefix filepath with EPEL public root directory
-        abspath = f"{self.PUB_ROOT}/{relpath}"
-        if not abspath.startswith(self.source.path):
-            logging.debug(
-                "Skipping file %s outside of source URL path %s",
-                abspath,
-                self.source.path,
-            )
-            return
-
-        # To check against include/exclude pattern, use path relative to
-        # repository source URL.
-        relpath = abspath[len(self.source.path) :].lstrip("/")
-
-        # Check relative path against include/exclude pattern
-        if not self._relpath_matches(relpath):
-            return
-
-        # The filename in the output directory is the filename in
-        # fullfiletimelist-epel index in which the path of source URL is
-        # removed after the public root directory.
-        output_file = os.path.join(
-            self.output,
-            relpath,
-        )
-
-        # Append output file to the list of indexed files, so it is flagged to
-        # not be removed in the end.
-        self.indexed_files.append(output_file)
-
-        # Check file exists and its timestamp. If the modification timestamp
-        # is over the timestamp in index file, consider the file unmodified
-        # and skip it. Else, remove the file so it can be downloaded again.
-        if os.path.exists(output_file):
-            if int(os.stat(output_file).st_mtime) > int(timestamp_s):
-                logging.debug("Ignoring unmodified %s", output_file)
-                return
-            logging.info("Removing updated file %s", output_file)
-            os.unlink(output_file)
-
-        # Create output file parent directories if missing.
-        output_directory = os.path.dirname(output_file)
-        if not os.path.exists(output_directory):
-            # Mention directory creation in log file
-            self.log_write(f"mkdir {output_directory}")
-            os.makedirs(output_directory)
-
-        url_file = f"{self.base_url}{abspath}"
-        self.log_write(f"download {url_file}")
-        logging.info("Downloading file %s", url_file)
-        try:
-            download_file(url_file, output_file, self.max_size, self.retries)
-        except RiftError as err:
-            logging.warning("Download failed, skipping entry: %s", str(err))
-
-    def _run(self):
-        """Run EPEL repository synchronization."""
-        # Download EPEL files index in temporary file
-        with tempfile.NamedTemporaryFile(
-            mode="r", prefix="rift-epel-filelist-"
-        ) as tmp_file:
-            filelist_url = f"{self.pub_url}/fullfiletimelist-epel"
-            logging.debug("Downloading EPEL files index %s", filelist_url)
-            try:
-                download_file(filelist_url, tmp_file.name, self.max_size, self.retries)
-            except RiftError as err:
-                logging.warning("Download failed, skipping entry: %s", str(err))
-
-            # Open synchronization log file
-            logging.debug("Creating synchronization log file %s", self.logfile)
-
-            # Process all lines in index file
-            for line in tmp_file:
-                self._process_line(line.strip())
-
-        # Remove unindexed files and empty dirs
-        self._clean_output()
-
-
-class RepoSyncDnf(RepoSyncIndexed):
+class RepoSyncDnf(RepoSyncBase):
     """
     Synchronize DNF remote repositories with the dnf reposync command.
 
@@ -525,7 +335,6 @@ class RepoSyncFactory:
 
     METHODS = {
         "lftp": RepoSyncLftp,
-        "epel": RepoSyncEpel,
         "dnf": RepoSyncDnf,
     }
 

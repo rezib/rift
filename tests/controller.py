@@ -10,6 +10,7 @@ import os.path
 import shutil
 import subprocess
 import textwrap
+import threading
 import xml.etree.ElementTree as ET
 from io import StringIO
 from unittest.mock import Mock, call, patch
@@ -1258,6 +1259,71 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
             "** Build thread build-x86_64-main output: **",
             mock_stdout.getvalue(),
         )
+
+    def _setup_action_test_variants(self, test_side_effect):
+        """Return package mock with 2 variants on 2 architectures and its actionable."""
+        mock_pkg_rpm = Mock(spec=PackageRPM)
+        variants = ["variant1", "variant2"]
+        self.config.set("arch", ["x86_64", "aarch64"])
+        self.update_project_conf()
+        self.make_pkg(build_requires=[], formats=["rpm"], variants=variants)
+
+        mock_pkg_rpm_objs = mock_pkg_rpm
+        PackageRPM.__init__(
+            mock_pkg_rpm_objs, "pkg", self.config, self.staff, self.modules
+        )
+        mock_pkg_rpm_objs.variants = variants
+        mock_pkg_rpm_objs.supports_arch.return_value = True
+        mock_act = Mock(spec=ActionableArchPackageRPM)
+        mock_act.test.side_effect = test_side_effect
+        mock_pkg_rpm_objs.for_arch.return_value = mock_act
+        return mock_pkg_rpm_objs, mock_act
+
+    def test_action_test_parallel(self):
+        """test runs every architecture and variant in parallel threads."""
+        # Barrier is released only if the 4 matrix jobs overlap.
+        barrier = threading.Barrier(4, timeout=30)
+
+        def _test(**kwargs):
+            barrier.wait()
+            return TestResults()
+
+        mock_pkg, mock_act = self._setup_action_test_variants(_test)
+        with patch("rift.package._project.PackageRPM", return_value=mock_pkg):
+            self.assertEqual(main(["test", "pkg", "--formats", "rpm"]), 0)
+        self.assertEqual(mock_act.test.call_count, 4)
+        # Package is loaded once for the whole matrix
+        mock_pkg.load.assert_called_once_with()
+
+    @patch("rift.controller.RiftThread")
+    def test_action_test_seq(self, mock_rift_thread):
+        """test --seq does not start any thread."""
+        mock_pkg, mock_act = self._setup_action_test_variants(
+            lambda **kwargs: TestResults()
+        )
+        with patch("rift.package._project.PackageRPM", return_value=mock_pkg):
+            self.assertEqual(
+                main(["test", "pkg", "--formats", "rpm", "--seq", "-q"]), 0
+            )
+        mock_rift_thread.assert_not_called()
+        self.assertEqual(mock_act.test.call_count, 4)
+        mock_act.test.assert_called_with(noauto=False, noquit=False)
+
+    def test_action_test_worker_crash(self):
+        """test fails when a worker thread crashes rather than silently pass."""
+
+        def _test(**kwargs):
+            raise RiftError("VM is already running")
+
+        mock_pkg, _ = self._setup_action_test_variants(_test)
+        with patch("rift.package._project.PackageRPM", return_value=mock_pkg):
+            junit = make_temp_file("")
+            self.assertEqual(
+                main(["test", "pkg", "--formats", "rpm", "--junit", junit.name]), 2
+            )
+            with open(junit.name, encoding="utf-8") as fh:
+                content = fh.read()
+        self.assertEqual(content.count("<failure"), 4)
 
     @patch("rift.package._project.PackageOCI", autospec=PackageOCI)
     @patch("rift.package._project.PackageRPM", autospec=PackageRPM)
@@ -3803,6 +3869,13 @@ class ControllerArgumentsTest(RiftTestCase):
         args = ["test", "--formats", "fail"]
         with self.assertRaises(SystemExit):
             opts = parser.parse_args(args)
+
+        opts = parser.parse_args(["test"])
+        self.assertFalse(opts.seq)
+        self.assertFalse(opts.quiet)
+        opts = parser.parse_args(["test", "--seq", "--quiet"])
+        self.assertTrue(opts.seq)
+        self.assertTrue(opts.quiet)
 
     def test_parse_args_validate(self):
         """Test validate command options parsing"""

@@ -63,7 +63,7 @@ from rift.rpm import RPM, Spec
 from rift.sync import RepoSyncFactory
 from rift.test_results import TestCase, TestResults
 from rift.text_table import TextTable
-from rift.threads import Job, RiftThread
+from rift.threads import Job, SlotPool, run_jobs
 from rift.utils import banner, message
 from rift.vm import VM
 from unidiff import parse_unidiff
@@ -202,8 +202,8 @@ def make_parser():
         "--seq",
         action="store_true",
         help=(
-            "run one architecture and one variant at a time with live output "
-            "(no parallel threads)"
+            "run one architecture, one variant and one test at a time with live "
+            "output (no parallel threads)"
         ),
     )
 
@@ -240,8 +240,8 @@ def make_parser():
         "--seq",
         action="store_true",
         help=(
-            "run one architecture and one variant at a time with live output "
-            "(no parallel threads)"
+            "run one architecture, one variant and one test at a time with live "
+            "output (no parallel threads)"
         ),
     )
 
@@ -297,8 +297,8 @@ def make_parser():
         "--seq",
         action="store_true",
         help=(
-            "run one architecture and one variant at a time with live output "
-            "(no parallel threads)"
+            "run one architecture, one variant and one test at a time with live "
+            "output (no parallel threads)"
         ),
     )
 
@@ -346,8 +346,8 @@ def make_parser():
         "--seq",
         action="store_true",
         help=(
-            "run one architecture and one variant at a time with live output "
-            "(no parallel threads)"
+            "run one architecture, one variant and one test at a time with live "
+            "output (no parallel threads)"
         ),
     )
 
@@ -724,9 +724,10 @@ def action_auth(config):
         message("error: authentication failed")
 
 
-def _validate_pkg_variant(args, pkg, arch, staging, variant):
+def _validate_pkg_variant(args, pkg, arch, staging, variant, slots):
     """
     Build, test, and optionally publish one package variant; return results.
+    The slots argument is the SlotPool capping concurrent tests.
     """
     results = TestResults()
     pkg_arch = pkg.for_arch(arch, variant=variant)
@@ -752,6 +753,9 @@ def _validate_pkg_variant(args, pkg, arch, staging, variant):
             noauto=args.noauto,
             staging=staging,
             noquit=args.noquit,
+            seq=getattr(args, "seq", False),
+            quiet=getattr(args, "quiet", False),
+            slots=slots,
         )
         results.extend(pkg_results)
 
@@ -765,15 +769,14 @@ def _validate_pkg_variant(args, pkg, arch, staging, variant):
     return results
 
 
-def _run_pkg_matrix(args, pkg, archs, stagings, worker, action):
+def _run_pkg_matrix(args, pkg, archs, stagings, worker, action, slots=None):
     """
-    Run worker for each supported (arch, variant) on a loaded package.
+    Run worker for each supported (arch, variant) on a loaded package. The slots
+    argument is the SlotPool capping concurrent tests, given to the worker.
 
-    One Job is created per pair. When not --seq, each job runs in a RiftThread
+    One Job is created per pair. When not --seq, each job runs in a thread
     named after the job ``{action}-{arch}-{variant}`` (e.g. build-x86_64-main).
     """
-    results = TestResults()
-
     # Compute list of (arch, variant) jobs to run.
     jobs = []
     for arch in archs:
@@ -788,30 +791,20 @@ def _run_pkg_matrix(args, pkg, archs, stagings, worker, action):
             continue
         for variant in pkg.variants:
             jobs.append(
-                Job(action, worker, args, pkg, arch, variant, stagings.get(arch))
+                Job(
+                    f"{action}-{arch}-{variant}",
+                    worker,
+                    (args, pkg, arch, stagings.get(arch), variant, slots),
+                    TestCase(action, pkg.name, variant, arch, pkg.format),
+                )
             )
 
-    if not jobs:
-        return results
-
-    # Run jobs sequentially if --seq option is used
-    if getattr(args, "seq", False):
-        for job in jobs:
-            results.extend(job.run())
-        return results
-
-    # Run jobs in parallel threads otherwise
-    threads = [RiftThread(job) for job in jobs]
-    for thread in threads:
-        message(f"Starting {action} thread {thread.name}")
-        thread.start()
-    for thread in threads:
-        thread.join()
-        results.extend(thread.results)
-        if not getattr(args, "quiet", False) or not thread.results.global_result:
-            banner(f"{action.capitalize()} thread {thread.name} output:")
-            print(thread.output.getvalue(), end="")
-    return results
+    return run_jobs(
+        jobs,
+        action,
+        seq=getattr(args, "seq", False),
+        quiet=getattr(args, "quiet", False),
+    )
 
 
 def vm_build(config, vm, args):
@@ -913,9 +906,10 @@ def action_vm(args, config):
     return ret
 
 
-def _build_pkg_variant(args, pkg, arch, staging, variant):
+def _build_pkg_variant(args, pkg, arch, staging, variant, _):
     """
-    Build one package variant on an architecture and return results.
+    Build one package variant on an architecture and return results. The last
+    argument is the unused SlotPool, as builds do not run tests.
     """
     results = TestResults()
     pkg_arch = pkg.for_arch(arch, variant=variant)
@@ -1042,12 +1036,17 @@ def action_sign(args, config):
     return 0
 
 
-def _test_pkg_variant(args, pkg, arch, _, variant):
+def _test_pkg_variant(args, pkg, arch, _, variant, slots):
     """
-    Test one package variant on an architecture and return results.
+    Test one package variant on an architecture and return results. The slots
+    argument is the SlotPool capping concurrent tests.
     """
     return pkg.for_arch(arch, variant=variant).test(
-        noauto=args.noauto, noquit=args.noquit
+        noauto=args.noauto,
+        noquit=args.noquit,
+        seq=args.seq,
+        quiet=args.quiet,
+        slots=slots,
     )
 
 
@@ -1056,6 +1055,7 @@ def action_test(args, config):
     staff, modules = staff_modules(config)
     results = TestResults("test")
     archs = config.get("arch")
+    slots = SlotPool(config.get("test_jobs"))
 
     # Test package on all project supported architectures
     for pkg in ProjectPackages.list(config, staff, modules, args.packages):
@@ -1081,7 +1081,17 @@ def action_test(args, config):
             results.add_failure(case, time.time() - now, err=str(ex))
             continue  # skip current package
 
-        results.extend(_run_pkg_matrix(args, pkg, archs, {}, _test_pkg_variant, "test"))
+        results.extend(
+            _run_pkg_matrix(
+                args,
+                pkg,
+                archs,
+                {},
+                _test_pkg_variant,
+                "test",
+                slots,
+            )
+        )
 
     if getattr(args, "junit", False):
         logging.info("Writing test results in %s", args.junit)
@@ -1111,6 +1121,9 @@ def _validate_pkgs(config, args, pkgs):
         repos = ProjectArchRepositories(config, arch)
         if args.publish and not repos.can_publish():
             raise RiftError("Cannot publish if 'working_repo' is undefined")
+
+    # All tests of this run share the same limit of concurrent tests.
+    slots = SlotPool(config.get("test_jobs"))
 
     # Initialize staging repositories for all architectures.
     stagings = {arch: StagingRepository(config) for arch in archs}
@@ -1154,6 +1167,7 @@ def _validate_pkgs(config, args, pkgs):
                     stagings,
                     _validate_pkg_variant,
                     "validate",
+                    slots,
                 )
             )
     finally:

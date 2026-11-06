@@ -3,6 +3,7 @@
 #
 import os
 import textwrap
+import threading
 from unittest.mock import Mock, patch
 
 from rift import RiftError
@@ -393,6 +394,32 @@ class ActionableArchPackageOCITest(RiftProjectTestCase):
         mock_container_runtime.return_value.run_test.assert_called_once()
         self.assertIsInstance(results, TestResults)
         self.assertEqual(results.global_result, False)
+
+    @patch("rift.package.oci.ContainerRuntime")
+    def test_test_parallel(self, mock_container_runtime):
+        """Test container and local tests run concurrently"""
+        self.setup_package(
+            tests=[
+                PackageTestDef(name="0_test.sh", local=False, formats=[]),
+                PackageTestDef(name="1_test.sh", local=False, formats=[]),
+                PackageTestDef(name="2_test.sh", local=True, formats=[]),
+                PackageTestDef(name="3_test.sh", local=True, formats=[]),
+            ]
+        )
+        # Barrier is released only if the 4 tests overlap.
+        barrier = threading.Barrier(4, timeout=30)
+
+        def run(*_):
+            barrier.wait()
+            return RunResult(0, "ok", None)
+
+        self.pkg.run_local_test = Mock(side_effect=run)
+        mock_container_runtime.return_value.run_test.side_effect = run
+        results = self.pkg.test()
+        self.assertEqual(len(results), 4)
+        self.assertEqual(results.global_result, True)
+        self.assertEqual(self.pkg.run_local_test.call_count, 2)
+        self.assertEqual(mock_container_runtime.return_value.run_test.call_count, 2)
 
     @patch("rift.package.oci.ContainerArchive")
     @patch("rift.package.oci.ContainerRuntime")

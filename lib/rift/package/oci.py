@@ -37,15 +37,13 @@ import os
 import shutil
 import tarfile
 import tempfile
-import time
+from contextlib import contextmanager
 
 from rift import RiftError
 from rift.annex import Annex
-from rift.config import _DEFAULT_VARIANT
 from rift.container import ContainerArchive, ContainerFile, ContainerRuntime
 from rift.package._base import ActionableArchPackage, Package
-from rift.test_results import TestCase, TestResults
-from rift.utils import banner, message
+from rift.utils import message
 
 
 class PackageOCI(Package):
@@ -259,26 +257,23 @@ class ActionableArchPackageOCI(ActionableArchPackage):
                 )
             yield member
 
-    def test(self, **kwargs):
-        """Execute test in OCI container and return TestResults"""
-        results = TestResults("test")
-        banner(f"Starting tests of package {self.name} on architecture {self.arch}")
-        tests = list(self.package.tests())
-        for test in tests:
-            case = TestCase(test.name, self.name, _DEFAULT_VARIANT, self.arch, "oci")
-            now = time.time()
-            message(f"Running test '{case.fullname}' on architecture '{self.arch}'")
+    def _plan_tests(self, **kwargs):
+        """Return the tests of the package."""
+        return list(self.package.tests())
+
+    @contextmanager
+    def _test_env(self, slot, **kwargs):
+        """
+        Yield callable to run a test on host or in a container. Each test runs
+        in its own temporary container, no specific setup is required.
+        """
+
+        def run(test):
             if test.local:
-                run = self.run_local_test(test)
-            else:
-                run = self.runtime.run_test(self, test)
-            if run.returncode == 0:
-                results.add_success(case, time.time() - now, out=run.out, err=run.err)
-                message(f"Test '{case.fullname}' on architecture {self.arch}: OK")
-            else:
-                results.add_failure(case, time.time() - now, out=run.out, err=run.err)
-                message(f"Test '{case.fullname}' on architecture {self.arch}: ERROR")
-        return results
+                return self.run_local_test(test)
+            return self.runtime.run_test(self, test)
+
+        yield run
 
     def publish(self, **kwargs):
         """Publish archive of a container in OCI registry."""

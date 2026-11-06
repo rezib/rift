@@ -33,13 +33,16 @@
 """Jobs and threads classes and utilities to run jobs in parallel."""
 
 import contextlib
+import heapq
 import io
 import sys
 import threading
 import time
 import traceback
 
-from rift.test_results import TestCase, TestResults
+from rift import RiftError
+from rift.test_results import TestResults
+from rift.utils import banner, message
 
 # Python provides standards context managers contextlib.redirect_{stdout,stderr}
 # but they are not thread-safe unfortunately. For redirecting threads
@@ -119,48 +122,61 @@ def redirect_output_threadsafe(output):
         del sys.stderr.local.stream
 
 
+class SlotPool:
+    """
+    Bounded pool of integer slots, used to cap concurrent tests.
+
+    Slots are integers in range [0, size). The lowest free one is always handed
+    out so that resources derived from a slot (eg. VM identity, ports and
+    sockets) stay in a small, predictable set.
+    """
+
+    def __init__(self, size):
+        if size < 1:
+            raise RiftError(f"Slot pool size must be at least 1, got {size}")
+        self._free = list(range(size))
+        self._available = threading.Condition()
+
+    @contextlib.contextmanager
+    def slot(self):
+        """Block until a slot is free, yield it and release it on exit."""
+        with self._available:
+            while not self._free:
+                self._available.wait()
+            slot = heapq.heappop(self._free)
+        try:
+            yield slot
+        finally:
+            with self._available:
+                heapq.heappush(self._free, slot)
+                self._available.notify()
+
+
 class Job:
     """
-    Unit of work to run: a worker function with its context (package,
-    architecture, variant and staging repository). Running the job returns
-    TestResults.
+    Unit of work to run: a target callable with its arguments. Running the job
+    returns TestResults.
     """
 
-    def __init__(self, action, worker, args, pkg, arch, variant, staging=None):
-        self.action = action  # action name (eg. build, validate)
-        self.worker = worker
-        self.args = args  # command line arguments
-        self.pkg = pkg
-        self.arch = arch
-        self.variant = variant
-        self.staging = staging
-
-    @property
-    def name(self):
-        """Job name, ie. {action}-{arch}-{variant}."""
-        return f"{self.action}-{self.arch}-{self.variant}"
+    def __init__(self, name, target, args, case):
+        self.name = name  # name of the job, also used as thread name
+        self.target = target  # callable which returns job TestResults
+        self.args = args  # tuple of arguments for the target
+        self.case = case  # TestCase reported as failed if the target crashes
 
     def run(self):
         """
-        Run the worker with the job context and return its TestResults. If the
-        worker crashes, its traceback is printed on stderr and the crash is
-        reported as a failed test case named after the action.
+        Run the target with the job arguments and return its TestResults. If the
+        target crashes, its traceback is printed on stderr and the crash is
+        reported as a failure of the job case.
         """
         now = time.time()
         try:
-            return self.worker(
-                self.args, self.pkg, self.arch, self.staging, self.variant
-            )
+            return self.target(*self.args)
         except Exception as exc:  # pylint: disable=broad-exception-caught
             traceback.print_exc(file=sys.stderr)
             results = TestResults()
-            results.add_failure(
-                TestCase(
-                    self.action, self.pkg.name, self.variant, self.arch, self.pkg.format
-                ),
-                time.time() - now,
-                err=str(exc),
-            )
+            results.add_failure(self.case, time.time() - now, err=str(exc))
             return results
 
 
@@ -187,3 +203,33 @@ class RiftThread(threading.Thread):
                 # exception in sys.stderr here to make it land in thread local
                 # buffer.
                 traceback.print_exc(file=sys.stderr)
+
+
+def run_jobs(jobs, label, seq=False, quiet=False):
+    """
+    Run the given jobs and return their merged TestResults in jobs order.
+
+    Each job runs in its own RiftThread with its output bufferized, then printed
+    with label in its banner when thread is joined. When quiet is True, output
+    of succeeding jobs is omitted. When seq is True, jobs run one after the
+    other in the current thread with live output. In both cases, crash of a job
+    is reported as a failure of its case.
+    """
+    results = TestResults()
+
+    if seq:
+        for job in jobs:
+            results.extend(job.run())
+        return results
+
+    threads = [RiftThread(job) for job in jobs]
+    for thread in threads:
+        message(f"Starting {label} thread {thread.name}")
+        thread.start()
+    for thread in threads:
+        thread.join()
+        results.extend(thread.results)
+        if not quiet or not thread.results.global_result:
+            banner(f"{label.capitalize()} thread {thread.name} output:")
+            print(thread.output.getvalue(), end="")
+    return results

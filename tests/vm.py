@@ -21,7 +21,7 @@ from rift.config import (
 )
 from rift.package import Test
 from rift.repository.rpm import ConsumableRepository
-from rift.vm import ARCH_EFI_BIOS, VM, gen_virtiofs_args
+from rift.vm import _DOWNLOAD_LOCK, ARCH_EFI_BIOS, VM, gen_virtiofs_args
 
 from .test_utils import RiftProjectTestCase, RiftTestCase, make_temp_dir, make_temp_file
 
@@ -163,12 +163,12 @@ class VMTest(RiftTestCase):
             # remote URI http
             (
                 "http://localhost/path/to/my_image.qcow2",
-                f"/tmp/rift-vm-local-image-{vm.vmid}_my_image.qcow2",
+                f"/tmp/rift-vm-local-image-{vm.baseid}_my_image.qcow2",
             ),
             # remote URI https
             (
                 "https://localhost/path/to/my_other_image.qcow2",
-                f"/tmp/rift-vm-local-image-{vm.vmid}_my_other_image.qcow2",
+                f"/tmp/rift-vm-local-image-{vm.baseid}_my_other_image.qcow2",
             ),
         }
         for expected_value in expected_values:
@@ -180,6 +180,14 @@ class VMTest(RiftTestCase):
             )
             vm = VM(self.config, platform.machine())
             self.assertEqual(vm.image_local, expected_value[1])
+
+    def test_image_local_shared_by_slots(self):
+        """Test all VM slots share the same local copy of remote image"""
+        self.config.set("vm", {"image": "http://localhost/path/to/my_image.qcow2"})
+        vm0 = VM(self.config, platform.machine(), slot=0)
+        vm1 = VM(self.config, platform.machine(), slot=1)
+        self.assertEqual(vm0.image_local, vm1.image_local)
+        self.assertNotEqual(vm0.vmid, vm1.vmid)
 
     def test_image_local_unsupported_scheme(self):
         self.config.set(
@@ -250,6 +258,19 @@ class VMTest(RiftTestCase):
         )
         # Instance attributes match default_ports() for the configured range
         self.assertEqual((vm1.port, vm1.proxy_port), vm1.default_ports(port_range))
+
+    def test_default_ports_slots(self):
+        """Check VM default ports never collide between slots"""
+        port_range = {"min": 2000, "max": 3000}
+        self.config.set("vm", {"image": "/path/to/image", "port_range": port_range})
+        ports = []
+        for slot in range(16):
+            vm = VM(self.config, "x86_64", slot=slot)
+            ports.extend(vm.default_ports(port_range))
+        self.assertEqual(len(ports), len(set(ports)))
+        for port in ports:
+            self.assertGreaterEqual(port, port_range["min"])
+            self.assertLess(port, port_range["max"])
 
     def test_default_ports_invalid_range(self):
         """Check VM default ports raise error with invalid range"""
@@ -750,6 +771,42 @@ class VMTest(RiftTestCase):
         vm._auth_proxy.required = False
         self.assertTrue(vm.start(force=False))
         vm._auth_proxy.start.assert_not_called()
+
+    @patch("rift.vm.message")
+    def test_start_not_ready(self, mock_message):
+        """Test VM start raises error when VM does not become ready"""
+        vm = VM(self.config, platform.machine())
+        vm.running = Mock(return_value=False)
+        vm._download = Mock()
+        vm.spawn = Mock()
+        vm.ready = Mock(return_value=False)
+        vm.prepare = Mock()
+        vm._auth_proxy = Mock()
+        with self.assertRaisesRegex(RiftError, "^VM did not become ready in time$"):
+            vm.start(force=False)
+        vm.prepare.assert_not_called()
+
+    def test_stop_not_spawned(self):
+        """Test VM stop when VM process has not been spawned"""
+        vm = VM(self.config, platform.machine())
+        vm._auth_proxy = Mock()
+        vm.stop()
+        vm._auth_proxy.stop.assert_called_once()
+
+    @patch("rift.vm.message")
+    def test_download_serialized(self, mock_message):
+        """Test concurrent VMs do not refresh image local copy simultaneously"""
+        self.config.set("vm", {"image": "http://localhost/path/to/my_image.qcow2"})
+        lock_held = []
+
+        def check_lock(_):
+            lock_held.append(_DOWNLOAD_LOCK.locked())
+
+        vm = VM(self.config, platform.machine())
+        vm._download_locked = check_lock
+        vm._download(False)
+        self.assertEqual(lock_held, [True])
+        self.assertFalse(_DOWNLOAD_LOCK.locked())
 
     def test_connect(self):
         """Test VM connect opens SSH and starts the IDP proxy when required"""

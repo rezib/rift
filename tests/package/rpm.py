@@ -4,15 +4,22 @@
 
 import os
 import textwrap
+import threading
 from unittest.mock import ANY, Mock, patch
 
 from rift import RiftError
 from rift.config import _DEFAULT_VARIANT
 from rift.gerrit import Review
-from rift.package.rpm import ActionableArchPackageRPM, PackageRPM
+from rift.package.rpm import (
+    ActionableArchPackageRPM,
+    BasicTest,
+    PackageRPM,
+    basic_test_rpmnames,
+)
 from rift.repository import StagingRepository
 from rift.run import RunResult
 from rift.test_results import TestResults
+from rift.threads import SlotPool
 
 from ..test_utils import (
     PackageTestDef,
@@ -580,12 +587,12 @@ class ActionableArchPackageRPMTest(RiftProjectTestCase):
         self.pkg.run_local_test.assert_called_once()
         # Check vm.run_test has been called once for basic test
         mock_vm_obj.run_test.assert_called_once_with(ANY, _DEFAULT_VARIANT)
-        # Check VM is stopped after the tests
-        mock_vm_obj.stop.assert_called_once()
+        # Check VMs of both tests are stopped after the tests
+        self.assertEqual(mock_vm_obj.stop.call_count, 2)
 
     @patch("rift.package.rpm.Mock.clean")
     @patch("rift.package.rpm.Mock.init")
-    @patch("rift.package.rpm.banner")
+    @patch("rift.package._base.banner")
     @patch("rift.package.rpm.time.sleep")
     @patch("rift.package.rpm.VM")
     def test_test_vm(
@@ -610,13 +617,13 @@ class ActionableArchPackageRPMTest(RiftProjectTestCase):
         mock_vm_obj.run_test.assert_called_once_with(ANY, _DEFAULT_VARIANT)
         # Check VM is stopped after the tests
         mock_vm_obj.stop.assert_called_once()
-        mock_banner.assert_called_once_with(
+        mock_banner.assert_any_call(
             "Starting tests of package pkg on architecture x86_64"
         )
 
     @patch("rift.package.rpm.Mock.clean")
     @patch("rift.package.rpm.Mock.init")
-    @patch("rift.package.rpm.banner")
+    @patch("rift.package._base.banner")
     @patch("rift.package.rpm.time.sleep")
     @patch("rift.package.rpm.VM")
     def test_test_staging(
@@ -634,16 +641,17 @@ class ActionableArchPackageRPMTest(RiftProjectTestCase):
         self.assertIsInstance(results, TestResults)
         self.assertEqual(len(results), 2)
         self.assertEqual(results.global_result, True)
-        # Check VM initialized with staging extra repository
-        mock_vm.assert_called_once_with(
+        # Check both VMs initialized with staging extra repository
+        self.assertEqual(mock_vm.call_count, 2)
+        mock_vm.assert_called_with(
             self.config,
             "x86_64",
             extra_repos=[staging.for_format("rpm").repo.consumables["x86_64"]],
-            slot=0,
+            slot=ANY,
         )
-        # Check VM is stopped after the tests
-        mock_vm_obj.stop.assert_called_once()
-        mock_banner.assert_called_once_with(
+        # Check VMs are stopped after the tests
+        self.assertEqual(mock_vm_obj.stop.call_count, 2)
+        mock_banner.assert_any_call(
             "Starting tests of package pkg on architecture x86_64"
         )
 
@@ -655,8 +663,230 @@ class ActionableArchPackageRPMTest(RiftProjectTestCase):
         mock_vm_obj = mock_vm.return_value
         mock_vm_obj.running.return_value = True
         self.setup_package()
+        self._mock_spec_read()
+        results = self.pkg.test(variant=_DEFAULT_VARIANT)
+        # Every test is reported as failed with the error
+        self.assertEqual(len(results), 2)
+        self.assertFalse(results.global_result)
+        for result in results.results:
+            self.assertEqual(result.err, "VM is already running")
+        # VM that was not started by this test must not be stopped
+        mock_vm_obj.stop.assert_not_called()
+        mock_vm_obj.start.assert_not_called()
+
+    @patch("rift.package.rpm.VM")
+    def test_test_vm_running_noquit(self, mock_vm):
+        """Test ActionableArchPackageRPM test noquit error VM running"""
+        mock_vm.return_value.running.return_value = True
+        self.setup_package()
         with self.assertRaisesRegex(RiftError, "^VM is already running$"):
-            self.pkg.test(variant=_DEFAULT_VARIANT)
+            self.pkg.test(noquit=True)
+
+    def _mock_spec_read(self):
+        """Mock Mock.read_spec() so BasicTest can extract rpm packages from spec."""
+        self.pkg.mock = Mock()
+        self.pkg.mock.lock.side_effect = lambda: nullcontext()
+        with open(self.buildfiles["pkg:rpm"], encoding="utf-8") as fh:
+            self.pkg.mock.read_spec.return_value = fh.read()
+
+    def _setup_parallel(self, mock_vm, tests_count):
+        """Prepare package with given number of tests on top of basic test."""
+        mock_vm.return_value.running.return_value = False
+        mock_vm.return_value.run_test.return_value = RunResult(0, None, None)
+        self.setup_package(
+            tests=[
+                PackageTestDef(name=f"{i}_test.sh", local=False, formats=[])
+                for i in range(tests_count)
+            ]
+        )
+        self._mock_spec_read()
+
+    @patch("rift.package.rpm.time.sleep")
+    @patch("rift.package.rpm.VM")
+    def test_test_parallel(self, mock_vm, mock_time_sleep):
+        """Test tests run concurrently, each one in its own VM"""
+        self._setup_parallel(mock_vm, 2)
+        # Barrier is released only if the 3 tests overlap.
+        barrier = threading.Barrier(3, timeout=30)
+
+        def run_test(*_):
+            barrier.wait()
+            return RunResult(0, None, None)
+
+        mock_vm.return_value.run_test.side_effect = run_test
+        results = self.pkg.test()
+        self.assertTrue(results.global_result)
+        # basic test always reported first, whatever threads completion order.
+        self.assertEqual(
+            [result.case.name for result in results.results][0], "basic_install.pkg"
+        )
+        self.assertCountEqual(
+            [result.case.name for result in results.results],
+            ["basic_install.pkg", "0_test", "1_test"],
+        )
+        # One VM per test on distinct slots, all of them are stopped.
+        self.assertCountEqual(
+            [vm_call.kwargs["slot"] for vm_call in mock_vm.call_args_list], [0, 1, 2]
+        )
+        self.assertEqual(mock_vm.return_value.start.call_count, 3)
+        self.assertEqual(mock_vm.return_value.stop.call_count, 3)
+
+    @patch("rift.package.rpm.time.sleep")
+    @patch("rift.package.rpm.VM")
+    def test_test_slots_limit(self, mock_vm, mock_time_sleep):
+        """Test concurrent tests do not exceed the slot pool"""
+        self._setup_parallel(mock_vm, 4)
+        lock = threading.Lock()
+        running = [0]
+        peak = [0]
+
+        def run_test(*_):
+            with lock:
+                running[0] += 1
+                peak[0] = max(peak[0], running[0])
+            threading.Event().wait(0.02)
+            with lock:
+                running[0] -= 1
+            return RunResult(0, None, None)
+
+        mock_vm.return_value.run_test.side_effect = run_test
+        results = self.pkg.test(slots=SlotPool(2))
+        self.assertEqual(len(results), 5)
+        self.assertEqual(peak[0], 2)
+        self.assertLessEqual(
+            {vm_call.kwargs["slot"] for vm_call in mock_vm.call_args_list}, {0, 1}
+        )
+
+    @patch("rift.package.rpm.time.sleep")
+    @patch("rift.package.rpm.VM")
+    def test_test_config_jobs(self, mock_vm, mock_time_sleep):
+        """Test limit of concurrent tests is read from configuration by default"""
+        self._setup_parallel(mock_vm, 3)
+        self.config.set("test_jobs", 1)
+        results = self.pkg.test()
+        self.assertEqual(len(results), 4)
+        self.assertEqual(
+            {vm_call.kwargs["slot"] for vm_call in mock_vm.call_args_list}, {0}
+        )
+
+    @patch("rift.package.rpm.time.sleep")
+    @patch("rift.package.rpm.VM")
+    def test_test_setup_failure(self, mock_vm, mock_time_sleep):
+        """Test VM setup failure only fails the related test and stops its VM"""
+        self._setup_parallel(mock_vm, 2)
+        mock_vm.return_value.start.side_effect = [RiftError("no boot"), True, True]
+        results = self.pkg.test()
+        self.assertEqual(len(results), 3)
+        self.assertFalse(results.global_result)
+        self.assertEqual(
+            [result.value for result in results.results].count("Failure"), 1
+        )
+        self.assertIn("no boot", [result.err for result in results.results])
+        self.assertEqual(mock_vm.return_value.run_test.call_count, 2)
+        self.assertEqual(mock_vm.return_value.stop.call_count, 3)
+
+    @patch("rift.package.rpm.time.sleep")
+    @patch("rift.package.rpm.VM")
+    def test_test_crash(self, mock_vm, mock_time_sleep):
+        """Test unexpected error is reported as test failure"""
+        self._setup_parallel(mock_vm, 0)
+        mock_vm.return_value.run_test.side_effect = RuntimeError("crash")
+        results = self.pkg.test()
+        self.assertEqual(len(results), 1)
+        self.assertFalse(results.global_result)
+        self.assertEqual(results.results[0].err, "crash")
+        mock_vm.return_value.stop.assert_called_once()
+
+    @patch("rift.threads.RiftThread")
+    @patch("rift.package.rpm.time.sleep")
+    @patch("rift.package.rpm.VM")
+    def test_test_seq(self, mock_vm, mock_time_sleep, mock_thread):
+        """Test seq runs tests without thread, each one still in its own VM"""
+        self._setup_parallel(mock_vm, 2)
+        results = self.pkg.test(seq=True)
+        self.assertEqual(len(results), 3)
+        mock_thread.assert_not_called()
+        self.assertEqual(mock_vm.call_count, 3)
+        self.assertEqual(mock_vm.return_value.stop.call_count, 3)
+
+    @patch("rift.threads.banner")
+    @patch("rift.package.rpm.time.sleep")
+    @patch("rift.package.rpm.VM")
+    def test_test_quiet(self, mock_vm, mock_time_sleep, mock_banner):
+        """Test quiet omits output of succeeding tests only"""
+        self._setup_parallel(mock_vm, 0)
+        self.pkg.test(quiet=True)
+        mock_banner.assert_not_called()
+        mock_vm.return_value.run_test.return_value = RunResult(1, None, None)
+        self.pkg.test(quiet=True)
+        mock_banner.assert_called_once_with(
+            "Test thread test-x86_64-main-basic_install.pkg output:"
+        )
+
+    def test_basic_test_keeps_rpmnames(self):
+        """Test RPM names of basic tests do not modify package RPM names"""
+        self.setup_package()
+        self.pkg.package.rpmnames = ["pkg", "pkg-devel", "pkg-debug"]
+        self.pkg.package.ignore_rpms = ["pkg-debug"]
+        for _ in range(2):
+            self.assertEqual(
+                basic_test_rpmnames(
+                    self.pkg.package, Mock(), [], _DEFAULT_VARIANT, config=self.config
+                ),
+                ["pkg", "pkg-devel"],
+            )
+        self.assertEqual(self.pkg.package.rpmnames, ["pkg", "pkg-devel", "pkg-debug"])
+
+    def test_basic_test_command(self):
+        """Test BasicTest installs or upgrades its RPM only, without cleanup"""
+        test = BasicTest("pkg-devel")
+        self.assertEqual(test.name, "basic_install.pkg-devel")
+        self.assertFalse(test.local)
+        self.assertIn("rpm -q --quiet pkg-devel", test.command)
+        self.assertIn("${YUM} -y -d1 upgrade pkg-devel", test.command)
+        self.assertIn("${YUM} -y -d1 install pkg-devel", test.command)
+        self.assertNotIn("history", test.command)
+        # RPM name is quoted in shell command
+        self.assertIn("install 'pkg;reboot'", BasicTest("pkg;reboot").command)
+
+    @patch("rift.package.rpm.time.sleep")
+    @patch("rift.package.rpm.VM")
+    def test_test_basic_per_rpm(self, mock_vm, mock_time_sleep):
+        """Test one basic test per RPM, each one in its own VM concurrently"""
+        self._setup_parallel(mock_vm, 1)
+        self.pkg.package.rpmnames = ["a", "b", "c"]
+        self.pkg.package.ignore_rpms = ["b"]
+        # Barrier is released only if the 3 tests overlap.
+        barrier = threading.Barrier(3, timeout=30)
+
+        def run_test(test, _):
+            barrier.wait()
+            # Installation of RPM a fails
+            return RunResult(int(test.name == "basic_install.a"), None, None)
+
+        mock_vm.return_value.run_test.side_effect = run_test
+        results = self.pkg.test()
+        self.assertEqual(
+            [(result.case.name, result.value) for result in results.results],
+            [
+                ("basic_install.a", "Failure"),
+                ("basic_install.c", "Success"),
+                ("0_test", "Success"),
+            ],
+        )
+        self.assertCountEqual(
+            [vm_call.kwargs["slot"] for vm_call in mock_vm.call_args_list], [0, 1, 2]
+        )
+
+    @patch("rift.package.rpm.time.sleep")
+    @patch("rift.package.rpm.VM")
+    def test_test_basic_all_ignored(self, mock_vm, mock_time_sleep):
+        """Test no basic test when all RPMs are ignored"""
+        self._setup_parallel(mock_vm, 1)
+        self.pkg.package.rpmnames = ["a"]
+        self.pkg.package.ignore_rpms = ["a"]
+        results = self.pkg.test()
+        self.assertEqual([result.case.name for result in results.results], ["0_test"])
 
     @patch("rift.package.rpm.time.sleep")
     @patch("rift.package.rpm.VM")
@@ -701,7 +931,11 @@ class ActionableArchPackageRPMTest(RiftProjectTestCase):
         self.pkg.mock = Mock()
         self.pkg.mock.lock.return_value = nullcontext()
         self.pkg.mock.read_spec.return_value = open(self.buildfiles["pkg:rpm"]).read()
-        self.pkg.test(noquit=True, variant=_DEFAULT_VARIANT)
+        results = self.pkg.test(noquit=True, variant=_DEFAULT_VARIANT)
+        self.assertEqual(len(results), 2)
+        # Check all tests run in one VM on the slot of the variant
+        mock_vm.assert_called_once_with(self.config, "x86_64", extra_repos=[], slot=0)
+        self.assertEqual(mock_vm_obj.run_test.call_count, 2)
         # Check VM is NOT stopped after the tests
         mock_vm_obj.stop.assert_not_called()
 

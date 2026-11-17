@@ -52,6 +52,7 @@ import sys
 import tempfile
 import termios
 import textwrap
+import threading
 import time
 import urllib
 import uuid
@@ -72,6 +73,9 @@ __all__ = ["VM"]
 
 ARCH_EFI_BIOS = "./usr/share/edk2/aarch64/QEMU_EFI.silent.fd"
 CLOUD_INIT_SEED_ISO = "seed.iso"
+
+# Serialize refresh of VM image local copies shared by concurrent VMs.
+_DOWNLOAD_LOCK = threading.Lock()
 
 
 def is_virtiofs_qemu(virtiofsd=_DEFAULT_VIRTIOFSD):
@@ -207,6 +211,17 @@ class VM:
         self.kernel = vm_config.get("kernel")
 
     @property
+    def baseid(self):
+        """
+        Generate a checksum for user, architecture and version, shared by all
+        VM slots of this combination. It identifies what slots have in common,
+        such as the local copy of the VM image.
+        """
+        return hashlib.sha1(
+            f"{os.getuid()}-{self.arch}-{self.version}".encode()
+        ).hexdigest()
+
+    @property
     def vmid(self):
         """
         Generate a checksum for user, architecture, version, and variant slot
@@ -231,7 +246,7 @@ class VM:
             return self._image_src.path
         return os.path.join(
             tempfile.gettempdir(),
-            f"rift-vm-local-image-{self.vmid}_{os.path.basename(self._image_src.path)}",
+            f"rift-vm-local-image-{self.baseid}_{os.path.basename(self._image_src.path)}",
         )
 
     def image_is_remote(self) -> bool:
@@ -249,7 +264,8 @@ class VM:
         """
         Return (ssh_port, proxy_port) in the given range for this VM.
 
-        SSH port is derived from the VM unique identifier. Proxy port is the
+        SSH port is derived from the identifier shared by all slots, then
+        spaced by slot so that concurrent slots never collide. Proxy port is the
         next port in the range (wrapping) so it never matches this VM's SSH
         port.
         """
@@ -260,7 +276,7 @@ class VM:
                 "VM port range maximum must be greater than the minimum"
             ) from exc
         span = port_range["max"] - port_range["min"]
-        ssh = (int(self.vmid, 16) % span) + port_range["min"]
+        ssh = ((int(self.baseid, 16) + 2 * self.slot) % span) + port_range["min"]
         proxy = port_range["min"] + ((ssh - port_range["min"] + 1) % span)
         return ssh, proxy
 
@@ -487,6 +503,13 @@ class VM:
         if not self.image_is_remote():
             return
 
+        # Concurrent VMs share the local copy, it must not be checked while it is
+        # being replaced.
+        with _DOWNLOAD_LOCK:
+            self._download_locked(force)
+
+    def _download_locked(self, force: bool):
+        """Refresh local copy of remote VM image, with download lock held."""
         # Setup proxy if defined
         setup_dl_opener(self.proxy, self.no_proxy)
 
@@ -834,21 +857,23 @@ class VM:
 
         First try to terminate it cleanly for 5 sec. It fails, kill it.
         """
-        # Sending TERM signal
-        if self._vm.poll() is None:
-            pid = self._vm.pid
-            logging.debug("Sending TERM signal to VM process (%d)", pid)
-            self._vm.terminate()
+        # VM process is missing if startup failed before it has been spawned.
+        if self._vm is not None:
+            # Sending TERM signal
+            if self._vm.poll() is None:
+                pid = self._vm.pid
+                logging.debug("Sending TERM signal to VM process (%d)", pid)
+                self._vm.terminate()
 
-        # Delay for VM to cleanly shutdown before killing it
-        for _ in range(1, 5):
-            if self._vm.poll() is not None:
-                break
-            time.sleep(1)
-        else:
-            pid = self._vm.pid
-            logging.debug("Sending KILL signal to VM process (%d)", pid)
-            self._vm.kill()
+            # Delay for VM to cleanly shutdown before killing it
+            for _ in range(1, 5):
+                if self._vm.poll() is not None:
+                    break
+                time.sleep(1)
+            else:
+                pid = self._vm.pid
+                logging.debug("Sending KILL signal to VM process (%d)", pid)
+                self._vm.kill()
 
         # Stop helper processes
         for helper in self._helpers:
@@ -889,7 +914,8 @@ class VM:
         # Start authenticated repositories proxy
         self._start_auth_proxy()
         self.spawn()
-        self.ready()
+        if not self.ready():
+            raise RiftError("VM did not become ready in time")
         self.prepare()
         return True
 

@@ -10,7 +10,12 @@ from unittest.mock import ANY, Mock, patch
 from rift import RiftError
 from rift.config import _DEFAULT_VARIANT
 from rift.gerrit import Review
-from rift.package.rpm import ActionableArchPackageRPM, PackageRPM
+from rift.package.rpm import (
+    ActionableArchPackageRPM,
+    BasicTest,
+    PackageRPM,
+    basic_test_rpmnames,
+)
 from rift.repository import StagingRepository
 from rift.run import RunResult
 from rift.test_results import TestResults
@@ -713,11 +718,11 @@ class ActionableArchPackageRPMTest(RiftProjectTestCase):
         self.assertTrue(results.global_result)
         # basic test always reported first, whatever threads completion order.
         self.assertEqual(
-            [result.case.name for result in results.results][0], "basic_install"
+            [result.case.name for result in results.results][0], "basic_install.pkg"
         )
         self.assertCountEqual(
             [result.case.name for result in results.results],
-            ["basic_install", "0_test", "1_test"],
+            ["basic_install.pkg", "0_test", "1_test"],
         )
         # One VM per test on distinct slots, all of them are stopped.
         self.assertCountEqual(
@@ -815,8 +820,73 @@ class ActionableArchPackageRPMTest(RiftProjectTestCase):
         mock_vm.return_value.run_test.return_value = RunResult(1, None, None)
         self.pkg.test(quiet=True)
         mock_banner.assert_called_once_with(
-            "Test thread test-x86_64-main-basic_install output:"
+            "Test thread test-x86_64-main-basic_install.pkg output:"
         )
+
+    def test_basic_test_keeps_rpmnames(self):
+        """Test RPM names of basic tests do not modify package RPM names"""
+        self.setup_package()
+        self.pkg.package.rpmnames = ["pkg", "pkg-devel", "pkg-debug"]
+        self.pkg.package.ignore_rpms = ["pkg-debug"]
+        for _ in range(2):
+            self.assertEqual(
+                basic_test_rpmnames(
+                    self.pkg.package, Mock(), [], _DEFAULT_VARIANT, config=self.config
+                ),
+                ["pkg", "pkg-devel"],
+            )
+        self.assertEqual(self.pkg.package.rpmnames, ["pkg", "pkg-devel", "pkg-debug"])
+
+    def test_basic_test_command(self):
+        """Test BasicTest installs or upgrades its RPM only, without cleanup"""
+        test = BasicTest("pkg-devel")
+        self.assertEqual(test.name, "basic_install.pkg-devel")
+        self.assertFalse(test.local)
+        self.assertIn("rpm -q --quiet pkg-devel", test.command)
+        self.assertIn("${YUM} -y -d1 upgrade pkg-devel", test.command)
+        self.assertIn("${YUM} -y -d1 install pkg-devel", test.command)
+        self.assertNotIn("history", test.command)
+        # RPM name is quoted in shell command
+        self.assertIn("install 'pkg;reboot'", BasicTest("pkg;reboot").command)
+
+    @patch("rift.package.rpm.time.sleep")
+    @patch("rift.package.rpm.VM")
+    def test_test_basic_per_rpm(self, mock_vm, mock_time_sleep):
+        """Test one basic test per RPM, each one in its own VM concurrently"""
+        self._setup_parallel(mock_vm, 1)
+        self.pkg.package.rpmnames = ["a", "b", "c"]
+        self.pkg.package.ignore_rpms = ["b"]
+        # Barrier is released only if the 3 tests overlap.
+        barrier = threading.Barrier(3, timeout=30)
+
+        def run_test(test, _):
+            barrier.wait()
+            # Installation of RPM a fails
+            return RunResult(int(test.name == "basic_install.a"), None, None)
+
+        mock_vm.return_value.run_test.side_effect = run_test
+        results = self.pkg.test()
+        self.assertEqual(
+            [(result.case.name, result.value) for result in results.results],
+            [
+                ("basic_install.a", "Failure"),
+                ("basic_install.c", "Success"),
+                ("0_test", "Success"),
+            ],
+        )
+        self.assertCountEqual(
+            [vm_call.kwargs["slot"] for vm_call in mock_vm.call_args_list], [0, 1, 2]
+        )
+
+    @patch("rift.package.rpm.time.sleep")
+    @patch("rift.package.rpm.VM")
+    def test_test_basic_all_ignored(self, mock_vm, mock_time_sleep):
+        """Test no basic test when all RPMs are ignored"""
+        self._setup_parallel(mock_vm, 1)
+        self.pkg.package.rpmnames = ["a"]
+        self.pkg.package.ignore_rpms = ["a"]
+        results = self.pkg.test()
+        self.assertEqual([result.case.name for result in results.results], ["0_test"])
 
     @patch("rift.package.rpm.time.sleep")
     @patch("rift.package.rpm.VM")

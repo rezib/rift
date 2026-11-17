@@ -33,8 +33,8 @@
 
 import logging
 import os
-import random
 import re
+import shlex
 import shutil
 import textwrap
 import time
@@ -273,20 +273,23 @@ class ActionableArchPackageRPM(ActionableArchPackage):
         return results
 
     def _plan_tests(self, **kwargs):
-        """Return automatic test (unless disabled) and tests of the package."""
-        tests = list(self.package.tests())
+        """
+        Return automatic install tests, one per RPM of the package (unless
+        disabled), followed by tests of the package.
+        """
+        tests = []
         if not kwargs.get("noauto", False):
-            tests.insert(
-                0,
-                BasicTest(
+            tests = [
+                BasicTest(rpmname)
+                for rpmname in basic_test_rpmnames(
                     self.package,
                     self.mock,
                     self.repos.all,
                     self.variant,
                     config=self.config,
-                ),
-            )
-        return tests
+                )
+            ]
+        return tests + list(self.package.tests())
 
     @contextmanager
     def _test_env(self, slot, **kwargs):
@@ -416,41 +419,24 @@ def basic_test_rpmnames(pkg, mock, repos, variant, config=None):
 
 class BasicTest(Test):
     """
-    Auto-generated test for a PackageRPM.
-    Setup a test to install a package and its dependencies.
-        - pkg: package to test
-        - variant: package variant
-        - config: rift configuration
+    Auto-generated test for a PackageRPM, which installs one of its RPM with its
+    dependencies. It is upgraded if already installed. The test is expected to
+    run in a fresh environment, it does not undo the installation.
+        - rpmname: name of the RPM to install
     """
 
-    def __init__(self, pkg, mock, repos, variant, config=None):
-        rpmnames = basic_test_rpmnames(pkg, mock, repos, variant, config=config)
-
-        # Avoid always processing the rpm list in the same order
-        random.shuffle(rpmnames)
-
+    def __init__(self, rpmname):
+        rpm = shlex.quote(rpmname)
         cmd = textwrap.dedent(f"""
         if [ -x /usr/bin/dnf ] ; then
             YUM="dnf"
         else
             YUM="yum"
         fi
-        i=0
-        for pkg in {" ".join(rpmnames)}; do
-            i=$(( $i + 1 ))
-            echo -e "[Testing '${{pkg}}' (${{i}}/{len(rpmnames)})]"
-            rm -rf /var/lib/${{YUM}}/history*
-            if rpm -q --quiet $pkg; then
-              ${{YUM}} -y -d1 upgrade $pkg || exit 1
-            else
-              ${{YUM}} -y -d1 install $pkg || exit 1
-            fi
-            if [ -n "$(${{YUM}} history | tail -n +3)" ]; then
-                echo '> Cleanup last transaction'
-                ${{YUM}} -y -d1 history undo last || exit 1
-            else
-                echo '> Warning: package already installed and up to date !'
-            fi
-        done""")
-        Test.__init__(self, cmd, "basic_install")
+        if rpm -q --quiet {rpm}; then
+            ${{YUM}} -y -d1 upgrade {rpm}
+        else
+            ${{YUM}} -y -d1 install {rpm}
+        fi""")
+        Test.__init__(self, cmd, f"basic_install.{rpmname}")
         self.local = False

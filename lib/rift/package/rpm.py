@@ -33,11 +33,12 @@
 
 import logging
 import os
-import random
 import re
+import shlex
 import shutil
 import textwrap
 import time
+from contextlib import contextmanager
 
 from rift import RiftError
 from rift.annex import Annex
@@ -45,8 +46,8 @@ from rift.config import _DEFAULT_VARIANT
 from rift.mock import Mock
 from rift.package._base import ActionableArchPackage, Package, Test
 from rift.rpm import Spec
-from rift.test_results import TestCase, TestResults
-from rift.utils import banner, message
+from rift.test_results import TestResults
+from rift.utils import message
 from rift.vm import VM
 
 
@@ -200,8 +201,7 @@ class ActionableArchPackageRPM(ActionableArchPackage):
     """Handle rift project package in RPM format for a specific architecture."""
 
     def __init__(self, package, arch, variant):
-        super().__init__(package, arch)
-        self.variant = variant
+        super().__init__(package, arch, variant)
         self.mock = Mock(
             self.config, arch, self.config.get("version"), slot=self._variant_slot()
         )
@@ -256,9 +256,59 @@ class ActionableArchPackageRPM(ActionableArchPackage):
         message("RPMS successfully built")
 
     def test(self, **kwargs):
-        """Execute test and return TestResults"""
+        """
+        Run tests and return TestResults. With noquit argument, all tests run
+        sequentially in a single VM on a predictable slot which is left running
+        so it can be inspected. Otherwise, see parent class.
+        """
+        if not kwargs.get("noquit", False):
+            return super().test(**kwargs)
 
         results = TestResults("test")
+        vm = self._test_vm(self._variant_slot(), **kwargs)
+        self._start_vm(vm)
+        self._test_banner()
+        for test in self._plan_tests(**kwargs):
+            results.extend(self._run_test(test, self._vm_test_runner(vm)))
+        return results
+
+    def _plan_tests(self, **kwargs):
+        """
+        Return automatic install tests, one per RPM of the package (unless
+        disabled), followed by tests of the package.
+        """
+        tests = []
+        if not kwargs.get("noauto", False):
+            tests = [
+                BasicTest(rpmname)
+                for rpmname in basic_test_rpmnames(
+                    self.package,
+                    self.mock,
+                    self.repos.all,
+                    self.variant,
+                    config=self.config,
+                )
+            ]
+        return tests + list(self.package.tests())
+
+    @contextmanager
+    def _test_env(self, slot, **kwargs):
+        """
+        Start a fresh VM dedicated to one test, yield callable to run this test
+        and stop the VM.
+        """
+        vm = self._test_vm(slot, **kwargs)
+        try:
+            self._start_vm(vm)
+            yield self._vm_test_runner(vm)
+        finally:
+            message(f"Cleaning {self.arch} test environment")
+            vm.cmd("poweroff")
+            time.sleep(5)
+            vm.stop()
+
+    def _test_vm(self, slot, **kwargs):
+        """Return a VM for the given slot, it must not be already running."""
         staging = kwargs.get("staging")
         if staging:
             extra_repos = [
@@ -270,12 +320,15 @@ class ActionableArchPackageRPM(ActionableArchPackage):
             self.config,
             self.arch,
             extra_repos=extra_repos,
-            slot=self._variant_slot(),
+            slot=slot,
         )
 
         if vm.running():
             raise RiftError("VM is already running")
+        return vm
 
+    def _start_vm(self, vm):
+        """Start the VM and update its packages with the appropriate repositories."""
         message(f"Preparing {self.arch} test environment")
         vm.start(False)
 
@@ -289,52 +342,15 @@ class ActionableArchPackageRPM(ActionableArchPackage):
             repos_args = "--disablerepo=working"
         vm.cmd(f"yum -y -d0 {repos_args} update")
 
-        banner(
-            f"Starting tests of package {self.name}"
-            + (f" variant {self.variant}" if self.package.has_real_variants() else "")
-            + f" on architecture {self.arch}"
-        )
+    def _vm_test_runner(self, vm):
+        """Return callable running a test in the VM, or on host if test is local."""
 
-        tests = list(self.package.tests())
-        if not kwargs.get("noauto", False):
-            tests.insert(
-                0,
-                BasicTest(
-                    self.package,
-                    self.mock,
-                    self.repos.all,
-                    self.variant,
-                    config=self.config,
-                ),
-            )
-        for test in tests:
-            case = TestCase(
-                test.name,
-                self.name,
-                self.variant,
-                self.arch,
-                self.package.format,
-            )
-            now = time.time()
-            message(f"Running test '{case.fullname}' on architecture '{self.arch}'")
+        def run(test):
             if test.local:
-                proc = self.run_local_test(test, self.variant, vm.local_test_funcs())
-            else:
-                proc = vm.run_test(test, self.variant)
-            if proc.returncode == 0:
-                results.add_success(case, time.time() - now, out=proc.out, err=proc.err)
-                message(f"Test '{case.fullname}' on architecture {self.arch}: OK")
-            else:
-                results.add_failure(case, time.time() - now, out=proc.out, err=proc.err)
-                message(f"Test '{case.fullname}' on architecture {self.arch}: ERROR")
+                return self.run_local_test(test, self.variant, vm.local_test_funcs())
+            return vm.run_test(test, self.variant)
 
-        if not kwargs.get("noquit", False):
-            message(f"Cleaning {self.arch} test environment")
-            vm.cmd("poweroff")
-            time.sleep(5)
-            vm.stop()
-
-        return results
+        return run
 
     def publish(self, **kwargs):
         staging = kwargs.get("staging")
@@ -382,56 +398,45 @@ class ActionableArchPackageRPM(ActionableArchPackage):
         return self.mock.build_rpms(srpm, self.variant, self.repos, sign)
 
 
+def basic_test_rpmnames(pkg, mock, repos, variant, config=None):
+    """Return list of RPM names of the package to install in automatic test."""
+    # Copy the list as it is modified below and package object is shared by
+    # variants running concurrently.
+    if pkg.rpmnames:
+        rpmnames = list(pkg.rpmnames)
+    else:
+        rpmnames = Spec(
+            pkg.buildfile, mock, repos, config=config, variant=variant
+        ).pkgnames
+
+    try:
+        for name in pkg.ignore_rpms:
+            rpmnames.remove(name)
+    except ValueError as exc:
+        raise RiftError(f"'{name}' is not in RPMS list") from exc
+    return rpmnames
+
+
 class BasicTest(Test):
     """
-    Auto-generated test for a PackageRPM.
-    Setup a test to install a package and its dependencies.
-        - pkg: package to test
-        - variant: package variant
-        - config: rift configuration
+    Auto-generated test for a PackageRPM, which installs one of its RPM with its
+    dependencies. It is upgraded if already installed. The test is expected to
+    run in a fresh environment, it does not undo the installation.
+        - rpmname: name of the RPM to install
     """
 
-    def __init__(self, pkg, mock, repos, variant, config=None):
-        if pkg.rpmnames:
-            # Copy the list as it is modified below and package object is shared by
-            # variants running concurrently.
-            rpmnames = list(pkg.rpmnames)
-        else:
-            rpmnames = Spec(
-                pkg.buildfile, mock, repos, config=config, variant=variant
-            ).pkgnames
-
-        try:
-            for name in pkg.ignore_rpms:
-                rpmnames.remove(name)
-        except ValueError as exc:
-            raise RiftError(f"'{name}' is not in RPMS list") from exc
-
-        # Avoid always processing the rpm list in the same order
-        random.shuffle(rpmnames)
-
+    def __init__(self, rpmname):
+        rpm = shlex.quote(rpmname)
         cmd = textwrap.dedent(f"""
         if [ -x /usr/bin/dnf ] ; then
             YUM="dnf"
         else
             YUM="yum"
         fi
-        i=0
-        for pkg in {" ".join(rpmnames)}; do
-            i=$(( $i + 1 ))
-            echo -e "[Testing '${{pkg}}' (${{i}}/{len(rpmnames)})]"
-            rm -rf /var/lib/${{YUM}}/history*
-            if rpm -q --quiet $pkg; then
-              ${{YUM}} -y -d1 upgrade $pkg || exit 1
-            else
-              ${{YUM}} -y -d1 install $pkg || exit 1
-            fi
-            if [ -n "$(${{YUM}} history | tail -n +3)" ]; then
-                echo '> Cleanup last transaction'
-                ${{YUM}} -y -d1 history undo last || exit 1
-            else
-                echo '> Warning: package already installed and up to date !'
-            fi
-        done""")
-        Test.__init__(self, cmd, "basic_install")
+        if rpm -q --quiet {rpm}; then
+            ${{YUM}} -y -d1 upgrade {rpm}
+        else
+            ${{YUM}} -y -d1 install {rpm}
+        fi""")
+        Test.__init__(self, cmd, f"basic_install.{rpmname}")
         self.local = False

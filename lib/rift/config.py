@@ -85,6 +85,7 @@ _DEFAULT_VM_CLOUD_INIT_TPL = "cloud-init.tpl"
 _DEFAULT_VM_BUILD_POST_SCRIPT = "build-post.sh"
 _DEFAULT_VM_PORT_RANGE_MIN = 10000
 _DEFAULT_VM_PORT_RANGE_MAX = 15000
+_DEFAULT_TEST_JOBS = 16
 _DEFAULT_VM_ENABLE_KVM = True
 _DEFAULT_QEMU_CMD = "qemu-system-$arch"
 _DEFAULT_REPO_CMD = "createrepo_c"
@@ -350,6 +351,10 @@ class Config:
         },
         "rpm_macros": {
             "check": "dict",
+        },
+        "test_jobs": {
+            "check": "digit",
+            "default": _DEFAULT_TEST_JOBS,
         },
         "virtiofsd": {
             "default": _DEFAULT_VIRTIOFSD,

@@ -17,7 +17,12 @@ from rift.package._base import (
     Test,
 )
 
-from ..test_utils import PackageTestDef, RiftProjectTestCase, make_temp_file
+from ..test_utils import (
+    PackageTestDef,
+    RiftProjectTestCase,
+    make_temp_file,
+    nullcontext,
+)
 
 
 class PackageTestingConcrete(Package):
@@ -51,8 +56,11 @@ class ActionableArchPackageTestingConcrete(ActionableArchPackage):
     def build(self, **kwargs):
         pass
 
-    def test(self, **kwargs):
-        pass
+    def _plan_tests(self, **kwargs):
+        return []
+
+    def _test_env(self, slot, **kwargs):
+        return nullcontext()
 
     def publish(self, **kwargs):
         pass

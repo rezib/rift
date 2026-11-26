@@ -39,6 +39,7 @@ import logging
 import os
 import re
 import shlex
+import time
 from abc import ABC, abstractmethod
 
 import yaml
@@ -47,7 +48,9 @@ from rift import RiftError
 from rift.config import _DEFAULT_VARIANT, OrderedLoader
 from rift.repository import ProjectArchRepositories
 from rift.run import run_command
-from rift.utils import message
+from rift.test_results import TestCase, TestResults
+from rift.threads import Job, SlotPool, run_jobs
+from rift.utils import banner, message
 
 _META_FILE = "info.yaml"
 _SOURCES_DIR = "sources"
@@ -308,12 +311,13 @@ class ActionableArchPackage(ABC):
     supported package formats.
     """
 
-    def __init__(self, package, arch):
+    def __init__(self, package, arch, variant=_DEFAULT_VARIANT):
         self.name = package.name
         self.buildfile = package.buildfile
         self.config = package._config
         self.package = package
         self.arch = arch
+        self.variant = variant
         self.repos = ProjectArchRepositories(self.config, self.arch).for_format(
             self.package.format
         )
@@ -323,8 +327,99 @@ class ActionableArchPackage(ABC):
         """Build package. Must be overriden in concrete format classes."""
 
     @abstractmethod
+    def _plan_tests(self, **kwargs):
+        """
+        Must return the list of Test objects to run on this package. Every
+        returned test runs concurrently with the others.
+        """
+
+    @abstractmethod
+    def _test_env(self, slot, **kwargs):
+        """
+        Must return a context manager which sets up an environment dedicated to
+        one test and yields a callable running a Test object in this environment
+        and returning its RunResult. The slot argument is an integer that
+        environments running concurrently never share.
+        """
+
     def test(self, **kwargs):
-        """Test package. Must be overriden in concrete format classes."""
+        """
+        Run all tests of this package concurrently unless seq argument is True,
+        and return TestResults in tests planning order.
+
+        The optional slots argument is the SlotPool capping concurrent tests.
+        When quiet argument is True, the output of succeeding tests is omitted.
+        Other arguments are provided to _plan_tests() and _test_env().
+        """
+        results = TestResults("test")
+        self._test_banner()
+        tests = self._plan_tests(**kwargs)
+        slots = kwargs.get("slots")
+        if slots is None:
+            slots = SlotPool(self.config.get("test_jobs"))
+
+        results.extend(
+            run_jobs(
+                [
+                    Job(
+                        f"test-{self.arch}-{self.variant}-{test.name}",
+                        self._run_test_job,
+                        (test, slots, kwargs),
+                        self._test_case(test),
+                    )
+                    for test in tests
+                ],
+                "test",
+                seq=kwargs.get("seq", False),
+                quiet=kwargs.get("quiet", False),
+            )
+        )
+        return results
+
+    def _test_banner(self):
+        """Announce the tests of this package."""
+        banner(
+            f"Starting tests of package {self.name}"
+            + (f" variant {self.variant}" if self.package.has_real_variants() else "")
+            + f" on architecture {self.arch}"
+        )
+
+    def _test_case(self, test):
+        """Return the TestCase reporting result of the given test."""
+        return TestCase(
+            test.name, self.name, self.variant, self.arch, self.package.format
+        )
+
+    def _run_test_job(self, test, slots, kwargs):
+        """
+        Run one test in its dedicated environment and return its TestResults.
+        Failure to set up this environment is reported as a failure of this test
+        only.
+        """
+        now = time.time()
+        try:
+            with slots.slot() as slot, self._test_env(slot, **kwargs) as run:
+                return self._run_test(test, run)
+        except RiftError as ex:
+            logging.error("Test %s failure: %s", test.name, str(ex))
+            results = TestResults()
+            results.add_failure(self._test_case(test), time.time() - now, err=str(ex))
+            return results
+
+    def _run_test(self, test, run):
+        """Run one test with the provided callable and return its TestResults."""
+        results = TestResults()
+        case = self._test_case(test)
+        message(f"Running test '{case.fullname}' on architecture '{self.arch}'")
+        now = time.time()
+        proc = run(test)
+        if proc.returncode == 0:
+            results.add_success(case, time.time() - now, out=proc.out, err=proc.err)
+            message(f"Test '{case.fullname}' on architecture {self.arch}: OK")
+        else:
+            results.add_failure(case, time.time() - now, out=proc.out, err=proc.err)
+            message(f"Test '{case.fullname}' on architecture {self.arch}: ERROR")
+        return results
 
     def run_local_test(self, test, variant=_DEFAULT_VARIANT, funcs=None):
         """

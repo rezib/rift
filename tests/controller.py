@@ -10,9 +10,10 @@ import os.path
 import shutil
 import subprocess
 import textwrap
+import threading
 import xml.etree.ElementTree as ET
 from io import StringIO
-from unittest.mock import Mock, call, patch
+from unittest.mock import ANY, Mock, call, patch
 
 from rift import DeclError, RiftError
 from rift.config import _DEFAULT_VARIANT
@@ -671,8 +672,22 @@ class ControllerProjectActionValiddiffTest(RiftProjectTestCase):
         )
         mock_act_arch_pkg_rpm.test.assert_has_calls(
             [
-                call(noauto=False, staging=mock_staging_repo, noquit=False),
-                call(noauto=False, staging=mock_staging_repo, noquit=False),
+                call(
+                    noauto=False,
+                    staging=mock_staging_repo,
+                    noquit=False,
+                    seq=False,
+                    quiet=False,
+                    slots=ANY,
+                ),
+                call(
+                    noauto=False,
+                    staging=mock_staging_repo,
+                    noquit=False,
+                    seq=False,
+                    quiet=False,
+                    slots=ANY,
+                ),
             ]
         )
         mock_act_arch_pkg_rpm.clean.assert_has_calls(
@@ -909,7 +924,7 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         self.assertIn("** Build thread build-x86_64-variant1 output: **", out)
         self.assertIn("** Build thread build-x86_64-variant2 output: **", out)
 
-    @patch("rift.controller.RiftThread")
+    @patch("rift.threads.RiftThread")
     @patch("rift.package._project.PackageRPM", autospec=PackageRPM)
     def test_action_build_seq(self, mock_pkg_rpm, mock_rift_thread):
         """build --seq runs each architecture and variant without worker threads."""
@@ -1259,6 +1274,84 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
             mock_stdout.getvalue(),
         )
 
+    def _setup_action_test_variants(self, test_side_effect):
+        """Return package mock with 2 variants on 2 architectures and its actionable."""
+        mock_pkg_rpm = Mock(spec=PackageRPM)
+        variants = ["variant1", "variant2"]
+        self.config.set("arch", ["x86_64", "aarch64"])
+        self.update_project_conf()
+        self.make_pkg(build_requires=[], formats=["rpm"], variants=variants)
+
+        mock_pkg_rpm_objs = mock_pkg_rpm
+        PackageRPM.__init__(
+            mock_pkg_rpm_objs, "pkg", self.config, self.staff, self.modules
+        )
+        mock_pkg_rpm_objs.variants = variants
+        mock_pkg_rpm_objs.supports_arch.return_value = True
+        mock_act = Mock(spec=ActionableArchPackageRPM)
+        mock_act.test.side_effect = test_side_effect
+        mock_pkg_rpm_objs.for_arch.return_value = mock_act
+        return mock_pkg_rpm_objs, mock_act
+
+    def test_action_test_parallel(self):
+        """test runs every architecture and variant in parallel threads."""
+        # Barrier is released only if the 4 matrix jobs overlap.
+        barrier = threading.Barrier(4, timeout=30)
+
+        def _test(**kwargs):
+            barrier.wait()
+            return TestResults()
+
+        mock_pkg, mock_act = self._setup_action_test_variants(_test)
+        with patch("rift.package._project.PackageRPM", return_value=mock_pkg):
+            self.assertEqual(main(["test", "pkg", "--formats", "rpm"]), 0)
+        self.assertEqual(mock_act.test.call_count, 4)
+        # All jobs share the same pool to enforce a global limit.
+        pools = {call_.kwargs["slots"] for call_ in mock_act.test.call_args_list}
+        self.assertEqual(len(pools), 1)
+        # Package is loaded once for the whole matrix
+        mock_pkg.load.assert_called_once_with()
+
+    @patch("rift.threads.RiftThread")
+    def test_action_test_seq(self, mock_rift_thread):
+        """test --seq does not start any thread and forwards options."""
+        mock_pkg, mock_act = self._setup_action_test_variants(
+            lambda **kwargs: TestResults()
+        )
+        with patch("rift.package._project.PackageRPM", return_value=mock_pkg):
+            self.assertEqual(
+                main(["test", "pkg", "--formats", "rpm", "--seq", "-q"]), 0
+            )
+        mock_rift_thread.assert_not_called()
+        self.assertEqual(mock_act.test.call_count, 4)
+        mock_act.test.assert_called_with(
+            noauto=False, noquit=False, seq=True, quiet=True, slots=ANY
+        )
+
+    def test_action_test_worker_crash(self):
+        """test fails when a worker thread crashes rather than silently pass."""
+
+        def _test(**kwargs):
+            raise RiftError("VM is already running")
+
+        mock_pkg, _ = self._setup_action_test_variants(_test)
+        with patch("rift.package._project.PackageRPM", return_value=mock_pkg):
+            junit = make_temp_file("")
+            self.assertEqual(
+                main(["test", "pkg", "--formats", "rpm", "--junit", junit.name]), 2
+            )
+            with open(junit.name, encoding="utf-8") as fh:
+                content = fh.read()
+        self.assertEqual(content.count("<failure"), 4)
+
+    def test_action_test_invalid_jobs(self):
+        """test refuses a limit of concurrent tests lower than 1."""
+        self.config.set("test_jobs", 0)
+        self.update_project_conf()
+        self.make_pkg(build_requires=[], formats=["rpm"])
+        with self.assertRaisesRegex(RiftError, "^Slot pool size must be at least 1"):
+            main(["test", "pkg"])
+
     @patch("rift.package._project.PackageOCI", autospec=PackageOCI)
     @patch("rift.package._project.PackageRPM", autospec=PackageRPM)
     def test_action_test(self, mock_pkg_rpm, mock_pkg_oci):
@@ -1308,10 +1401,16 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Check actionable RPM and OCI package test() method is called for all
         # supported arch (ie. twice).
         mock_act_arch_pkg_rpm.test.assert_has_calls(
-            [call(noauto=False, noquit=False), call(noauto=False, noquit=False)]
+            [
+                call(noauto=False, noquit=False, seq=False, quiet=False, slots=ANY),
+                call(noauto=False, noquit=False, seq=False, quiet=False, slots=ANY),
+            ]
         )
         mock_act_arch_pkg_oci.test.assert_has_calls(
-            [call(noauto=False, noquit=False), call(noauto=False, noquit=False)]
+            [
+                call(noauto=False, noquit=False, seq=False, quiet=False, slots=ANY),
+                call(noauto=False, noquit=False, seq=False, quiet=False, slots=ANY),
+            ]
         )
 
     @patch("rift.package._project.PackageOCI", autospec=PackageOCI)
@@ -1374,7 +1473,10 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # supported arch (ie. twice), as opposed to actionable OCI package
         # test() method.
         mock_act_arch_pkg_rpm.test.assert_has_calls(
-            [call(noauto=False, noquit=False), call(noauto=False, noquit=False)]
+            [
+                call(noauto=False, noquit=False, seq=False, quiet=False, slots=ANY),
+                call(noauto=False, noquit=False, seq=False, quiet=False, slots=ANY),
+            ]
         )
         mock_act_arch_pkg_oci.test.assert_not_called()
 
@@ -1473,10 +1575,16 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         # Check actionable RPM and OCI package test() method is called for all
         # supported arch (ie. twice).
         mock_act_arch_pkg_rpm.test.assert_has_calls(
-            [call(noauto=False, noquit=False), call(noauto=False, noquit=False)]
+            [
+                call(noauto=False, noquit=False, seq=False, quiet=False, slots=ANY),
+                call(noauto=False, noquit=False, seq=False, quiet=False, slots=ANY),
+            ]
         )
         mock_act_arch_pkg_oci.test.assert_has_calls(
-            [call(noauto=False, noquit=False), call(noauto=False, noquit=False)]
+            [
+                call(noauto=False, noquit=False, seq=False, quiet=False, slots=ANY),
+                call(noauto=False, noquit=False, seq=False, quiet=False, slots=ANY),
+            ]
         )
 
     @patch("rift.package._project.PackageOCI", autospec=PackageOCI)
@@ -1537,8 +1645,12 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
 
         # Check actionable RPM and OCI package test() has been called only once
         # (for x86_64).
-        mock_act_arch_pkg_rpm.test.assert_has_calls([call(noauto=False, noquit=False)])
-        mock_act_arch_pkg_oci.test.assert_has_calls([call(noauto=False, noquit=False)])
+        mock_act_arch_pkg_rpm.test.assert_has_calls(
+            [call(noauto=False, noquit=False, seq=False, quiet=False, slots=ANY)]
+        )
+        mock_act_arch_pkg_oci.test.assert_has_calls(
+            [call(noauto=False, noquit=False, seq=False, quiet=False, slots=ANY)]
+        )
 
     @patch("sys.stdout", new_callable=StringIO)
     @patch("rift.controller.StagingRepository")
@@ -1624,14 +1736,42 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         )
         mock_act_arch_pkg_rpm.test.assert_has_calls(
             [
-                call(noauto=False, staging=mock_staging_repo, noquit=False),
-                call(noauto=False, staging=mock_staging_repo, noquit=False),
+                call(
+                    noauto=False,
+                    staging=mock_staging_repo,
+                    noquit=False,
+                    seq=False,
+                    quiet=False,
+                    slots=ANY,
+                ),
+                call(
+                    noauto=False,
+                    staging=mock_staging_repo,
+                    noquit=False,
+                    seq=False,
+                    quiet=False,
+                    slots=ANY,
+                ),
             ]
         )
         mock_act_arch_pkg_oci.test.assert_has_calls(
             [
-                call(noauto=False, staging=mock_staging_repo, noquit=False),
-                call(noauto=False, staging=mock_staging_repo, noquit=False),
+                call(
+                    noauto=False,
+                    staging=mock_staging_repo,
+                    noquit=False,
+                    seq=False,
+                    quiet=False,
+                    slots=ANY,
+                ),
+                call(
+                    noauto=False,
+                    staging=mock_staging_repo,
+                    noquit=False,
+                    seq=False,
+                    quiet=False,
+                    slots=ANY,
+                ),
             ]
         )
         mock_act_arch_pkg_rpm.clean.assert_has_calls(
@@ -2075,8 +2215,22 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         mock_act_arch_pkg_oci.publish.assert_not_called()
         mock_act_arch_pkg_rpm.test.assert_has_calls(
             [
-                call(noauto=False, staging=mock_staging_repo, noquit=False),
-                call(noauto=False, staging=mock_staging_repo, noquit=False),
+                call(
+                    noauto=False,
+                    staging=mock_staging_repo,
+                    noquit=False,
+                    seq=False,
+                    quiet=False,
+                    slots=ANY,
+                ),
+                call(
+                    noauto=False,
+                    staging=mock_staging_repo,
+                    noquit=False,
+                    seq=False,
+                    quiet=False,
+                    slots=ANY,
+                ),
             ]
         )
         mock_act_arch_pkg_oci.test.assert_not_called()
@@ -2370,14 +2524,42 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
         )
         mock_act_arch_pkg_rpm.test.assert_has_calls(
             [
-                call(noauto=False, staging=mock_staging_repo, noquit=False),
-                call(noauto=False, staging=mock_staging_repo, noquit=False),
+                call(
+                    noauto=False,
+                    staging=mock_staging_repo,
+                    noquit=False,
+                    seq=False,
+                    quiet=False,
+                    slots=ANY,
+                ),
+                call(
+                    noauto=False,
+                    staging=mock_staging_repo,
+                    noquit=False,
+                    seq=False,
+                    quiet=False,
+                    slots=ANY,
+                ),
             ]
         )
         mock_act_arch_pkg_oci.test.assert_has_calls(
             [
-                call(noauto=False, staging=mock_staging_repo, noquit=False),
-                call(noauto=False, staging=mock_staging_repo, noquit=False),
+                call(
+                    noauto=False,
+                    staging=mock_staging_repo,
+                    noquit=False,
+                    seq=False,
+                    quiet=False,
+                    slots=ANY,
+                ),
+                call(
+                    noauto=False,
+                    staging=mock_staging_repo,
+                    noquit=False,
+                    seq=False,
+                    quiet=False,
+                    slots=ANY,
+                ),
             ]
         )
         mock_act_arch_pkg_rpm.clean.assert_has_calls(
@@ -2468,10 +2650,28 @@ class ControllerProjectActionBuildTest(RiftProjectTestCase):
             [call(staging=mock_staging_repo)]
         )
         mock_act_arch_pkg_rpm.test.assert_has_calls(
-            [call(noauto=False, staging=mock_staging_repo, noquit=False)]
+            [
+                call(
+                    noauto=False,
+                    staging=mock_staging_repo,
+                    noquit=False,
+                    seq=False,
+                    quiet=False,
+                    slots=ANY,
+                )
+            ]
         )
         mock_act_arch_pkg_oci.test.assert_has_calls(
-            [call(noauto=False, staging=mock_staging_repo, noquit=False)]
+            [
+                call(
+                    noauto=False,
+                    staging=mock_staging_repo,
+                    noquit=False,
+                    seq=False,
+                    quiet=False,
+                    slots=ANY,
+                )
+            ]
         )
         mock_act_arch_pkg_rpm.clean.assert_has_calls([call(noquit=False)])
         mock_act_arch_pkg_oci.clean.assert_has_calls([call(noquit=False)])
@@ -3803,6 +4003,13 @@ class ControllerArgumentsTest(RiftTestCase):
         args = ["test", "--formats", "fail"]
         with self.assertRaises(SystemExit):
             opts = parser.parse_args(args)
+
+        opts = parser.parse_args(["test"])
+        self.assertFalse(opts.seq)
+        self.assertFalse(opts.quiet)
+        opts = parser.parse_args(["test", "--seq", "--quiet"])
+        self.assertTrue(opts.seq)
+        self.assertTrue(opts.quiet)
 
     def test_parse_args_validate(self):
         """Test validate command options parsing"""

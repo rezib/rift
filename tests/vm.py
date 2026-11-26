@@ -272,6 +272,19 @@ class VMTest(RiftTestCase):
         # Instance attributes match default_ports() for the configured range
         self.assertEqual((vm1.port, vm1.proxy_port), vm1.default_ports(port_range))
 
+    def test_default_ports_slots(self):
+        """Check VM default ports never collide between slots"""
+        port_range = {"min": 2000, "max": 3000}
+        self.config.set("vm", {"image": "/path/to/image", "port_range": port_range})
+        ports = []
+        for slot in range(16):
+            vm = VM(self.config, "x86_64", slot=slot)
+            ports.extend(vm.default_ports(port_range))
+        self.assertEqual(len(ports), len(set(ports)))
+        for port in ports:
+            self.assertGreaterEqual(port, port_range["min"])
+            self.assertLess(port, port_range["max"])
+
     def test_default_ports_invalid_range(self):
         """Check VM default ports raise error with invalid range"""
         vm1 = VM(self.config, "x86_64")
@@ -817,6 +830,20 @@ class VMTest(RiftTestCase):
         vm._auth_proxy.start.assert_not_called()
 
     @patch("rift.vm.message")
+    def test_start_not_ready(self, mock_message):
+        """Test VM start raises error when VM does not become ready"""
+        vm = VM(self.config, platform.machine())
+        vm.running = Mock(return_value=False)
+        vm._download = Mock()
+        vm.spawn = Mock()
+        vm.ready = Mock(return_value=False)
+        vm.prepare = Mock()
+        vm._auth_proxy = Mock()
+        with self.assertRaisesRegex(RiftError, "^VM did not become ready in time$"):
+            vm.start(force=False)
+        vm.prepare.assert_not_called()
+
+    @patch("rift.vm.message")
     def test_download_serialized(self, mock_message):
         """Test concurrent VMs do not refresh image local copy simultaneously"""
         self.config.set("vm", {"image": "http://localhost/path/to/my_image.qcow2"})
@@ -924,6 +951,13 @@ class VMTest(RiftTestCase):
         vm.spawn.assert_not_called()
         vm.ready.assert_not_called()
         vm.prepare.assert_not_called()
+
+    def test_stop_not_spawned(self):
+        """Test VM stop when VM process has not been spawned"""
+        vm = VM(self.config, platform.machine())
+        vm._auth_proxy = Mock()
+        vm.stop()
+        vm._auth_proxy.stop.assert_called_once()
 
     def test_local_test_funcs(self):
         vm = VM(self.config, platform.machine())
